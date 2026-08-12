@@ -1,4 +1,5 @@
 import type { Course } from '../types'
+import { ashinokoRoute, hakoneRoute, izuRoute, okutamaRoute } from './routes.generated'
 
 export const sampleCourses: Course[] = [
   {
@@ -7,8 +8,8 @@ export const sampleCourses: Course[] = [
     area: '小田原〜大観山',
     prefecture: '神奈川県',
     description: '相模湾から箱根外輪山へ駆け上がる、見通しのよい有料道路。大観山から富士山を望める日もあります。',
-    route: [[139.1668, 35.2174], [139.128, 35.226], [139.092, 35.2305], [139.055, 35.223], [139.0278, 35.2185]],
-    distanceKm: 15.8,
+    route: hakoneRoute,
+    distanceKm: 13.5,
     durationMin: 24,
     minElevation: 85,
     maxElevation: 1011,
@@ -17,7 +18,12 @@ export const sampleCourses: Course[] = [
     ratingCount: 128,
     tags: ['ワイド', '展望', '有料道路'],
     cautions: ['料金・営業時間・通行規制を公式情報で確認してください', '霧や強風時は視界に注意してください'],
-    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-12', isSeed: true,
+    tollInfo: {
+      type: 'toll', standardFee: '車種・区間別（公式料金表を確認）', hours: '営業時間制。最終入場時刻に注意',
+      freePassConditions: [], notes: '営業時間外は無料開放とは限らず、通行できない場合があります。',
+      sourceName: 'アネスト岩田 ターンパイク箱根 公式サイト', sourceUrl: 'https://www.htpl.co.jp/', checkedAt: '2026-08-13',
+    },
+    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-13', isSeed: true,
   },
   {
     id: 'sample-ashinoko',
@@ -25,13 +31,18 @@ export const sampleCourses: Course[] = [
     area: '箱根峠〜湖尻峠',
     prefecture: '神奈川県',
     description: '芦ノ湖西側の尾根を走る有料道路。富士山と駿河湾の展望、アップダウンのあるコースが魅力です。',
-    route: [[139.0128, 35.1842], [138.9982, 35.199], [138.992, 35.222], [138.9905, 35.243], [138.9968, 35.2675]],
-    distanceKm: 10.7, durationMin: 20, minElevation: 846, maxElevation: 1030,
+    route: ashinokoRoute,
+    distanceKm: 9.1, durationMin: 20, minElevation: 846, maxElevation: 1030,
     elevationProfile: [846, 930, 966, 916, 1003, 948, 1030],
     ratings: { curves: 4.6, elevation: 4.2, width: 4.1, scenery: 4.9, surface: 4.2, traffic: 4.0, access: 3.8 },
     ratingCount: 96, tags: ['富士山', '尾根道', '有料道路'],
     cautions: ['二輪車通行規制や営業時間を公式情報で確認してください'],
-    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-12', isSeed: true,
+    tollInfo: {
+      type: 'toll', standardFee: '車種・区間別（公式料金表を確認）', hours: '営業時間制',
+      freePassConditions: [], notes: '特別無料開放は臨時告知される場合があります。公式のお知らせを確認してください。',
+      sourceName: '芦ノ湖スカイライン 公式サイト', sourceUrl: 'https://www.ashinoko-skyline.co.jp/', checkedAt: '2026-08-13',
+    },
+    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-13', isSeed: true,
   },
   {
     id: 'sample-izu',
@@ -39,13 +50,18 @@ export const sampleCourses: Course[] = [
     area: '熱海峠〜天城高原',
     prefecture: '静岡県',
     description: '伊豆半島の尾根を南北に結ぶロングコース。区間を選べ、連続するカーブと高原の展望を楽しめます。',
-    route: [[139.037, 35.105], [139.041, 35.076], [139.0505, 35.043], [139.038, 35.005], [139.019, 34.965], [139.003, 34.924]],
-    distanceKm: 40.6, durationMin: 60, minElevation: 575, maxElevation: 798,
+    route: izuRoute,
+    distanceKm: 44.2, durationMin: 60, minElevation: 575, maxElevation: 798,
     elevationProfile: [650, 708, 682, 754, 720, 798, 740, 695, 760, 622, 575],
     ratings: { curves: 4.8, elevation: 4.4, width: 4.2, scenery: 4.8, surface: 4.1, traffic: 3.9, access: 3.5 },
     ratingCount: 214, tags: ['ロング', '高原', '有料道路'],
     cautions: ['天候の急変と霧に注意してください', '入口・出口の営業時間を確認してください'],
-    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-12', isSeed: true,
+    tollInfo: {
+      type: 'toll', standardFee: '車種・利用区間別（公式料金表を確認）', hours: '料金所営業時間あり',
+      freePassConditions: [], notes: '災害・工事等による無料措置は臨時情報として発表される場合があります。',
+      sourceName: '静岡県道路公社 伊豆スカイライン', sourceUrl: 'https://siz-road.or.jp/road/izusk/', checkedAt: '2026-08-13',
+    },
+    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-13', isSeed: true,
   },
   {
     id: 'sample-okutama',
@@ -53,12 +69,17 @@ export const sampleCourses: Course[] = [
     area: '川野〜都民の森',
     prefecture: '東京都',
     description: '奥多摩湖と山深い景色を結ぶ都内屈指の山岳道路。標高差と多彩なカーブが特徴です。',
-    route: [[139.047, 35.781], [139.032, 35.764], [139.028, 35.744], [139.041, 35.724], [139.054, 35.704], [139.069, 35.684]],
-    distanceKm: 19.7, durationMin: 36, minElevation: 540, maxElevation: 1146,
+    route: okutamaRoute,
+    distanceKm: 14.3, durationMin: 30, minElevation: 540, maxElevation: 1146,
     elevationProfile: [540, 620, 758, 890, 1020, 1146, 1080, 994],
     ratings: { curves: 4.8, elevation: 4.7, width: 3.6, scenery: 4.5, surface: 3.8, traffic: 3.1, access: 3.6 },
     ratingCount: 181, tags: ['山岳', '奥多摩湖', '無料'],
     cautions: ['夜間・季節・天候による通行規制を東京都の公式情報で確認してください', '自転車や野生動物に注意してください'],
-    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-12', isSeed: true,
+    tollInfo: {
+      type: 'free', standardFee: '無料', hours: '通行可能時間・夜間閉鎖あり', freePassConditions: ['常時無料（通行可能時間内）'],
+      notes: '料金は不要ですが、夜間や異常気象時は通行できません。',
+      sourceName: '東京都建設局 道路情報', sourceUrl: 'https://www.kensetsu.metro.tokyo.lg.jp/', checkedAt: '2026-08-13',
+    },
+    visibility: 'public', authorId: 'editorial', authorName: '峠編集部', updatedAt: '2026-08-13', isSeed: true,
   },
 ]

@@ -93,3 +93,15 @@ export async function saveRating(rating: RatingSubmission, user: User): Promise<
     updatedAt: serverTimestamp(),
   })
 }
+
+export async function submitTollReport(courseId: string, report: { fee: string; freeCondition: string; applicableTime: string; sourceUrl: string; observedAt: string }, user: User): Promise<void> {
+  await addDoc(collection(db, 'reports'), {
+    type: 'toll-info',
+    courseId,
+    ...report,
+    authorId: user.uid,
+    authorName: user.displayName ?? 'ドライバー',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  })
+}

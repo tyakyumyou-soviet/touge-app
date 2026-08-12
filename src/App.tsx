@@ -6,9 +6,12 @@ import { CourseDetail } from './components/CourseDetail'
 import { CourseForm } from './components/CourseForm'
 import { RatingForm } from './components/RatingForm'
 import { InstallPrompt } from './components/InstallPrompt'
+import { Course3DView } from './components/Course3DView'
+import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { sampleCourses } from './data/courses'
-import { approximateElevationProfile, emptyRatings, routeDistanceKm } from './lib/course'
-import { auth, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating } from './lib/firebase'
+import { approximateElevationProfile, emptyRatings } from './lib/course'
+import { auth, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
+import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, RatingSubmission } from './types'
 import './styles.css'
 
@@ -27,6 +30,8 @@ export default function App() {
   const [drawing, setDrawing] = useState(false)
   const [draftRoute, setDraftRoute] = useState<Coordinate[]>([])
   const [ratingOpen, setRatingOpen] = useState(false)
+  const [course3dOpen, setCourse3dOpen] = useState(false)
+  const [tollReportOpen, setTollReportOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [listOpen, setListOpen] = useState(true)
 
@@ -84,12 +89,13 @@ export default function App() {
   async function handleCreate(draft: CourseDraft) {
     const activeUser = auth.currentUser
     if (!activeUser) throw new Error('Authentication required')
-    const elevation = approximateElevationProfile(draft.route)
-    const distance = Number(routeDistanceKm(draft.route).toFixed(1))
+    const routed = await routeAlongRoads(draft.route)
+    const elevation = approximateElevationProfile(routed.route)
     const data: Omit<Course, 'id'> = {
       ...draft,
-      distanceKm: distance,
-      durationMin: Math.max(5, Math.round(distance * 1.75)),
+      route: routed.route,
+      distanceKm: routed.distanceKm,
+      durationMin: routed.durationMin,
       minElevation: Math.min(...elevation),
       maxElevation: Math.max(...elevation),
       elevationProfile: elevation,
@@ -102,6 +108,13 @@ export default function App() {
     const id = await createCourse(data)
     const created = { id, ...data }
     setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setNotice('コースを保存しました')
+  }
+
+  async function handleTollReport(report: TollReport) {
+    if (!selected) return
+    if (!user) { await handleLogin(); if (!auth.currentUser) throw new Error('Login required') }
+    await submitTollReport(selected.id, report, auth.currentUser!)
+    setNotice('料金情報を受け付けました。確認後に反映します。')
   }
 
   async function handleRating(rating: RatingSubmission) {
@@ -147,9 +160,11 @@ export default function App() {
           <button className="mobile-list" onClick={() => setListOpen(true)}>☰ コース一覧</button>
         </div>
 
-        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} />}
+        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} />}
         {drawing && <CourseForm route={draftRoute} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onCancel={() => { setDrawing(false); setDraftRoute([]) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
+        {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} />}
+        {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
       </main>
       {notice && <div className="notice" role="status">{notice}</div>}
       <InstallPrompt />

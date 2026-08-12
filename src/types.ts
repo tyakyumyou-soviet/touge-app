@@ -11,6 +11,17 @@ export type RatingKey =
 
 export type Ratings = Record<RatingKey, number>
 
+export interface TollInfo {
+  type: 'toll' | 'free'
+  standardFee?: string
+  hours?: string
+  freePassConditions: string[]
+  notes?: string
+  sourceName: string
+  sourceUrl: string
+  checkedAt: string
+}
+
 export interface Course {
   id: string
   name: string
@@ -27,6 +38,7 @@ export interface Course {
   ratingCount: number
   tags: string[]
   cautions: string[]
+  tollInfo?: TollInfo
   visibility: 'public' | 'limited' | 'private'
   authorId: string
   authorName: string

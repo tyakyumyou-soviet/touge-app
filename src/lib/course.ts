@@ -31,7 +31,11 @@ export function googleMapsUrl(course: Course, includeCurrentLocation: boolean): 
   if (!includeCurrentLocation) params.set('origin', format(route[0]))
   params.set('destination', format(route.at(-1)!))
   const via = includeCurrentLocation ? route.slice(0, -1) : route.slice(1, -1)
-  if (via.length) params.set('waypoints', via.slice(0, 8).map(format).join('|'))
+  if (via.length) {
+    const count = Math.min(8, via.length)
+    const sampled = Array.from({ length: count }, (_, index) => via[Math.round((index / Math.max(1, count - 1)) * (via.length - 1))])
+    params.set('waypoints', sampled.map(format).join('|'))
+  }
   return `https://www.google.com/maps/dir/?${params.toString()}`
 }
 

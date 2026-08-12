@@ -54,8 +54,11 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
       })
       map.addLayer({
         id: 'courses-line', type: 'line', source: 'courses',
-        paint: { 'line-color': '#f2d16b', 'line-width': 4 },
+        paint: { 'line-color': '#d69f35', 'line-width': 3.5 },
       })
+      map.addSource('selected-course', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
+      map.addLayer({ id: 'selected-glow', type: 'line', source: 'selected-course', paint: { 'line-color': '#101915', 'line-width': 12, 'line-opacity': .58 } })
+      map.addLayer({ id: 'selected-line', type: 'line', source: 'selected-course', paint: { 'line-color': '#f2d16b', 'line-width': 6 } })
       map.addSource('draft', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
       map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
       map.addSource('terrain-dem', {
@@ -98,7 +101,10 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !selected) return
+    if (!map?.isStyleLoaded()) return
+    const source = map.getSource('selected-course') as GeoJSONSource | undefined
+    source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected?.route ?? [] } })
+    if (!selected) return
     const bounds = selected.route.reduce(
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),

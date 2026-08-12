@@ -16,5 +16,11 @@ describe('course helpers', () => {
     expect(url).toContain('google.com/maps/dir')
     expect(url).toContain('origin=')
     expect(url).toContain('destination=')
+    expect(new URL(url).searchParams.get('waypoints')?.split('|')).toHaveLength(8)
+  })
+
+  it('ships detailed road-following geometries', () => {
+    expect(sampleCourses.every((course) => course.route.length > 100)).toBe(true)
+    expect(sampleCourses[0].route.length).toBeGreaterThan(200)
   })
 })

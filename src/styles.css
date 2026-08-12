@@ -90,6 +90,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .hero-metrics .score { color: #fff; background: var(--green); }
 .hero-metrics .score span { color: #cce7db; }
 .description { margin: 16px 0; color: #46514b; font-size: 13px; line-height: 1.8; }
+.three-d-cta { width: 100%; display: grid; grid-template-columns: 47px 1fr 22px; align-items: center; gap: 12px; padding: 11px 13px; color: #fff; text-align: left; background: linear-gradient(120deg, #12241b, #285f48); border: 0; border-radius: 10px; }
+.three-d-cta > span { display: grid; place-items: center; width: 44px; height: 38px; color: var(--yellow); background: #ffffff12; border: 1px solid #ffffff25; border-radius: 7px; font-weight: 800; }
+.three-d-cta div { display: grid; gap: 2px; }
+.three-d-cta small { color: #bcd3c8; font-size: 9px; font-weight: 500; }
+.three-d-cta > b { color: var(--yellow); font-size: 20px; }
 .elevation-chart { position: relative; height: 125px; margin: 15px 0 21px; padding: 9px 9px 0 38px; background: #eef3ed; border-radius: 9px; overflow: hidden; }
 .elevation-chart svg { width: 100%; height: 100%; }
 .chart-labels { position: absolute; inset: 8px auto 8px 8px; display: flex; flex-direction: column; justify-content: space-between; color: #69736d; font-size: 8px; }
@@ -108,6 +113,16 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .caution-box h3 { margin: 0 0 7px; font-size: 12px; }
 .caution-box ul { margin: 0 0 8px; padding-left: 18px; font-size: 10px; line-height: 1.6; }
 .caution-box small { font-size: 8px; }
+.toll-box { margin: 16px 0; padding: 14px; background: #edf3ee; border: 1px solid #c9d8ce; border-radius: 9px; }
+.toll-box.toll { background: #f3efe2; border-color: #dcd0ac; }
+.toll-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.toll-title h3 { margin: 0; font-size: 13px; }
+.toll-title span { padding: 4px 7px; color: #70550a; background: #f2d16b77; border-radius: 4px; font-size: 9px; font-weight: 700; }
+.toll-box p { margin: 5px 0; color: #4c564f; font-size: 10px; line-height: 1.55; }
+.toll-box footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 9px; }
+.toll-box a { color: #286c51; font-size: 10px; font-weight: 700; }
+.toll-box small { color: #778079; font-size: 8px; }
+.toll-box > button { margin-top: 10px; padding: 7px 10px; color: #3e5549; background: #fff; border: 1px solid #c7cec9; border-radius: 6px; font-size: 9px; font-weight: 700; }
 .secondary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
 .secondary-actions button { padding: 9px; color: #3d4a43; background: transparent; border: 1px solid #cfd3cf; border-radius: 8px; font-size: 11px; font-weight: 600; }
 .nav-actions { display: grid; grid-template-columns: .85fr 1.15fr; gap: 8px; padding: 13px 18px; background: #fff; border-top: 1px solid var(--line); }
@@ -138,6 +153,23 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .rating-inputs { display: grid; gap: 7px; margin: 16px 0; }
 .rating-inputs label { grid-template-columns: 70px 1fr 25px; align-items: center; }
 .rating-inputs input { accent-color: var(--green); }
+
+.three-d-modal { position: fixed; z-index: 90; inset: 0; color: #fff; background: var(--ink); }
+.three-d-map { position: absolute; inset: 0; }
+.three-d-header { position: absolute; z-index: 2; top: 20px; left: 20px; display: flex; align-items: start; gap: 24px; padding: 15px 17px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 12px; box-shadow: 0 12px 35px #0005; backdrop-filter: blur(8px); }
+.three-d-header h2 { margin: 0 0 4px; font-size: 22px; }
+.three-d-header > div > span { color: #aebdb5; font-size: 9px; }
+.three-d-header .icon-button { color: #fff; background: #ffffff17; }
+.three-d-controls { position: absolute; z-index: 2; left: 20px; bottom: 52px; display: flex; align-items: center; gap: 12px; padding: 11px 13px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 10px; backdrop-filter: blur(8px); }
+.three-d-controls label { display: flex; align-items: center; gap: 8px; font-size: 10px; }
+.three-d-controls input { width: 110px; accent-color: var(--yellow); }
+.three-d-controls button { padding: 7px 10px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; }
+.three-d-legend { position: absolute; z-index: 2; right: 20px; bottom: 20px; display: flex; align-items: center; gap: 13px; padding: 10px 13px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 9px; font-size: 9px; }
+.three-d-legend span { display: flex; align-items: center; gap: 5px; }
+.three-d-legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); }
+.three-d-legend i.start { background: #2d9b6c; }
+.three-d-legend i.goal { background: #d3523c; }
+.three-d-legend i.route { width: 20px; height: 4px; border-radius: 2px; }
 
 .notice, .update-toast { position: fixed; z-index: 80; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 12px 17px; color: #fff; background: var(--ink); border: 1px solid #415047; border-radius: 10px; box-shadow: 0 10px 40px #0005; font-size: 12px; }
 .update-toast { display: flex; align-items: center; gap: 10px; }
@@ -189,6 +221,13 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .wide { grid-column: auto; }
   .notice { width: calc(100% - 24px); bottom: 12px; text-align: center; }
+  .three-d-header { top: 8px; left: 8px; right: 8px; justify-content: space-between; padding: 11px 12px; }
+  .three-d-header h2 { font-size: 18px; }
+  .three-d-header > div > span { display: none; }
+  .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
+  .three-d-controls input { width: 80px; }
+  .three-d-legend { right: 8px; top: 92px; bottom: auto; }
+  .three-d-legend span { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
