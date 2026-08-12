@@ -72,6 +72,10 @@ Firebase CLIで未ログインの場合は、先に `npx firebase-tools login` �
 
 SPAのフォールバック、Service Workerのキャッシュ制御、静的アセットの長期キャッシュも`netlify.toml`に設定済みです。GitHub Pagesは使用しません。
 
+### PWAの復旧
+
+インストール版が起動できない場合、起動画面の「キャッシュを初期化」を選ぶと、Service Worker、Cache Storage、Firebaseのローカルデータを削除して最新版を取得します。この操作ではローカルのログイン状態や未同期データも削除される可能性があります。通常の更新では、Service Workerが新しいリリースを検知して自動的に切り替わります。
+
 ## データについて
 
 初期コース形状はOpenStreetMapベースの道路ルーティングから生成し、リポジトリへ静的データとして収録しています。`node scripts/update-osm-routes.mjs`で再生成できます。新規コースの道路ルーティングは、既定ではOSRM公開サーバーを使用します。本格運用時は自前OSRM等を用意し、`VITE_ROUTING_API_URL`で切り替えてください。

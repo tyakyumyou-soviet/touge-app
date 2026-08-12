@@ -2,6 +2,18 @@
 
 このプロジェクトの主な変更はこのファイルに記録します。バージョン番号はSemantic Versioningに従います。
 
+## [1.1.1] - 2026-08-13
+
+### Fixed
+
+- インストール済みPWAで古いHTMLと新しいJSが混在しないようService Workerを即時更新
+- 古いWorkboxキャッシュを自動削除
+- React起動前の読込エラーでも復旧画面を表示
+- Service Worker、Cache Storage、Firebase IndexedDBを初期化できる修復操作を追加
+- WebGL非対応・初期化失敗時にアプリ全体を落とさず地図部分だけ案内表示
+- オフライン状態とPWA登録失敗を画面に表示
+- Netlifyで古いJSが見つからない場合にHTMLを誤配信せず、復旧可能な404を返すよう修正
+
 ## [1.1.0] - 2026-08-13
 
 ### Added

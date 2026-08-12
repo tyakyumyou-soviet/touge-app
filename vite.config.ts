@@ -18,17 +18,19 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg', 'icons/maskable.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'],
       manifest: {
         name: '峠 — Touge Drive Explorer',
         short_name: '峠',
+        id: '/',
         description: 'カーブ、高低差、道幅から走って楽しい峠道を探すドライブアプリ',
         lang: 'ja',
         theme_color: '#101915',
         background_color: '#f3f1e8',
         display: 'standalone',
         orientation: 'any',
+        categories: ['navigation', 'travel'],
         scope: '/',
         start_url: '/',
         icons: [
@@ -39,12 +41,17 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: 'index.html',
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        navigationPreload: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/(tiles\.openfreemap\.org|demotiles\.maplibre\.org)\//,
-            handler: 'CacheFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'map-tiles',
+              cacheableResponse: { statuses: [0, 200] },
               expiration: { maxEntries: 240, maxAgeSeconds: 60 * 60 * 24 * 7 }
             }
           },
@@ -53,7 +60,17 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'terrain-tiles',
+              cacheableResponse: { statuses: [0, 200] },
               expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 7 }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'web-fonts',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 }
             }
           }
         ]

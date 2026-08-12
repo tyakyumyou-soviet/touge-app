@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Coordinate, Course } from '../types'
+import { supportsWebGL } from '../lib/webgl'
 
 interface MapViewProps {
   courses: Course[]
@@ -27,21 +28,29 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
   const drawingRef = useRef(drawing)
+  const [mapError, setMapError] = useState('')
 
   useEffect(() => { coursesRef.current = courses }, [courses])
   useEffect(() => { drawingRef.current = drawing }, [drawing])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [139.03, 35.22],
-      zoom: 8.2,
-      pitch: 0,
-      maxPitch: 85,
-      attributionControl: false,
-    })
+    if (!supportsWebGL()) { setMapError('この端末では3D地図を表示できません。コース一覧と詳細情報は引き続き利用できます。'); return }
+    let map: MapLibreMap
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        center: [139.03, 35.22],
+        zoom: 8.2,
+        pitch: 0,
+        maxPitch: 85,
+        attributionControl: false,
+      })
+    } catch {
+      setMapError('地図を初期化できませんでした。端末のWebGL設定を確認してください。')
+      return
+    }
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right')
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
@@ -119,5 +128,6 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
     map.easeTo({ pitch: is3d ? 68 : 0, bearing: is3d ? -18 : 0, duration: 900 })
   }, [is3d])
 
+  if (mapError) return <div className="map map-fallback" role="status"><div><strong>地図を表示できません</strong><p>{mapError}</p><button onClick={() => location.reload()}>再読み込み</button></div></div>
   return <div ref={containerRef} className="map" aria-label="峠コース地図" />
 }

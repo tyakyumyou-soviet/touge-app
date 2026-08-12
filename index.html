@@ -8,9 +8,21 @@
     <link rel="icon" href="/icons/icon.svg" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>峠 — Touge Drive Explorer</title>
+    <style>
+      #boot-screen{position:fixed;inset:0;display:grid;place-items:center;padding:24px;color:#101915;background:#f3f1e8;font-family:system-ui,sans-serif;text-align:center}#boot-screen .boot-card{max-width:480px}#boot-screen img{width:72px;height:72px;border-radius:18px}#boot-screen h1{margin:14px 0 8px}#boot-screen p{line-height:1.7;color:#536059}#boot-screen .boot-error{display:none}#boot-screen.failed .boot-loading{display:none}#boot-screen.failed .boot-error{display:block}#boot-screen button{margin:5px;padding:12px 16px;border:1px solid #9aa59f;border-radius:8px;background:#fff;font-weight:700}#boot-screen button.primary{border-color:#d1ad39;background:#f2d16b}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="boot-screen"><div class="boot-card"><img src="/icons/icon-192.png" alt=""><div class="boot-loading"><h1>峠appを起動中</h1><p>地図と保存済みコースを準備しています…</p></div><div class="boot-error"><h1>アプリを起動できませんでした</h1><p id="boot-error-message">古いアプリデータが残っている可能性があります。</p><button class="primary" onclick="location.reload()">もう一度試す</button><button onclick="window.resetTougeApp()">キャッシュを初期化</button></div></div></div></div>
+    <script>
+      window.__tougeReady=false;
+      window.__tougeMarkReady=function(){window.__tougeReady=true};
+      window.__tougeShowBootError=function(message){if(window.__tougeReady)return;var screen=document.getElementById('boot-screen');var text=document.getElementById('boot-error-message');if(text&&message)text.textContent=message;if(screen)screen.classList.add('failed')};
+      window.resetTougeApp=async function(){try{if('serviceWorker'in navigator){var registrations=await navigator.serviceWorker.getRegistrations();await Promise.all(registrations.map(function(item){return item.unregister()}))}if('caches'in window){var keys=await caches.keys();await Promise.all(keys.map(function(key){return caches.delete(key)}))}if('indexedDB'in window){var dbNames=['firebaseLocalStorageDb'];if(indexedDB.databases){var databases=await indexedDB.databases();databases.forEach(function(db){if(db.name&&(db.name.includes('firestore')||db.name.includes('firebase')))dbNames.push(db.name)})}await Promise.all(Array.from(new Set(dbNames)).map(function(name){return new Promise(function(resolve){var request=indexedDB.deleteDatabase(name);request.onsuccess=request.onerror=request.onblocked=function(){resolve()}})}))}}finally{location.reload()}};
+      window.addEventListener('error',function(event){window.__tougeShowBootError('必要なファイルを読み込めませんでした。キャッシュを初期化して再起動してください。')});
+      window.addEventListener('unhandledrejection',function(){window.__tougeShowBootError('起動処理を完了できませんでした。通信状態を確認するか、キャッシュを初期化してください。')});
+      setTimeout(function(){window.__tougeShowBootError('起動に時間がかかっています。オフラインの場合は一度オンラインで起動してください。')},12000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

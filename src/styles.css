@@ -45,6 +45,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 main { position: relative; height: calc(100% - 72px); }
 .map { position: absolute; inset: 0; background: #d6ddd4; }
+.map-fallback { display: grid; place-items: center; padding: 30px; text-align: center; }
+.map-fallback > div { max-width: 390px; padding: 24px; background: #f7f5ed; border: 1px solid #cfd6d0; border-radius: 12px; box-shadow: 0 12px 40px #17231c24; }
+.map-fallback strong { font-size: 18px; }
+.map-fallback p { margin: 9px 0 16px; color: #5f6c64; line-height: 1.6; }
+.map-fallback button, .three-d-error button { padding: 9px 13px; background: var(--yellow); border: 0; border-radius: 7px; font-weight: 700; }
 .maplibregl-ctrl-top-right { top: 64px; right: 20px; }
 .maplibregl-ctrl-group { box-shadow: 0 5px 18px #17231c30 !important; border-radius: 10px !important; overflow: hidden; }
 
@@ -156,6 +161,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 
 .three-d-modal { position: fixed; z-index: 90; inset: 0; color: #fff; background: var(--ink); }
 .three-d-map { position: absolute; inset: 0; }
+.three-d-error { position: absolute; z-index: 4; inset: 0; display: grid; place-content: center; padding: 30px; color: #fff; background: #101915; text-align: center; }
+.three-d-error p { color: #bac8c0; }
 .three-d-header { position: absolute; z-index: 2; top: 20px; left: 20px; display: flex; align-items: start; gap: 24px; padding: 15px 17px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 12px; box-shadow: 0 12px 35px #0005; backdrop-filter: blur(8px); }
 .three-d-header h2 { margin: 0 0 4px; font-size: 22px; }
 .three-d-header > div > span { color: #aebdb5; font-size: 9px; }
@@ -174,6 +181,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .notice, .update-toast { position: fixed; z-index: 80; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 12px 17px; color: #fff; background: var(--ink); border: 1px solid #415047; border-radius: 10px; box-shadow: 0 10px 40px #0005; font-size: 12px; }
 .update-toast { display: flex; align-items: center; gap: 10px; }
 .update-toast button { color: var(--yellow); background: none; border: 0; font-weight: 700; }
+.update-toast.warning { border-color: #c77756; }
 
 @media (max-width: 1040px) {
   .brand { min-width: auto; }

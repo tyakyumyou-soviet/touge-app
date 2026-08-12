@@ -19,7 +19,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
       <main style={{ minHeight: '100vh', padding: '32px', background: '#f3f1e8', color: '#101915', fontFamily: 'sans-serif' }}>
         <h1>峠appを読み込めませんでした</h1>
         <p>ページを再読み込みしてください。解決しない場合は、ブラウザのキャッシュを削除してからもう一度お試しください。</p>
-        <button onClick={() => location.reload()} style={{ padding: '12px 18px' }}>再読み込み</button>
+        <button onClick={() => location.reload()} style={{ padding: '12px 18px', marginRight: '8px' }}>再読み込み</button>
+        <button onClick={() => window.resetTougeApp?.()} style={{ padding: '12px 18px' }}>キャッシュを初期化</button>
         <details style={{ marginTop: '24px' }}><summary>技術情報</summary><pre>{this.state.error.message}</pre></details>
       </main>
     )

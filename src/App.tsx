@@ -36,6 +36,7 @@ export default function App() {
   const [listOpen, setListOpen] = useState(true)
 
   useEffect(() => onAuthStateChanged(auth, setUser), [])
+  useEffect(() => { window.__tougeMarkReady?.() }, [])
   useEffect(() => {
     loadPublicCourses().then((remote) => {
       if (remote.length) {

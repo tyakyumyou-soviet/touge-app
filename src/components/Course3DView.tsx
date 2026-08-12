@@ -1,24 +1,30 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl'
 import type { Course } from '../types'
+import { supportsWebGL } from '../lib/webgl'
 
 export function Course3DView({ course, onClose }: { course: Course; onClose: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const [exaggeration, setExaggeration] = useState(1.5)
+  const [mapError, setMapError] = useState('')
 
   useEffect(() => {
     if (!containerRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: course.route[Math.floor(course.route.length / 2)],
-      zoom: 11,
-      pitch: 70,
-      bearing: -28,
-      maxPitch: 85,
-      attributionControl: false,
-    })
+    if (!supportsWebGL()) { setMapError('この端末ではWebGL地形を利用できません。'); return }
+    let map: MapLibreMap
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        center: course.route[Math.floor(course.route.length / 2)],
+        zoom: 11,
+        pitch: 70,
+        bearing: -28,
+        maxPitch: 85,
+        attributionControl: false,
+      })
+    } catch { setMapError('3D地図を初期化できませんでした。'); return }
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.addControl(new maplibregl.FullscreenControl(), 'top-right')
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
@@ -61,6 +67,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   return (
     <div className="three-d-modal" role="dialog" aria-modal="true" aria-labelledby="three-d-title">
       <div ref={containerRef} className="three-d-map" aria-label={`${course.name}の3D地形`} />
+      {mapError && <div className="three-d-error"><strong>3D表示を利用できません</strong><p>{mapError}</p><button onClick={onClose}>詳細へ戻る</button></div>}
       <header className="three-d-header"><div><p className="eyebrow">3D COURSE PREVIEW</p><h2 id="three-d-title">{course.name}</h2><span>ドラッグで回転 · 右ドラッグで傾斜 · スクロールでズーム</span></div><button className="icon-button" onClick={onClose} aria-label="3D表示を閉じる">×</button></header>
       <div className="three-d-controls">
         <label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label>
