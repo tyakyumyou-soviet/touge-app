@@ -60,14 +60,16 @@ npx firebase-tools deploy --only hosting
 
 Firebase CLIで未ログインの場合は、先に `npx firebase-tools login` が必要です。
 
-### GitHub Pages
+### Netlify
 
-GitHub OAuthの`workflow`権限に依存せず、ビルド済みサイトを`gh-pages`ブランチへ公開します。
+このリポジトリをNetlifyへ接続すると、[netlify.toml](./netlify.toml)の設定が自動的に使用されます。
 
-- 公開URL: https://tyakyumyou-soviet.github.io/touge-app/
-- GitHub Pages向けビルドではViteのベースパスが自動的に `/touge-app/` へ切り替わります。
-- `npm run deploy:pages`で`gh-pages`ブランチへ公開できます。
-- リポジトリの **Settings → Pages → Build and deployment** でSourceを **Deploy from a branch**、ブランチを **gh-pages / root** に設定してください。
+- Production branch: `main`
+- Build command: `npm run build`
+- Publish directory: `dist`
+- Node.js: `22`
+
+SPAのフォールバック、Service Workerのキャッシュ制御、静的アセットの長期キャッシュも`netlify.toml`に設定済みです。GitHub Pagesは使用しません。
 
 ## データについて
 
