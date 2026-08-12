@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { googleMapsUrl, overallRating, routeDistanceKm } from './course'
 import { sampleCourses } from '../data/courses'
+import { routeAudits } from '../data/routes.generated'
 
 describe('course helpers', () => {
   it('calculates a route length', () => {
@@ -22,5 +23,23 @@ describe('course helpers', () => {
   it('ships detailed road-following geometries', () => {
     expect(sampleCourses.every((course) => course.route.length > 100)).toBe(true)
     expect(sampleCourses[0].route.length).toBeGreaterThan(200)
+  })
+
+  it('ships only named-road geometries that passed the route audit', () => {
+    const expectedRanges = {
+      hakoneRoute: [11, 16],
+      ashinokoRoute: [8, 12],
+      izuRoute: [38, 44],
+      okutamaRoute: [15, 17],
+    } as const
+
+    expect(routeAudits).toHaveLength(sampleCourses.length)
+    for (const audit of routeAudits) {
+      const [minimum, maximum] = expectedRanges[audit.key]
+      expect(audit.distanceKm).toBeGreaterThanOrEqual(minimum)
+      expect(audit.distanceKm).toBeLessThanOrEqual(maximum)
+      expect(audit.wayIds.length).toBeGreaterThan(0)
+    }
+    expect(routeAudits.find(({ key }) => key === 'izuRoute')?.wayIds.length).toBeGreaterThanOrEqual(20)
   })
 })
