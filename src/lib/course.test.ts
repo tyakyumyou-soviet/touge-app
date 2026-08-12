@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { googleMapsUrl, overallRating, routeDistanceKm } from './course'
+import { combinedRatings, googleMapsUrl, overallRating, routeDistanceKm } from './course'
 import { sampleCourses } from '../data/courses'
 import { routeAudits } from '../data/routes.generated'
 
@@ -41,5 +41,11 @@ describe('course helpers', () => {
       expect(audit.wayIds.length).toBeGreaterThan(0)
     }
     expect(routeAudits.find(({ key }) => key === 'izuRoute')?.wayIds.length).toBeGreaterThanOrEqual(20)
+  })
+
+  it('keeps system scores separate from real user review counts', () => {
+    expect(sampleCourses.every((course) => course.ratingCount === 0)).toBe(true)
+    const course = { ...sampleCourses[0], userRatings: { curves: 2, elevation: 2, width: 2, scenery: 2, surface: 2, traffic: 2, access: 2 }, ratingCount: 1 }
+    expect(overallRating(combinedRatings(course))).toBeLessThan(overallRating(course.systemRatings!))
   })
 })

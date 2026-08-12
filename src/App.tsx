@@ -9,7 +9,7 @@ import { InstallPrompt } from './components/InstallPrompt'
 import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { sampleCourses } from './data/courses'
-import { approximateElevationProfile, emptyRatings } from './lib/course'
+import { addUserRating, approximateElevationProfile, estimateSystemRatings } from './lib/course'
 import { auth, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, RatingSubmission } from './types'
@@ -92,6 +92,7 @@ export default function App() {
     if (!activeUser) throw new Error('Authentication required')
     const routed = await routeAlongRoads(draft.route)
     const elevation = approximateElevationProfile(routed.route)
+    const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const data: Omit<Course, 'id'> = {
       ...draft,
       route: routed.route,
@@ -100,8 +101,11 @@ export default function App() {
       minElevation: Math.min(...elevation),
       maxElevation: Math.max(...elevation),
       elevationProfile: elevation,
-      ratings: emptyRatings(0),
+      ratings: systemRatings,
+      systemRatings,
       ratingCount: 0,
+      systemRatingSource: ['道路形状・曲率（道路ルーティング）', '標高・高低差（地形データ）', '登録タグ・公開情報'],
+      systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
       authorId: activeUser.uid,
       authorName: activeUser.displayName ?? 'ドライバー',
       updatedAt: new Date().toISOString().slice(0, 10),
@@ -121,6 +125,8 @@ export default function App() {
   async function handleRating(rating: RatingSubmission) {
     if (!user) { await handleLogin(); throw new Error('Login required') }
     await saveRating(rating, user)
+    setCourses((items) => items.map((course) => course.id === rating.courseId ? addUserRating(course, rating) : course))
+    setSelected((course) => course && course.id === rating.courseId ? addUserRating(course, rating) : course)
     setNotice('評価を投稿しました。集計への反映には時間がかかる場合があります。')
   }
 

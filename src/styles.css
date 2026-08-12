@@ -71,6 +71,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-card-top b { color: #835e03; }
 .course-card h3 { margin: 6px 0 10px; font-size: 17px; }
 .mini-metrics { display: flex; gap: 13px; color: #525d57; font-size: 11px; }
+.user-rating-count { display: block; margin-top: 8px; color: #7a847e; font-size: 10px; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
 .tag-row span { padding: 4px 8px; color: #2e6952; background: #e8f2eb; border-radius: 4px; font-size: 10px; font-weight: 600; }
 .empty-state { display: grid; gap: 7px; padding: 40px 15px; color: #6c756f; text-align: center; }
@@ -105,6 +106,13 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .chart-labels { position: absolute; inset: 8px auto 8px 8px; display: flex; flex-direction: column; justify-content: space-between; color: #69736d; font-size: 8px; }
 .chart-labels span:nth-child(2) { position: absolute; left: 40px; top: 5px; width: 140px; color: #34735a; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .rating-bars { display: grid; grid-template-columns: 72px 1fr; gap: 15px; margin: 9px 0 20px; }
+.rating-summary { margin: 16px 0 20px; padding-top: 13px; border-top: 1px solid var(--line); }
+.rating-summary-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.rating-summary-head strong { font-size: 13px; }
+.rating-summary-head span, .rating-provenance, .rating-source { color: #758079; font-size: 9px; line-height: 1.5; }
+.rating-provenance { display: flex; justify-content: space-between; gap: 8px; margin-top: -11px; }
+.rating-empty { margin: 9px 0 0; padding: 8px 10px; color: #56655d; background: #edf3ee; border-radius: 6px; font-size: 10px; line-height: 1.5; }
+.rating-source { margin: 8px 0 0; }
 .overall-score { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; background: var(--ink); border-radius: 10px; }
 .overall-score strong { font-size: 28px; color: var(--yellow); }
 .overall-score span { font-size: 8px; }

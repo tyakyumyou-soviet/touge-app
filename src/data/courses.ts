@@ -15,7 +15,8 @@ export const sampleCourses: Course[] = [
     maxElevation: 1011,
     elevationProfile: [85, 171, 305, 422, 548, 682, 801, 910, 1011],
     ratings: { curves: 4.4, elevation: 4.8, width: 4.7, scenery: 4.6, surface: 4.5, traffic: 3.5, access: 4.3 },
-    ratingCount: 128,
+    systemRatings: { curves: 4.4, elevation: 4.8, width: 4.7, scenery: 4.6, surface: 4.5, traffic: 3.5, access: 4.3 },
+    ratingCount: 0, systemRatingSource: ['道路幅員・道路種別（OpenStreetMap）', '標高・高低差（地形データ）', '有料道路・景観の公開情報'], systemRatingUpdatedAt: '2026-08-13',
     tags: ['ワイド', '展望', '有料道路'],
     cautions: ['料金・営業時間・通行規制を公式情報で確認してください', '霧や強風時は視界に注意してください'],
     tollInfo: {
@@ -35,7 +36,8 @@ export const sampleCourses: Course[] = [
     distanceKm: 9.1, durationMin: 20, minElevation: 846, maxElevation: 1030,
     elevationProfile: [846, 930, 966, 916, 1003, 948, 1030],
     ratings: { curves: 4.6, elevation: 4.2, width: 4.1, scenery: 4.9, surface: 4.2, traffic: 4.0, access: 3.8 },
-    ratingCount: 96, tags: ['富士山', '尾根道', '有料道路'],
+    systemRatings: { curves: 4.6, elevation: 4.2, width: 4.1, scenery: 4.9, surface: 4.2, traffic: 4.0, access: 3.8 },
+    ratingCount: 0, systemRatingSource: ['道路幅員・道路種別（OpenStreetMap）', '標高・高低差（地形データ）', '公式道路情報・景観の公開情報'], systemRatingUpdatedAt: '2026-08-13', tags: ['富士山', '尾根道', '有料道路'],
     cautions: ['二輪車通行規制や営業時間を公式情報で確認してください'],
     tollInfo: {
       type: 'toll', standardFee: '車種・区間別（公式料金表を確認）', hours: '営業時間制',
@@ -54,7 +56,8 @@ export const sampleCourses: Course[] = [
     distanceKm: 40.6, durationMin: 60, minElevation: 575, maxElevation: 798,
     elevationProfile: [650, 708, 682, 754, 720, 798, 740, 695, 760, 622, 575],
     ratings: { curves: 4.8, elevation: 4.4, width: 4.2, scenery: 4.8, surface: 4.1, traffic: 3.9, access: 3.5 },
-    ratingCount: 214, tags: ['ロング', '高原', '有料道路'],
+    systemRatings: { curves: 4.8, elevation: 4.4, width: 4.2, scenery: 4.8, surface: 4.1, traffic: 3.9, access: 3.5 },
+    ratingCount: 0, systemRatingSource: ['道路幅員・道路種別（OpenStreetMap）', '標高・高低差（地形データ）', '静岡県道路公社・景観の公開情報'], systemRatingUpdatedAt: '2026-08-13', tags: ['ロング', '高原', '有料道路'],
     cautions: ['天候の急変と霧に注意してください', '入口・出口の営業時間を確認してください'],
     tollInfo: {
       type: 'toll', standardFee: '車種・利用区間別（公式料金表を確認）', hours: '料金所営業時間あり',
@@ -73,7 +76,8 @@ export const sampleCourses: Course[] = [
     distanceKm: 16.0, durationMin: 30, minElevation: 540, maxElevation: 1146,
     elevationProfile: [540, 620, 758, 890, 1020, 1146, 1080, 994],
     ratings: { curves: 4.8, elevation: 4.7, width: 3.6, scenery: 4.5, surface: 3.8, traffic: 3.1, access: 3.6 },
-    ratingCount: 181, tags: ['山岳', '奥多摩湖', '無料'],
+    systemRatings: { curves: 4.8, elevation: 4.7, width: 3.6, scenery: 4.5, surface: 3.8, traffic: 3.1, access: 3.6 },
+    ratingCount: 0, systemRatingSource: ['道路幅員・道路種別（OpenStreetMap）', '標高・高低差（地形データ）', '東京都道路情報・景観の公開情報'], systemRatingUpdatedAt: '2026-08-13', tags: ['山岳', '奥多摩湖', '無料'],
     cautions: ['夜間・季節・天候による通行規制を東京都の公式情報で確認してください', '自転車や野生動物に注意してください'],
     tollInfo: {
       type: 'free', standardFee: '無料', hours: '通行可能時間・夜間閉鎖あり', freePassConditions: ['常時無料（通行可能時間内）'],

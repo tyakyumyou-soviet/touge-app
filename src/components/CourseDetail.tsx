@@ -1,5 +1,5 @@
 import type { Course } from '../types'
-import { googleMapsUrl, overallRating } from '../lib/course'
+import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
 
@@ -13,6 +13,9 @@ interface Props {
 }
 
 export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll }: Props) {
+  const systemRatings = systemRatingsFor(course)
+  const mergedRatings = combinedRatings(course)
+  const userCount = userRatingCountFor(course)
   return (
     <article className="detail-panel" aria-label={`${course.name}の詳細`}>
       <div className="drag-handle" />
@@ -25,13 +28,19 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
           <div><strong>{course.distanceKm}</strong><span>km</span></div>
           <div><strong>{course.durationMin}</strong><span>分</span></div>
           <div><strong>{course.maxElevation - course.minElevation}</strong><span>m 高低差</span></div>
-          <div className="score"><strong>{overallRating(course.ratings)}</strong><span>{course.ratingCount}件</span></div>
+          <div className="score"><strong>{overallRating(mergedRatings)}</strong><span>総合評価</span></div>
         </div>
         <div className="tag-row">{course.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
         <p className="description">{course.description}</p>
         <button className="three-d-cta" onClick={onOpen3d}><span>3D</span><div><strong>立体コースビュー</strong><small>地形と高低差を俯瞰して確認</small></div><b>→</b></button>
         <ElevationChart values={course.elevationProfile} />
-        <RatingBars ratings={course.ratings} />
+        <section className="rating-summary" aria-label="評価の内訳">
+          <div className="rating-summary-head"><strong>総合評価 {overallRating(mergedRatings)}</strong><span>システム評価を基準にユーザー評価を反映</span></div>
+          <RatingBars ratings={mergedRatings} />
+          <div className="rating-provenance"><span>システム評価: {overallRating(systemRatings)} / 5</span><span>ユーザー評価: {userCount}件</span></div>
+          {userCount === 0 && <p className="rating-empty">ユーザー評価はまだありません。実際に走行した感想を最初に投稿できます。</p>}
+          {course.systemRatingSource?.length ? <p className="rating-source">算出根拠: {course.systemRatingSource.join('、')}（{course.systemRatingUpdatedAt ?? course.updatedAt}）</p> : null}
+        </section>
         {course.tollInfo && <section className={`toll-box ${course.tollInfo.type}`}>
           <div className="toll-title"><h3>{course.tollInfo.type === 'free' ? '無料道路' : '通行料金情報'}</h3><span>{course.tollInfo.standardFee}</span></div>
           {course.tollInfo.hours && <p><b>時間:</b> {course.tollInfo.hours}</p>}

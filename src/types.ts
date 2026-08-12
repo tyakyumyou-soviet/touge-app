@@ -35,7 +35,13 @@ export interface Course {
   maxElevation: number
   elevationProfile: number[]
   ratings: Ratings
+  /** System score calculated from public road, terrain and facility data. */
+  systemRatings?: Ratings
+  /** Average of actual user submissions, when available. */
+  userRatings?: Ratings
   ratingCount: number
+  systemRatingSource?: string[]
+  systemRatingUpdatedAt?: string
   tags: string[]
   cautions: string[]
   tollInfo?: TollInfo

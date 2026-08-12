@@ -24,7 +24,8 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import type { Course, RatingSubmission } from '../types'
+import { ratingLabels, type Course, type RatingKey, type RatingSubmission, type Ratings } from '../types'
+import { combinedRatings, userRatingAverage } from './course'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBXyb8s-ZAsfBUJyv_dMCgjl0Z8r0sSBGc',
@@ -65,9 +66,23 @@ export const logout = () => signOut(auth)
 
 export async function loadPublicCourses(): Promise<Course[]> {
   const snapshot = await getDocs(query(collection(db, 'courses'), where('visibility', '==', 'public')))
-  return snapshot.docs
-    .map((item) => ({ id: item.id, ...item.data() }) as Course)
-    .filter((course) => course.visibility === 'public')
+  return Promise.all(snapshot.docs
+    .map(async (item) => {
+      const raw = { id: item.id, ...item.data() } as Course
+      const systemRatings = raw.systemRatings ?? raw.ratings
+      const ratingSnapshot = await getDocs(collection(db, 'courses', item.id, 'ratings'))
+      const sums = Object.fromEntries(Object.keys(ratingLabels).map((key) => [key, 0])) as Ratings
+      for (const rating of ratingSnapshot.docs) {
+        const values = rating.data() as Partial<Record<RatingKey, unknown>>
+        for (const key of Object.keys(ratingLabels) as RatingKey[]) {
+          if (typeof values[key] === 'number') sums[key] += values[key] as number
+        }
+      }
+      const ratingCount = ratingSnapshot.size
+      const userRatings = ratingCount ? userRatingAverage(sums, ratingCount) : undefined
+      return { ...raw, systemRatings, userRatings, ratingCount, ratings: combinedRatings({ ...raw, systemRatings, userRatings, ratingCount }) }
+    }))
+    .then((items) => items.filter((course) => course.visibility === 'public'))
 }
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
