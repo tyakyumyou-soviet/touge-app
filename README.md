@@ -60,6 +60,14 @@ npx firebase-tools deploy --only hosting
 
 Firebase CLIで未ログインの場合は、先に `npx firebase-tools login` が必要です。
 
+### GitHub Pages
+
+`main`へのpush時にGitHub Actionsが自動でテスト・ビルド・公開します。
+
+- 公開URL: https://tyakyumyou-soviet.github.io/touge-app/
+- GitHub Pages向けビルドではViteのベースパスが自動的に `/touge-app/` へ切り替わります。
+- リポジトリの **Settings → Pages → Build and deployment** でSourceを **GitHub Actions** に設定してください。
+
 ## データについて
 
 初期コースはUI検証用の編集データです。距離、標高、道路状況、規制情報の正確性や最新性を保証するものではありません。実走前には現地標識、道路管理者、各道路の公式情報を確認してください。

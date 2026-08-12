@@ -2,7 +2,11 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const isGitHubPages = process.env.GITHUB_ACTIONS === 'true'
+const base = isGitHubPages ? '/touge-app/' : '/'
+
 export default defineConfig({
+  base,
   build: {
     rollupOptions: {
       output: {
@@ -23,20 +27,21 @@ export default defineConfig({
         name: '峠 — Touge Drive Explorer',
         short_name: '峠',
         description: 'カーブ、高低差、道幅から走って楽しい峠道を探すドライブアプリ',
+        lang: 'ja',
         theme_color: '#101915',
         background_color: '#f3f1e8',
         display: 'standalone',
         orientation: 'any',
-        scope: '/',
-        start_url: '/',
+        scope: base,
+        start_url: base,
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: `${base}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: `${base}icons/maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
-        navigateFallback: '/index.html',
+        navigateFallback: 'index.html',
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/(tiles\.openfreemap\.org|demotiles\.maplibre\.org)\//,

@@ -15,6 +15,7 @@ import './styles.css'
 type PrefectureFilter = 'すべて' | Course['prefecture']
 
 export default function App() {
+  const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
   const [courses, setCourses] = useState<Course[]>(sampleCourses)
   const [selected, setSelected] = useState<Course | null>(sampleCourses[0])
   const [search, setSearch] = useState('')
@@ -120,7 +121,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => { setListOpen(true); setSelected(null) }} aria-label="峠 ホーム">
-          <img src="/icons/icon.svg" alt="" /><span><b>峠</b><small>TOUGE EXPLORER</small></span>
+          <img src={asset('icons/icon.svg')} alt="" /><span><b>峠</b><small>TOUGE EXPLORER</small></span>
         </button>
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="峠・エリア・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
