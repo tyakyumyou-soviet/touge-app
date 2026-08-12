@@ -34,6 +34,7 @@ export default function App() {
   const [tollReportOpen, setTollReportOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [listOpen, setListOpen] = useState(true)
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser)
@@ -92,6 +93,16 @@ export default function App() {
       setNotice(code ? `Googleログインを完了できませんでした（${code}）。Firebase Authenticationの設定を確認してください。` : 'Googleログインを完了できませんでした。もう一度お試しください。')
     }
     finally { setAuthBusy(false) }
+  }
+
+  async function handleLogout() {
+    try {
+      await logout()
+      setLogoutConfirmOpen(false)
+      setNotice('ログアウトしました')
+    } catch {
+      setNotice('ログアウトできませんでした。もう一度お試しください。')
+    }
   }
 
   async function startDrawing() {
@@ -158,7 +169,7 @@ export default function App() {
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="峠・エリア・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
           <button className="new-route" onClick={startDrawing}><span>＋</span>コース登録</button>
-          {user ? <button className="user-button" onClick={() => logout()} title="クリックしてログアウト">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'ログアウト'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
+          {user ? <button className="user-button" onClick={() => setLogoutConfirmOpen(true)} title="ログアウトメニューを開く" aria-label="ログアウトメニューを開く">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
         </div>
       </header>
 
@@ -186,6 +197,13 @@ export default function App() {
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
       </main>
       {notice && <div className="notice" role="status">{notice}</div>}
+      {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation">
+        <section className="modal logout-dialog" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+          <h2 id="logout-title">ログアウトしますか？</h2>
+          <p>ログアウトすると、コース登録や評価投稿には再度ログインが必要です。</p>
+          <footer><button className="button secondary" onClick={() => setLogoutConfirmOpen(false)}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
+        </section>
+      </div>}
       <InstallPrompt />
     </div>
   )

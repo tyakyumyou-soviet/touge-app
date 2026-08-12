@@ -150,6 +150,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .modal header { display: flex; justify-content: space-between; align-items: start; gap: 15px; }
 .modal h2 { margin-bottom: 8px; }
 .modal footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
+.logout-backdrop { z-index: 70; }
+.logout-dialog { width: min(420px, 100%); }
+.logout-dialog h2 { margin: 0 0 9px; font-size: 20px; }
+.logout-dialog p { margin: 0; color: #657169; font-size: 12px; line-height: 1.7; }
 .course-form { position: absolute; left: 390px; top: 90px; width: 430px; }
 .course-form + * { pointer-events: auto; }
 .modal-backdrop:has(.course-form) { pointer-events: none; place-items: start; background: transparent; backdrop-filter: none; }
