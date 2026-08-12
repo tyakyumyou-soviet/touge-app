@@ -3,9 +3,12 @@ import {
   browserLocalPersistence,
   getAuth,
   GoogleAuthProvider,
+  getRedirectResult,
   setPersistence,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
+  type AuthError,
   type User,
 } from 'firebase/auth'
 import {
@@ -50,16 +53,33 @@ export const auth = getAuth(app)
 export const storage = getStorage(app)
 export { db }
 
-export async function loginWithGoogle(): Promise<User> {
-  await setPersistence(auth, browserLocalPersistence)
-  const provider = new GoogleAuthProvider()
-  const result = await signInWithPopup(auth, provider)
-  await setDoc(doc(db, 'users', result.user.uid), {
-    displayName: result.user.displayName ?? 'ドライバー',
-    photoURL: result.user.photoURL,
+async function saveUserProfile(user: User): Promise<User> {
+  await setDoc(doc(db, 'users', user.uid), {
+    displayName: user.displayName ?? 'ドライバー',
+    photoURL: user.photoURL,
     updatedAt: serverTimestamp(),
   }, { merge: true })
-  return result.user
+  return user
+}
+
+export async function loginWithGoogle(): Promise<User | null> {
+  await setPersistence(auth, browserLocalPersistence)
+  const provider = new GoogleAuthProvider()
+  try {
+    const result = await signInWithPopup(auth, provider)
+    return saveUserProfile(result.user)
+  } catch (error) {
+    const code = (error as Partial<AuthError>).code
+    const useRedirect = ['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'].includes(code ?? '')
+    if (!useRedirect) throw error
+    await signInWithRedirect(auth, provider)
+    return null
+  }
+}
+
+export async function completeRedirectLogin(): Promise<User | null> {
+  const result = await getRedirectResult(auth)
+  return result ? saveUserProfile(result.user) : null
 }
 
 export const logout = () => signOut(auth)

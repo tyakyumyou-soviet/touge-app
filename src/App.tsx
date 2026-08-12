@@ -10,7 +10,7 @@ import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { sampleCourses } from './data/courses'
 import { addUserRating, approximateElevationProfile, estimateSystemRatings } from './lib/course'
-import { auth, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
+import { auth, completeRedirectLogin, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, RatingSubmission } from './types'
 import './styles.css'
@@ -35,7 +35,14 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [listOpen, setListOpen] = useState(true)
 
-  useEffect(() => onAuthStateChanged(auth, setUser), [])
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, setUser)
+    completeRedirectLogin().catch((error: unknown) => {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+      setNotice(code ? `Googleログインを完了できませんでした（${code}）。Firebase Authenticationの設定を確認してください。` : 'Googleログインを完了できませんでした。もう一度お試しください。')
+    })
+    return unsubscribe
+  }, [])
   useEffect(() => { window.__tougeMarkReady?.() }, [])
   useEffect(() => {
     loadPublicCourses().then((remote) => {
@@ -77,8 +84,13 @@ export default function App() {
 
   async function handleLogin() {
     setAuthBusy(true)
-    try { await loginWithGoogle(); setNotice('ログインしました') }
-    catch { setNotice('Googleログインを完了できませんでした。Firebase Consoleで認証プロバイダと承認済みドメインを確認してください。') }
+    try {
+      const result = await loginWithGoogle()
+      if (result) setNotice('ログインしました')
+    } catch (error: unknown) {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+      setNotice(code ? `Googleログインを完了できませんでした（${code}）。Firebase Authenticationの設定を確認してください。` : 'Googleログインを完了できませんでした。もう一度お試しください。')
+    }
     finally { setAuthBusy(false) }
   }
 
