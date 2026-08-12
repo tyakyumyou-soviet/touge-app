@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
@@ -13,6 +13,19 @@ function pointAt(route: Coordinate[], progress: number): Coordinate {
 function elevationAt(values: number[], progress: number): number {
   if (!values.length) return 0
   return values[Math.min(values.length - 1, Math.max(0, Math.round(progress * (values.length - 1))))]
+}
+
+function interpolatedPointAt(route: Coordinate[], progress: number): Coordinate {
+  const position = Math.min(route.length - 1, Math.max(0, progress * (route.length - 1)))
+  const index = Math.floor(position); const next = route[Math.min(route.length - 1, index + 1)]
+  const amount = position - index; const point = route[index]
+  return [point[0] + (next[0] - point[0]) * amount, point[1] + (next[1] - point[1]) * amount]
+}
+
+function interpolatedElevationAt(values: number[], progress: number): number {
+  const position = Math.min(values.length - 1, Math.max(0, progress * (values.length - 1)))
+  const index = Math.floor(position); const next = values[Math.min(values.length - 1, index + 1)]
+  return values[index] + (next - values[index]) * (position - index)
 }
 
 type Point3 = [number, number, number]
@@ -32,6 +45,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
+  const modelDragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
   const [mode, setMode] = useState<ViewMode>('overview')
   const [progress, setProgress] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -43,7 +57,11 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const currentElevation = elevationAt(profile, progress)
   const currentPoint = pointAt(course.route, progress)
   const model = useMemo(() => {
-    const sampled = profile.map((elevation, index) => ({ point: pointAt(course.route, index / Math.max(1, profile.length - 1)), elevation }))
+    const sampleCount = Math.min(260, Math.max(96, course.route.length))
+    const sampled = Array.from({ length: sampleCount }, (_, index) => {
+      const progress = index / Math.max(1, sampleCount - 1)
+      return { point: interpolatedPointAt(course.route, progress), elevation: interpolatedElevationAt(profile, progress) }
+    })
     const lngs = sampled.map(({ point }) => point[0]); const lats = sampled.map(({ point }) => point[1])
     const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2; const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
     const scale = Math.min(600 / Math.max(.0001, Math.max(...lngs) - Math.min(...lngs)), 420 / Math.max(.0001, Math.max(...lats) - Math.min(...lats)))
@@ -131,6 +149,22 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
     if (mode === 'preview') setPlaying(false)
   }
 
+  function startModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: modelYaw, pitch: modelPitch }
+  }
+
+  function moveModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    const drag = modelDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setModelYaw(Math.min(30, Math.max(-85, drag.yaw + (event.clientX - drag.x) * .35)))
+    setModelPitch(Math.min(78, Math.max(22, drag.pitch + (event.clientY - drag.y) * .25)))
+  }
+
+  function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (modelDragRef.current?.pointerId === event.pointerId) modelDragRef.current = null
+  }
+
   return (
     <div className={`three-d-modal three-d-mode-${mode}`} role="dialog" aria-modal="true" aria-labelledby="three-d-title">
       <div ref={containerRef} className="three-d-map" aria-label={`${course.name}の3D地形`} />
@@ -140,7 +174,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
         {([['overview', '俯瞰'], ['preview', '走行プレビュー'], ['model', '3Dルート模型']] as [ViewMode, string][]).map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => { setMode(value); if (value !== 'preview') setPlaying(false) }}>{label}</button>)}
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
-      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>視点を変えてカーブと高低差を確認</span></div><svg viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型`}><defs><linearGradient id="model-floor" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1b4436" stopOpacity=".7" /><stop offset="1" stopColor="#06100c" stopOpacity=".1" /></linearGradient></defs><polygon points={pointsText([projectPoint([-330, -230, 0], modelYaw, modelPitch), projectPoint([330, -230, 0], modelYaw, modelPitch), projectPoint([330, 230, 0], modelYaw, modelPitch), projectPoint([-330, 230, 0], modelYaw, modelPitch)])} fill="url(#model-floor)" stroke="#ffffff24" />{modelPolygons.map((polygon, index) => <g key={index}><polygon points={polygon.side} fill="#07100ccc" /><polygon points={polygon.top} fill={polygon.color} stroke="#fff4" strokeWidth="1" /></g>)}<circle cx={modelCurrent[0]} cy={modelCurrent[1]} r="11" fill="#fff" stroke="#101915" strokeWidth="5" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg><div className="model-controls"><label>視点 <input aria-label="模型の視点" type="range" min="-80" max="25" value={modelYaw} onChange={(event) => setModelYaw(Number(event.target.value))} /></label><label>俯角 <input aria-label="模型の俯角" type="range" min="25" max="75" value={modelPitch} onChange={(event) => setModelPitch(Number(event.target.value))} /></label></div></section>}
+      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>模型をドラッグして回転・俯角変更</span><button onClick={() => { setModelYaw(-38); setModelPitch(49) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。ドラッグして視点を変更`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag}><defs><linearGradient id="model-floor" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1b4436" stopOpacity=".7" /><stop offset="1" stopColor="#06100c" stopOpacity=".1" /></linearGradient></defs><polygon points={pointsText([projectPoint([-330, -230, 0], modelYaw, modelPitch), projectPoint([330, -230, 0], modelYaw, modelPitch), projectPoint([330, 230, 0], modelYaw, modelPitch), projectPoint([-330, 230, 0], modelYaw, modelPitch)])} fill="url(#model-floor)" stroke="#ffffff24" />{modelPolygons.map((polygon, index) => <g key={index}><polygon points={polygon.side} fill="#07100ccc" /><polygon points={polygon.top} fill={polygon.color} stroke="#fff4" strokeWidth="1" /></g>)}<circle cx={modelCurrent[0]} cy={modelCurrent[1]} r="11" fill="#fff" stroke="#101915" strokeWidth="5" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
       <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {course.maxElevation - course.minElevation}m</b></div>
     </div>

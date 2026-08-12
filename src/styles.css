@@ -187,17 +187,17 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .preview-panel div { display: flex; align-items: baseline; gap: 10px; min-width: 150px; }
 .preview-panel strong { color: var(--yellow); font-size: 18px; }
 .preview-panel span { color: #bdc9c2; font-size: 10px; }
-.preview-panel input, .model-controls input { accent-color: var(--yellow); }
+.preview-panel input { accent-color: var(--yellow); }
 .preview-panel button { padding: 8px 13px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; }
 .route-model-panel { inset: 110px 20px 85px; padding: 18px; }
 .model-title { display: flex; align-items: baseline; gap: 13px; }
 .model-title strong { color: var(--yellow); font-size: 14px; }
 .model-title span { color: #bdc9c2; font-size: 10px; }
+.model-title button { margin-left: auto; padding: 6px 9px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; }
 .route-model-panel svg { width: 100%; height: calc(100% - 28px); display: block; overflow: visible; }
+.route-model-canvas { cursor: grab; touch-action: none; user-select: none; }
+.route-model-canvas:active { cursor: grabbing; }
 .route-model-panel text { fill: #fff; font-size: 16px; font-weight: 700; }
-.model-controls { display: flex; justify-content: center; gap: 18px; }
-.model-controls label { display: flex; align-items: center; gap: 8px; color: #c9d8cf; font-size: 10px; }
-.model-controls input { width: 125px; }
 .three-d-mode-model .three-d-map { opacity: .12; }
 .three-d-controls { position: absolute; z-index: 2; left: 20px; bottom: 52px; display: flex; align-items: center; gap: 12px; padding: 11px 13px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 10px; backdrop-filter: blur(8px); }
 .three-d-controls label { display: flex; align-items: center; gap: 8px; font-size: 10px; }
@@ -274,8 +274,6 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .model-title strong { font-size: 11px; }
   .model-title span { font-size: 8px; }
   .route-model-panel text { font-size: 20px; }
-  .model-controls { gap: 9px; }
-  .model-controls input { width: 82px; }
   .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
   .three-d-controls input { width: 80px; }
   .three-d-legend { right: 8px; top: 92px; bottom: auto; }
