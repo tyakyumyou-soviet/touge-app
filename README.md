@@ -62,11 +62,12 @@ Firebase CLIで未ログインの場合は、先に `npx firebase-tools login` �
 
 ### GitHub Pages
 
-`main`へのpush時にGitHub Actionsが自動でテスト・ビルド・公開します。
+GitHub OAuthの`workflow`権限に依存せず、ビルド済みサイトを`gh-pages`ブランチへ公開します。
 
 - 公開URL: https://tyakyumyou-soviet.github.io/touge-app/
 - GitHub Pages向けビルドではViteのベースパスが自動的に `/touge-app/` へ切り替わります。
-- リポジトリの **Settings → Pages → Build and deployment** でSourceを **GitHub Actions** に設定してください。
+- `npm run deploy:pages`で`gh-pages`ブランチへ公開できます。
+- リポジトリの **Settings → Pages → Build and deployment** でSourceを **Deploy from a branch**、ブランチを **gh-pages / root** に設定してください。
 
 ## データについて
 

@@ -7,7 +7,7 @@
 ### Fixed
 
 - GitHub Pagesの `/touge-app/` サブパスでアセットを正しく読み込めるよう修正
-- `main`へのpushでGitHub Pagesへ自動公開するワークフローを追加
+- `gh-pages`ブランチへGitHub Pagesを公開するコマンドを追加
 - レンダリングエラー時に白画面ではなく復旧案内を表示
 
 ## [1.0.0] - 2026-08-12
