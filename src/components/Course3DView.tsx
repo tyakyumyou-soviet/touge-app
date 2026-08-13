@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
@@ -60,6 +60,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const modelDragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
   const modelPointersRef = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
+  const touchPinchRef = useRef<{ distance: number; zoom: number } | null>(null)
   const zoomFrameRef = useRef<number | null>(null)
   const pendingZoomRef = useRef<number | null>(null)
   const [mode, setMode] = useState<ViewMode>('overview')
@@ -309,6 +310,27 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
     if (modelDragRef.current?.pointerId === event.pointerId) modelDragRef.current = null
   }
 
+  function touchDistance(touches: { length: number; [index: number]: { clientX: number; clientY: number } }): number {
+    if (touches.length < 2) return 0
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
+  }
+
+  // Some installed-web-app WebViews do not reliably forward a second PointerEvent
+  // to SVG. Keep a native touch fallback so pinch remains available there too.
+  function startModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
+    if (event.touches.length !== 2) return
+    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), zoom: modelZoom }
+  }
+
+  function moveModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
+    if (event.touches.length !== 2 || !touchPinchRef.current) return
+    scheduleModelZoom(touchPinchRef.current.zoom * (touchDistance(event.touches) / touchPinchRef.current.distance))
+  }
+
+  function endModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
+    if (event.touches.length < 2) touchPinchRef.current = null
+  }
+
   function scheduleModelZoom(nextZoom: number) {
     pendingZoomRef.current = Math.min(2.1, Math.max(.55, nextZoom))
     if (zoomFrameRef.current) return
@@ -333,7 +355,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
         {([['overview', '俯瞰'], ['preview', '走行プレビュー'], ['model', '3Dルート模型']] as [ViewMode, string][]).map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => { setMode(value); if (value !== 'preview') setPlaying(false) }}>{label}</button>)}
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
-      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>距離基準の自動縮尺 {Math.round(model.autoFit * 100)}% · START → GOAL · 1本指で視点移動 · 2本指／スクロールで拡大縮小（{Math.round(effectiveZoom * 100)}%）</span><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で視点を変更し、2本指のピンチまたはスクロールで拡大縮小できます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onWheel={zoomModel}><defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient></defs><g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>{modelLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`}><circle cx={landmark.x} cy={landmark.y} r="4" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}<circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="7" fill="#fff" stroke="#101915" strokeWidth="3" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
+      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>距離基準の自動縮尺 {Math.round(model.autoFit * 100)}% · START → GOAL · 1本指で視点移動 · 2本指／スクロールで拡大縮小（{Math.round(effectiveZoom * 100)}%）</span><div className="model-zoom-buttons" aria-label="模型の縮尺"><button onClick={() => scheduleModelZoom(modelZoom / 1.18)} aria-label="縮小">−</button><button onClick={() => scheduleModelZoom(modelZoom * 1.18)} aria-label="拡大">＋</button></div><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で視点を変更し、2本指のピンチまたはスクロールで拡大縮小できます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}><defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient></defs><g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>{modelLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`}><circle cx={landmark.x} cy={landmark.y} r="4" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}<circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="7" fill="#fff" stroke="#101915" strokeWidth="3" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
       <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {course.maxElevation - course.minElevation}m</b></div>
     </div>

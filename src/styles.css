@@ -195,6 +195,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-title strong { color: var(--yellow); font-size: 14px; }
 .model-title span { color: #bdc9c2; font-size: 10px; }
 .model-title button { margin-left: auto; padding: 6px 9px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; }
+.model-title .model-zoom-buttons { display: flex; gap: 4px; margin-left: auto; }
+.model-title .model-zoom-buttons button { width: 26px; margin: 0; padding: 0; font-size: 16px; line-height: 24px; }
+.model-title .model-zoom-buttons + button { margin-left: 0; }
 .route-model-panel svg { width: 100%; height: calc(100% - 28px); display: block; overflow: visible; }
 .route-model-canvas { cursor: grab; touch-action: none; user-select: none; }
 .route-model-canvas:active { cursor: grabbing; }
@@ -297,6 +300,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .model-title { gap: 7px; }
   .model-title strong { font-size: 11px; }
   .model-title span { font-size: 8px; }
+  .model-title .model-zoom-buttons { gap: 2px; }
+  .model-title .model-zoom-buttons button { width: 22px; padding: 0; font-size: 14px; }
   .route-model-panel text { font-size: 20px; }
   .route-model-panel .model-landmark text { font-size: 12px; }
   .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
