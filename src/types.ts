@@ -1,5 +1,12 @@
 export type Coordinate = [number, number]
 
+/** A recognised landmark placed along a published route. progress is 0–1 from START. */
+export interface RouteLandmark {
+  name: string
+  progress: number
+  type?: 'ic' | 'place' | 'viewpoint'
+}
+
 export type RatingKey =
   | 'curves'
   | 'elevation'
@@ -29,6 +36,7 @@ export interface Course {
   prefecture: '東京都' | '神奈川県' | '静岡県'
   description: string
   route: Coordinate[]
+  landmarks?: RouteLandmark[]
   distanceKm: number
   durationMin: number
   minElevation: number

@@ -198,6 +198,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-model-canvas { cursor: grab; touch-action: none; user-select: none; }
 .route-model-canvas:active { cursor: grabbing; }
 .route-model-panel text { fill: #fff; font-size: 16px; font-weight: 700; }
+.model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2px; }
+.model-landmark line { stroke: #f2d16b; stroke-width: 1.5px; }
+.model-landmark text { fill: #f6e8aa; stroke: #101915; stroke-width: 4px; paint-order: stroke; font-size: 12px; font-weight: 700; }
+.model-landmark.ic circle, .model-landmark.ic line { fill: #79b8ff; stroke: #79b8ff; }
+.model-landmark.ic text { fill: #b6d9ff; }
 .three-d-mode-model .three-d-map { opacity: .12; }
 .three-d-controls { position: absolute; z-index: 2; left: 20px; bottom: 52px; display: flex; align-items: center; gap: 12px; padding: 11px 13px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 10px; backdrop-filter: blur(8px); }
 .three-d-controls label { display: flex; align-items: center; gap: 8px; font-size: 10px; }
@@ -251,7 +256,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .detail-panel.expanded { max-height: calc(100dvh - 76px); }
   .detail-panel.dragging { transition: none; }
   @keyframes detailUp { from { opacity: 0; transform: translateY(20px); } }
-  .drag-handle { display: block; width: 42px; height: 4px; margin: 8px auto 0; background: #c9cbc6; border-radius: 4px; cursor: grab; touch-action: none; }
+  .drag-handle { position: relative; display: block; flex: 0 0 32px; width: 144px; height: 32px; margin: 0 auto; background: transparent; cursor: grab; touch-action: none; }
+  .drag-handle::after { content: ''; position: absolute; top: 14px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
   .drag-handle:active { cursor: grabbing; }
   .detail-header { padding: 12px 16px 8px; }
   .detail-header h2 { font-size: 21px; }
@@ -277,6 +283,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .model-title strong { font-size: 11px; }
   .model-title span { font-size: 8px; }
   .route-model-panel text { font-size: 20px; }
+  .route-model-panel .model-landmark text { font-size: 12px; }
   .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
   .three-d-controls input { width: 80px; }
   .three-d-legend { right: 8px; top: 92px; bottom: auto; }

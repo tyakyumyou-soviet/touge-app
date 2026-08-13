@@ -87,7 +87,9 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
       (point[1] - centerLat) * 111.32 * sceneScale,
       ((elevation - elevationMin) / elevationRange) * verticalScale,
     ])
-    const width = 13; const thickness = 18
+    // A narrower ribbon and no segment outline prevent the high-resolution mesh
+    // from looking like a chain of oversized dots.
+    const width = 8; const thickness = 15
     const left: Point3[] = []; const right: Point3[] = []
     centers.forEach((point, index) => {
       const before = centers[Math.max(0, index - 1)]; const after = centers[Math.min(centers.length - 1, index + 1)]
@@ -124,6 +126,20 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const modelStart = projectPoint(model.centers[0], modelYaw, modelPitch, effectiveZoom)
   const modelEnd = projectPoint(model.centers.at(-1)!, modelYaw, modelPitch, effectiveZoom)
   const modelCurrent = projectPoint(model.centers[Math.min(model.centers.length - 1, Math.round(progress * (model.centers.length - 1)))], modelYaw, modelPitch, effectiveZoom)
+  const modelLandmarks = useMemo(() => {
+    const landmarks = course.landmarks?.length ? course.landmarks : [
+      { name: `約${(course.distanceKm * .25).toFixed(1)}km`, progress: .25, type: 'place' as const },
+      { name: `約${(course.distanceKm * .5).toFixed(1)}km`, progress: .5, type: 'place' as const },
+      { name: `約${(course.distanceKm * .75).toFixed(1)}km`, progress: .75, type: 'place' as const },
+    ]
+    return landmarks.map((landmark) => {
+      const pointIndex = Math.min(model.centers.length - 1, Math.max(0, Math.round(landmark.progress * (model.centers.length - 1))))
+      const point = model.centers[pointIndex]
+      const [x, y] = projectPoint(point, modelYaw, modelPitch, effectiveZoom)
+      const labelOnLeft = x > 580
+      return { ...landmark, x, y, labelX: x + (labelOnLeft ? -12 : 12), labelY: y - 12, labelOnLeft }
+    })
+  }, [course.distanceKm, course.landmarks, effectiveZoom, model.centers, modelPitch, modelYaw])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -196,7 +212,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
     if (!drag || drag.pointerId !== event.pointerId) return
     // Dragging moves the model in the same apparent direction as the pointer.
     setModelYaw(wrapDegrees(drag.yaw - (event.clientX - drag.x) * .45))
-    setModelPitch(Math.min(89, Math.max(-89, drag.pitch - (event.clientY - drag.y) * .35)))
+    setModelPitch(Math.min(89, Math.max(-89, drag.pitch + (event.clientY - drag.y) * .35)))
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
@@ -217,7 +233,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
         {([['overview', '俯瞰'], ['preview', '走行プレビュー'], ['model', '3Dルート模型']] as [ViewMode, string][]).map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => { setMode(value); if (value !== 'preview') setPlaying(false) }}>{label}</button>)}
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
-      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>距離基準の自動縮尺 {Math.round(model.autoFit * 100)}% · START → GOAL · 上下左右360°ドラッグ · スクロールで縮尺変更（{Math.round(effectiveZoom * 100)}%）</span><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。実距離に基づき自動縮尺され、開始地点からゴール地点の方向で表示されます。上下左右360度ドラッグで視点変更、スクロールで縮尺変更`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onWheel={zoomModel}><defs><linearGradient id="model-floor" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1b4436" stopOpacity=".7" /><stop offset="1" stopColor="#06100c" stopOpacity=".1" /></linearGradient></defs><polygon points={pointsText([projectPoint([-330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, 230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([-330, 230, 0], modelYaw, modelPitch, effectiveZoom)])} fill="url(#model-floor)" stroke="#ffffff24" />{modelPolygons.map((polygon, index) => <g key={index}><polygon points={polygon.side} fill="#07100ccc" /><polygon points={polygon.top} fill={polygon.color} stroke="#fff4" strokeWidth="1" /></g>)}<circle cx={modelCurrent[0]} cy={modelCurrent[1]} r="11" fill="#fff" stroke="#101915" strokeWidth="5" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
+      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>距離基準の自動縮尺 {Math.round(model.autoFit * 100)}% · START → GOAL · 上下左右360°ドラッグ · スクロールで縮尺変更（{Math.round(effectiveZoom * 100)}%）</span><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。実距離に基づき自動縮尺され、開始地点からゴール地点の方向で表示されます。上下左右360度ドラッグで視点変更、スクロールで縮尺変更`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onWheel={zoomModel}><defs><linearGradient id="model-floor" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1b4436" stopOpacity=".7" /><stop offset="1" stopColor="#06100c" stopOpacity=".1" /></linearGradient></defs><polygon points={pointsText([projectPoint([-330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, 230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([-330, 230, 0], modelYaw, modelPitch, effectiveZoom)])} fill="url(#model-floor)" stroke="#ffffff24" />{modelPolygons.map((polygon, index) => <g key={index}><polygon points={polygon.side} fill="#07100ccc" /><polygon points={polygon.top} fill={polygon.color} /></g>)}{modelLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`}><circle cx={landmark.x} cy={landmark.y} r="4" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}<circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="7" fill="#fff" stroke="#101915" strokeWidth="3" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
       <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {course.maxElevation - course.minElevation}m</b></div>
     </div>
