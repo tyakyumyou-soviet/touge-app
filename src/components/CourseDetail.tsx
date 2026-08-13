@@ -1,3 +1,4 @@
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
 import { ElevationChart } from './ElevationChart'
@@ -13,12 +14,39 @@ interface Props {
 }
 
 export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll }: Props) {
+  const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
+  const [sheetOffset, setSheetOffset] = useState(0)
+  const [sheetDragging, setSheetDragging] = useState(false)
+  const [sheetExpanded, setSheetExpanded] = useState(false)
   const systemRatings = systemRatingsFor(course)
   const mergedRatings = combinedRatings(course)
   const userCount = userRatingCountFor(course)
+
+  function startSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    sheetDrag.current = { pointerId: event.pointerId, y: event.clientY }
+    setSheetDragging(true)
+  }
+  function moveSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = sheetDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setSheetOffset(Math.max(0, event.clientY - drag.y))
+  }
+  function endSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = sheetDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const distance = event.clientY - drag.y
+    sheetDrag.current = null
+    setSheetDragging(false)
+    setSheetOffset(0)
+    if (distance > 82) onClose()
+    else if (distance < -42) setSheetExpanded(true)
+    else if (distance > 24) setSheetExpanded(false)
+  }
+
   return (
-    <article className="detail-panel" aria-label={`${course.name}の詳細`}>
-      <div className="drag-handle" />
+    <article className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
+      <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} />
       <header className="detail-header">
         <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
         <button className="icon-button" onClick={onClose} aria-label="詳細を閉じる">×</button>

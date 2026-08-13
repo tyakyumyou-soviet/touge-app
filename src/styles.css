@@ -247,9 +247,12 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .map-tools { left: 10px; top: 10px; }
   .map-tools button { height: 38px; }
   .mobile-list { display: block; }
-  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 71%; border-radius: 18px; animation: detailUp .24s ease-out; }
+  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 71%; border-radius: 18px; animation: detailUp .24s ease-out; transition: max-height .22s ease, transform .22s ease; }
+  .detail-panel.expanded { max-height: calc(100dvh - 76px); }
+  .detail-panel.dragging { transition: none; }
   @keyframes detailUp { from { opacity: 0; transform: translateY(20px); } }
-  .drag-handle { display: block; width: 42px; height: 4px; margin: 8px auto 0; background: #c9cbc6; border-radius: 4px; }
+  .drag-handle { display: block; width: 42px; height: 4px; margin: 8px auto 0; background: #c9cbc6; border-radius: 4px; cursor: grab; touch-action: none; }
+  .drag-handle:active { cursor: grabbing; }
   .detail-header { padding: 12px 16px 8px; }
   .detail-header h2 { font-size: 21px; }
   .detail-scroll { padding: 0 16px 17px; }

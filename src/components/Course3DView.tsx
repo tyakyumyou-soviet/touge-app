@@ -56,7 +56,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const [mode, setMode] = useState<ViewMode>('overview')
   const [progress, setProgress] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [modelYaw, setModelYaw] = useState(-38)
+  const [modelYaw, setModelYaw] = useState(0)
   const [modelPitch, setModelPitch] = useState(49)
   const [modelZoom, setModelZoom] = useState(1)
   const [exaggeration, setExaggeration] = useState(1.5)
@@ -72,9 +72,21 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
     })
     const lngs = sampled.map(({ point }) => point[0]); const lats = sampled.map(({ point }) => point[1])
     const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2; const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
-    const scale = Math.min(600 / Math.max(.0001, Math.max(...lngs) - Math.min(...lngs)), 420 / Math.max(.0001, Math.max(...lats) - Math.min(...lats)))
     const elevationMin = Math.min(...profile); const elevationRange = Math.max(1, Math.max(...profile) - elevationMin)
-    const centers: Point3[] = sampled.map(({ point, elevation }) => [(point[0] - centerLng) * scale, (point[1] - centerLat) * scale, ((elevation - elevationMin) / elevationRange) * 255])
+    // Keep the plan scale tied to real-world kilometres.  Previously each bounding
+    // box was normalised to the same 600×420 space, so a 40 km road looked almost
+    // exactly like a 9 km road.  Longer routes now begin smaller; only an overflow
+    // safety fit is applied afterwards.
+    const kmPerLongitude = 111.32 * Math.cos((centerLat * Math.PI) / 180)
+    const sceneScale = 620 / Math.max(5, course.distanceKm)
+    // Preserve the terrain character without allowing a steep short course's
+    // vertical exaggeration to defeat its distance-based plan scale.
+    const verticalScale = Math.min(160, Math.max(60, (elevationRange / Math.max(1, course.distanceKm)) * 3.5))
+    const centers: Point3[] = sampled.map(({ point, elevation }) => [
+      (point[0] - centerLng) * kmPerLongitude * sceneScale,
+      (point[1] - centerLat) * 111.32 * sceneScale,
+      ((elevation - elevationMin) / elevationRange) * verticalScale,
+    ])
     const width = 13; const thickness = 18
     const left: Point3[] = []; const right: Point3[] = []
     centers.forEach((point, index) => {
@@ -84,15 +96,25 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
       left.push([point[0] + offsetX, point[1] + offsetY, point[2]])
       right.push([point[0] - offsetX, point[1] - offsetY, point[2]])
     })
-    const defaultProjection = [...left, ...right].map((point) => projectPoint(point, -38, 49))
+    // Start is deliberately placed at the lower-left and the goal at the upper-right
+    // on first view, independent of the geographic direction of the road.
+    const routeHeading = Math.atan2(centers.at(-1)![1] - centers[0][1], centers.at(-1)![0] - centers[0][0]) * 180 / Math.PI
+    const defaultYaw = wrapDegrees(-routeHeading - 35)
+    const defaultProjection = [...left, ...right].map((point) => projectPoint(point, defaultYaw, 49))
     const xExtent = Math.max(...defaultProjection.map(([x]) => x)) - Math.min(...defaultProjection.map(([x]) => x))
     const yExtent = Math.max(...defaultProjection.map(([, y]) => y)) - Math.min(...defaultProjection.map(([, y]) => y))
-    const projectionFit = Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent))
-    const lengthFit = Math.sqrt(14.2 / Math.max(1, course.distanceKm))
-    const autoFit = Math.min(1.35, Math.max(.55, projectionFit * lengthFit))
-    return { centers, left, right, thickness, autoFit }
+    // Never enlarge a short route merely to fill the canvas.  The fit only prevents
+    // a long / tall route from being clipped, retaining meaningful distance scaling.
+    const autoFit = Math.min(1, .96 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
+    return { centers, left, right, thickness, autoFit, defaultYaw }
   }, [course.distanceKm, course.route, profile])
   const effectiveZoom = model.autoFit * modelZoom
+
+  useEffect(() => {
+    setModelYaw(model.defaultYaw)
+    setModelPitch(49)
+    setModelZoom(1)
+  }, [course.id, model.defaultYaw])
   const modelPolygons = useMemo(() => model.left.slice(1).map((_, index) => {
     const i = index + 1
     const top = [model.left[i - 1], model.right[i - 1], model.right[i], model.left[i]].map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom))
@@ -172,8 +194,9 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   function moveModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     const drag = modelDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    setModelYaw(wrapDegrees(drag.yaw + (event.clientX - drag.x) * .45))
-    setModelPitch(Math.min(89, Math.max(-89, drag.pitch + (event.clientY - drag.y) * .35)))
+    // Dragging moves the model in the same apparent direction as the pointer.
+    setModelYaw(wrapDegrees(drag.yaw - (event.clientX - drag.x) * .45))
+    setModelPitch(Math.min(89, Math.max(-89, drag.pitch - (event.clientY - drag.y) * .35)))
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
@@ -194,7 +217,7 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
         {([['overview', '俯瞰'], ['preview', '走行プレビュー'], ['model', '3Dルート模型']] as [ViewMode, string][]).map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => { setMode(value); if (value !== 'preview') setPlaying(false) }}>{label}</button>)}
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
-      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>自動縮尺 {Math.round(model.autoFit * 100)}% · 上下左右360°ドラッグ · スクロールで縮尺変更（{Math.round(effectiveZoom * 100)}%）</span><button onClick={() => { setModelYaw(-38); setModelPitch(49); setModelZoom(1) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。コースの長さと形状に合わせて自動縮尺され、上下左右360度ドラッグで視点変更、スクロールで縮尺変更`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onWheel={zoomModel}><defs><linearGradient id="model-floor" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1b4436" stopOpacity=".7" /><stop offset="1" stopColor="#06100c" stopOpacity=".1" /></linearGradient></defs><polygon points={pointsText([projectPoint([-330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, 230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([-330, 230, 0], modelYaw, modelPitch, effectiveZoom)])} fill="url(#model-floor)" stroke="#ffffff24" />{modelPolygons.map((polygon, index) => <g key={index}><polygon points={polygon.side} fill="#07100ccc" /><polygon points={polygon.top} fill={polygon.color} stroke="#fff4" strokeWidth="1" /></g>)}<circle cx={modelCurrent[0]} cy={modelCurrent[1]} r="11" fill="#fff" stroke="#101915" strokeWidth="5" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
+      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>実ルートの立体リボン</strong><span>距離基準の自動縮尺 {Math.round(model.autoFit * 100)}% · START → GOAL · 上下左右360°ドラッグ · スクロールで縮尺変更（{Math.round(effectiveZoom * 100)}%）</span><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。実距離に基づき自動縮尺され、開始地点からゴール地点の方向で表示されます。上下左右360度ドラッグで視点変更、スクロールで縮尺変更`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onWheel={zoomModel}><defs><linearGradient id="model-floor" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1b4436" stopOpacity=".7" /><stop offset="1" stopColor="#06100c" stopOpacity=".1" /></linearGradient></defs><polygon points={pointsText([projectPoint([-330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, -230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([330, 230, 0], modelYaw, modelPitch, effectiveZoom), projectPoint([-330, 230, 0], modelYaw, modelPitch, effectiveZoom)])} fill="url(#model-floor)" stroke="#ffffff24" />{modelPolygons.map((polygon, index) => <g key={index}><polygon points={polygon.side} fill="#07100ccc" /><polygon points={polygon.top} fill={polygon.color} stroke="#fff4" strokeWidth="1" /></g>)}<circle cx={modelCurrent[0]} cy={modelCurrent[1]} r="11" fill="#fff" stroke="#101915" strokeWidth="5" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
       <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {course.maxElevation - course.minElevation}m</b></div>
     </div>

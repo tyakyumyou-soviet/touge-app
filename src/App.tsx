@@ -20,7 +20,9 @@ type PrefectureFilter = 'すべて' | Course['prefecture']
 export default function App() {
   const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
   const [courses, setCourses] = useState<Course[]>(sampleCourses)
-  const [selected, setSelected] = useState<Course | null>(sampleCourses[0])
+  // A course is selected only after the driver chooses one (or opens a shared link).
+  // Opening directly on the map must not silently focus an arbitrary sample course.
+  const [selected, setSelected] = useState<Course | null>(null)
   const [search, setSearch] = useState('')
   const [prefecture, setPrefecture] = useState<PrefectureFilter>('すべて')
   const [sort, setSort] = useState<'recommended' | 'curves' | 'elevation' | 'width'>('recommended')
