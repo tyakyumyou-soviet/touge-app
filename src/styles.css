@@ -205,7 +205,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-terrain { opacity: .58; pointer-events: none; }
 .model-terrain polygon { stroke: #a7d6ba36; stroke-width: .7px; }
 .model-ribbon polygon { stroke: none; }
-.model-route-dots circle { filter: drop-shadow(0 1px 1px #07100c88); }
+.model-route-line-glow { fill: none; stroke: #07100ccc; stroke-width: 15px; stroke-linecap: round; stroke-linejoin: round; }
+.model-route-line { fill: none; stroke: url(#model-route-line); stroke-width: 9px; stroke-linecap: round; stroke-linejoin: round; }
 .model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2px; }
 .model-landmark line { stroke: #f2d16b; stroke-width: 1.5px; }
 .model-landmark text { fill: #f6e8aa; stroke: #101915; stroke-width: 4px; paint-order: stroke; font-size: 12px; font-weight: 700; }
@@ -300,11 +301,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .route-model-panel { inset: 125px 8px 82px; padding: 11px; }
   .model-title { gap: 7px; }
   .model-title strong { font-size: 11px; }
-  .model-title span { font-size: 8px; }
+  .model-title span { font-size: 10px; }
   .model-title .model-zoom-buttons { gap: 2px; }
   .model-title .model-zoom-buttons button { width: 22px; padding: 0; font-size: 14px; }
   .route-model-panel text { font-size: 20px; }
-  .route-model-panel .model-landmark text { font-size: 12px; }
+  .route-model-panel .model-landmark text { font-size: 14px; }
   .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
   .three-d-controls input { width: 80px; }
   .three-d-legend { right: 8px; top: 92px; bottom: auto; }
