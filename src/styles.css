@@ -80,7 +80,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .map-tools button { height: 39px; padding: 0 13px; background: #fff; border: 1px solid #ccd0cb; border-radius: 9px; box-shadow: 0 4px 15px #1a282130; font-size: 12px; font-weight: 700; }
 .map-tools button.active { color: #fff; background: var(--green); border-color: var(--green); }
 .map-tools span { margin-right: 6px; }
-.mobile-list, .mobile-close { display: none; }
+.mobile-list, .mobile-close, .explore-drag-handle { display: none; }
 
 .detail-panel { position: absolute; z-index: 12; top: 18px; right: 18px; bottom: 18px; width: min(405px, calc(100% - 420px)); display: flex; flex-direction: column; overflow: hidden; background: var(--paper); border: 1px solid #d6d5ca; border-radius: 17px; box-shadow: 0 20px 70px #13211938; animation: detailIn .25s ease-out; }
 @keyframes detailIn { from { opacity: 0; transform: translateX(14px); } }
@@ -244,8 +244,13 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .user-button { width: 42px; padding: 0; justify-content: center; }
   main { height: calc(100% - 62px); height: calc(100dvh - 62px); }
   .maplibregl-ctrl-top-right { top: 59px; right: 10px; }
-  .explore-panel { inset: auto 8px 8px; width: auto; max-height: 68%; padding: 14px 12px 0; transform: translateY(calc(100% + 20px)); transition: transform .25s ease; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 15px 50px #101d1760; }
+  .explore-panel { inset: auto 8px 8px; width: auto; max-height: 68%; padding: 0 12px 0; transform: translateY(calc(100% + 20px)); transition: max-height .22s ease, transform .25s ease; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 15px 50px #101d1760; }
   .explore-panel.open { transform: translateY(0); }
+  .explore-panel.expanded { max-height: calc(100dvh - 76px); }
+  .explore-panel.dragging { transition: none; }
+  .explore-drag-handle { position: relative; display: block; flex: 0 0 32px; width: 144px; height: 32px; margin: 0 auto; background: transparent; cursor: grab; touch-action: none; }
+  .explore-drag-handle::after { content: ''; position: absolute; top: 14px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
+  .explore-drag-handle:active { cursor: grabbing; }
   .mobile-close { display: block; }
   .panel-heading { padding-bottom: 10px; }
   .panel-heading h1 { font-size: 20px; }

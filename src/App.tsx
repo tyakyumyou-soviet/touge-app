@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { MapView } from './components/MapView'
 import { CourseList } from './components/CourseList'
@@ -36,6 +36,10 @@ export default function App() {
   const [tollReportOpen, setTollReportOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [listOpen, setListOpen] = useState(true)
+  const [listExpanded, setListExpanded] = useState(false)
+  const [listOffset, setListOffset] = useState(0)
+  const [listDragging, setListDragging] = useState(false)
+  const listDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
 
   useEffect(() => {
@@ -84,6 +88,29 @@ export default function App() {
 
   const selectCourse = useCallback((course: Course) => { setSelected(course); setListOpen(false) }, [])
   const addPoint = useCallback((point: Coordinate) => setDraftRoute((route) => [...route, point]), [])
+  const openCourseList = useCallback(() => { setListExpanded(false); setListOpen(true) }, [])
+
+  function startListDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    listDrag.current = { pointerId: event.pointerId, y: event.clientY }
+    setListDragging(true)
+  }
+  function moveListDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = listDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setListOffset(Math.max(0, event.clientY - drag.y))
+  }
+  function endListDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = listDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const distance = event.clientY - drag.y
+    listDrag.current = null
+    setListDragging(false)
+    setListOffset(0)
+    if (distance > 82) setListOpen(false)
+    else if (distance < -42) setListExpanded(true)
+    else if (distance > 24) setListExpanded(false)
+  }
 
   async function handleLogin() {
     setAuthBusy(true)
@@ -165,7 +192,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => { setListOpen(true); setSelected(null) }} aria-label="峠 ホーム">
+        <button className="brand" onClick={() => { openCourseList(); setSelected(null) }} aria-label="峠 ホーム">
           <img src={asset('icons/icon.svg')} alt="" /><span><b>峠</b><small>TOUGE EXPLORER</small></span>
         </button>
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="峠・エリア・特徴で検索" aria-label="コースを検索" /></div>
@@ -177,7 +204,8 @@ export default function App() {
 
       <main>
         <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} onSelect={selectCourse} onAddPoint={addPoint} />
-        <section className={`explore-panel ${listOpen ? 'open' : ''}`} aria-label="コースを探す">
+        <section className={`explore-panel ${listOpen ? 'open' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''}`} style={{ transform: listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
+          <div className="explore-drag-handle" aria-label="下へスワイプしてコース一覧を閉じる。上へスワイプしてコース一覧を広げる" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} />
           <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div><button className="mobile-close icon-button" onClick={() => setListOpen(false)}>×</button></div>
           <div className="filter-row">
             <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
@@ -189,7 +217,7 @@ export default function App() {
 
         <div className="map-tools">
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
-          <button className="mobile-list" onClick={() => setListOpen(true)}>☰ コース一覧</button>
+          <button className="mobile-list" onClick={openCourseList}>☰ コース一覧</button>
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} />}
