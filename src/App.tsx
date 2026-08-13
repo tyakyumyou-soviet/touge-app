@@ -35,7 +35,7 @@ export default function App() {
   const [course3dOpen, setCourse3dOpen] = useState(false)
   const [tollReportOpen, setTollReportOpen] = useState(false)
   const [notice, setNotice] = useState('')
-  const [listOpen, setListOpen] = useState(true)
+  const [listCollapsed, setListCollapsed] = useState(false)
   const [listExpanded, setListExpanded] = useState(false)
   const [listOffset, setListOffset] = useState(0)
   const [listDragging, setListDragging] = useState(false)
@@ -86,9 +86,9 @@ export default function App() {
       })
   }, [courses, prefecture, search, sort])
 
-  const selectCourse = useCallback((course: Course) => { setSelected(course); setListOpen(false) }, [])
+  const selectCourse = useCallback((course: Course) => { setSelected(course); setListCollapsed(true) }, [])
   const addPoint = useCallback((point: Coordinate) => setDraftRoute((route) => [...route, point]), [])
-  const openCourseList = useCallback(() => { setListExpanded(false); setListOpen(true) }, [])
+  const openCourseList = useCallback(() => { setListCollapsed(false); setListExpanded(false) }, [])
 
   function startListDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -98,7 +98,8 @@ export default function App() {
   function moveListDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = listDrag.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    setListOffset(Math.max(0, event.clientY - drag.y))
+    const distance = event.clientY - drag.y
+    setListOffset(listCollapsed ? Math.min(0, distance) : Math.max(0, distance))
   }
   function endListDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = listDrag.current
@@ -107,7 +108,11 @@ export default function App() {
     listDrag.current = null
     setListDragging(false)
     setListOffset(0)
-    if (distance > 82) setListOpen(false)
+    if (listCollapsed) {
+      if (distance < -24) setListCollapsed(false)
+      return
+    }
+    if (distance > 82) setListCollapsed(true)
     else if (distance < -42) setListExpanded(true)
     else if (distance > 24) setListExpanded(false)
   }
@@ -136,7 +141,7 @@ export default function App() {
 
   async function startDrawing() {
     if (!user) { await handleLogin(); if (!auth.currentUser) return }
-    setSelected(null); setDraftRoute([]); setDrawing(true); setListOpen(false)
+    setSelected(null); setDraftRoute([]); setDrawing(true); setListCollapsed(true)
   }
 
   async function handleCreate(draft: CourseDraft) {
@@ -204,9 +209,9 @@ export default function App() {
 
       <main>
         <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} onSelect={selectCourse} onAddPoint={addPoint} />
-        <section className={`explore-panel ${listOpen ? 'open' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''}`} style={{ transform: listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
+        <section className={`explore-panel open ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''}`} style={{ transform: listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
           <div className="explore-drag-handle" aria-label="下へスワイプしてコース一覧を閉じる。上へスワイプしてコース一覧を広げる" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} />
-          <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div><button className="mobile-close icon-button" onClick={() => setListOpen(false)}>×</button></div>
+          <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
           <div className="filter-row">
             <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
             <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
@@ -217,7 +222,6 @@ export default function App() {
 
         <div className="map-tools">
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
-          <button className="mobile-list" onClick={openCourseList}>☰ コース一覧</button>
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} />}

@@ -249,10 +249,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .explore-panel.open { transform: translateY(0); }
   .explore-panel.expanded { max-height: calc(100dvh - 76px); }
   .explore-panel.dragging { transition: none; }
+  .explore-panel.collapsed { overflow: hidden; }
   .explore-drag-handle { position: relative; display: block; flex: 0 0 32px; width: 144px; height: 32px; margin: 0 auto; background: transparent; cursor: grab; touch-action: none; }
   .explore-drag-handle::after { content: ''; position: absolute; top: 14px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
   .explore-drag-handle:active { cursor: grabbing; }
-  .mobile-close { display: block; }
   .panel-heading { padding-bottom: 10px; }
   .panel-heading h1 { font-size: 20px; }
   .result-count { margin-top: 12px; }
@@ -260,7 +260,6 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .course-card h3 { margin-bottom: 7px; }
   .map-tools { left: 10px; top: 10px; }
   .map-tools button { height: 38px; }
-  .mobile-list { display: block; }
   .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 71%; border-radius: 18px; animation: detailUp .24s ease-out; transition: max-height .22s ease, transform .22s ease; }
   .detail-panel.expanded { max-height: calc(100dvh - 76px); }
   .detail-panel.dragging { transition: none; }
