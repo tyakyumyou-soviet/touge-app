@@ -204,7 +204,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-model-panel text { fill: #fff; font-size: 16px; font-weight: 700; }
 .model-terrain { opacity: .58; pointer-events: none; }
 .model-terrain polygon { stroke: #a7d6ba36; stroke-width: .7px; }
-.model-ribbon polygon { stroke: #07100c; stroke-width: .45px; stroke-linejoin: round; }
+.model-ribbon polygon { stroke: none; }
+.model-route-dots circle { filter: drop-shadow(0 1px 1px #07100c88); }
 .model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2px; }
 .model-landmark line { stroke: #f2d16b; stroke-width: 1.5px; }
 .model-landmark text { fill: #f6e8aa; stroke: #101915; stroke-width: 4px; paint-order: stroke; font-size: 12px; font-weight: 700; }
