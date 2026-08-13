@@ -70,7 +70,9 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const currentElevation = elevationAt(profile, progress)
   const currentPoint = pointAt(course.route, progress)
   const model = useMemo(() => {
-    const sampleCount = Math.min(260, Math.max(96, course.route.length))
+    // Keep each ribbon segment short even on long courses.  This makes the
+    // individual joints substantially smaller while retaining a smooth route.
+    const sampleCount = Math.min(560, Math.max(220, course.route.length * 2))
     const sampled = Array.from({ length: sampleCount }, (_, index) => {
       const progress = index / Math.max(1, sampleCount - 1)
       return { point: interpolatedPointAt(course.route, progress), elevation: interpolatedElevationAt(profile, progress) }
