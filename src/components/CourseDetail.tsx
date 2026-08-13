@@ -18,6 +18,7 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
   const [sheetExpanded, setSheetExpanded] = useState(false)
+  const [sheetCollapsed, setSheetCollapsed] = useState(false)
   const systemRatings = systemRatingsFor(course)
   const mergedRatings = combinedRatings(course)
   const userCount = userRatingCountFor(course)
@@ -30,7 +31,8 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
   function moveSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = sheetDrag.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    setSheetOffset(Math.max(0, event.clientY - drag.y))
+    const distance = event.clientY - drag.y
+    setSheetOffset(sheetCollapsed ? Math.min(0, distance) : Math.max(0, distance))
   }
   function endSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = sheetDrag.current
@@ -39,13 +41,17 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
     sheetDrag.current = null
     setSheetDragging(false)
     setSheetOffset(0)
-    if (distance > 82) onClose()
+    if (sheetCollapsed) {
+      if (distance < -24) setSheetCollapsed(false)
+      return
+    }
+    if (distance > 82) setSheetCollapsed(true)
     else if (distance < -42) setSheetExpanded(true)
     else if (distance > 24) setSheetExpanded(false)
   }
 
   return (
-    <article className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
+    <article className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetCollapsed ? 'collapsed' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetCollapsed ? `translateY(calc(100% - 54px + ${sheetOffset}px))` : sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
       <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} />
       <header className="detail-header">
         <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
@@ -87,6 +93,7 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
         <a className="button secondary" href={googleMapsUrl(course, false)} target="_blank" rel="noreferrer">コースだけ開く</a>
         <a className="button primary" href={googleMapsUrl(course, true)} target="_blank" rel="noreferrer">現在地から案内</a>
       </footer>
+      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag}><span>{course.name}</span></div>
     </article>
   )
 }
