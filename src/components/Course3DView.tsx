@@ -387,7 +387,7 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   }
 
   function scheduleModelZoom(nextZoom: number) {
-    pendingZoomRef.current = Math.min(4.5, Math.max(.35, nextZoom))
+    pendingZoomRef.current = Math.min(10, Math.max(.25, nextZoom))
     if (zoomFrameRef.current) return
     zoomFrameRef.current = window.requestAnimationFrame(() => {
       zoomFrameRef.current = null
