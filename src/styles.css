@@ -192,8 +192,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .preview-panel button { padding: 8px 13px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; }
 .route-model-panel { inset: 110px 20px 85px; padding: 18px; }
 .model-title { display: flex; align-items: baseline; gap: 13px; }
-.model-title strong { color: var(--yellow); font-size: 14px; }
-.model-title span { color: #bdc9c2; font-size: 10px; }
+.model-title strong { color: var(--yellow); font-size: 16px; }
+.model-title span { color: #bdc9c2; font-size: 12px; }
 .model-title button { margin-left: auto; padding: 6px 9px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; }
 .model-title .model-zoom-buttons { display: flex; gap: 4px; margin-left: auto; }
 .model-title .model-zoom-buttons button { width: 26px; margin: 0; padding: 0; font-size: 16px; line-height: 24px; }
@@ -205,7 +205,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-tools .active { color: #101915; background: var(--yellow); border-color: var(--yellow); }
 .route-model-canvas { cursor: grab; touch-action: none; user-select: none; }
 .route-model-canvas:active { cursor: grabbing; }
-.route-model-panel text { fill: #fff; font-size: 16px; font-weight: 700; }
+.route-model-panel text { fill: #fff; font-size: 20px; font-weight: 700; }
 .model-terrain { opacity: .58; pointer-events: none; }
 .model-terrain polygon { stroke: #a7d6ba36; stroke-width: .7px; }
 .model-ribbon polygon { stroke: none; }
@@ -214,7 +214,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-grade-line polyline { fill: none; stroke-width: 9px; stroke-linecap: round; }
 .route-travel-dot { filter: drop-shadow(0 1px 3px #000); }
 .distance-marker circle { fill: #fff; stroke: #1e3529; stroke-width: 2px; }
-.distance-marker text, .route-highlight text { fill: #fff; stroke: #07100c; stroke-width: 3px; paint-order: stroke; font-size: 12px; font-weight: 800; }
+.distance-marker text, .route-highlight text { fill: #fff; stroke: #07100c; stroke-width: 4px; paint-order: stroke; font-size: 16px; font-weight: 800; }
 .route-highlight circle { fill: #07100c66; stroke-width: 3px; }
 .model-bottom-panels { position: absolute; right: 16px; bottom: 10px; left: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .cross-section, .compare-panel { min-width: 0; padding: 7px 9px; background: #07100cd9; border: 1px solid #ffffff20; border-radius: 7px; }
@@ -228,7 +228,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .landmark-card strong { color: var(--yellow); font-size: 13px; }.landmark-card span { color: #c2d2c9; font-size: 10px; line-height: 1.5; }.landmark-card button { position: absolute; top: 5px; right: 6px; color: #fff; background: none; border: 0; font-size: 18px; }
 .model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2.5px; }
 .model-landmark line { stroke: #f2d16b; stroke-width: 2px; }
-.model-landmark text { fill: #fff2b5; stroke: #07100c; stroke-width: 5px; paint-order: stroke; font-size: 16px; font-weight: 800; letter-spacing: .02em; }
+.model-landmark text { fill: #fff2b5; stroke: #07100c; stroke-width: 6px; paint-order: stroke; font-size: 21px; font-weight: 800; letter-spacing: .02em; }
 .model-landmark.ic circle, .model-landmark.ic line { fill: #79b8ff; stroke: #79b8ff; }
 .model-landmark.ic text { fill: #b6d9ff; }
 .three-d-mode-model .three-d-map { opacity: .12; }
@@ -319,12 +319,13 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .preview-panel input { grid-column: 1 / -1; grid-row: 2; width: 100%; }
   .route-model-panel { inset: 125px 8px 82px; padding: 11px; }
   .model-title { gap: 7px; }
-  .model-title strong { font-size: 11px; }
-  .model-title span { font-size: 10px; }
+  .model-title strong { font-size: 14px; }
+  .model-title span { font-size: 11px; }
   .model-title .model-zoom-buttons { gap: 2px; }
   .model-title .model-zoom-buttons button { width: 22px; padding: 0; font-size: 14px; }
-  .route-model-panel text { font-size: 20px; }
-  .route-model-panel .model-landmark text { font-size: 17px; stroke-width: 6px; }
+  .route-model-panel text { font-size: 24px; }
+  .route-model-panel .distance-marker text, .route-model-panel .route-highlight text { font-size: 19px; stroke-width: 5px; }
+  .route-model-panel .model-landmark text { font-size: 25px; stroke-width: 7px; }
   .route-model-panel svg { height: calc(100% - 154px); }
   .model-tools { align-items: flex-start; }
   .model-preset-buttons { flex-wrap: wrap; }.model-tools button { padding: 4px 5px; font-size: 8px; }
