@@ -39,7 +39,8 @@ export default function App() {
   const [listExpanded, setListExpanded] = useState(false)
   const [listOffset, setListOffset] = useState(0)
   const [listDragging, setListDragging] = useState(false)
-  const listDrag = useRef<{ pointerId: number; y: number } | null>(null)
+  const listDrag = useRef<{ pointerId: number; y: number; moved: boolean } | null>(null)
+  const ignoreListTap = useRef(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
 
   useEffect(() => {
@@ -92,13 +93,14 @@ export default function App() {
 
   function startListDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
-    listDrag.current = { pointerId: event.pointerId, y: event.clientY }
+    listDrag.current = { pointerId: event.pointerId, y: event.clientY, moved: false }
     setListDragging(true)
   }
   function moveListDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = listDrag.current
     if (!drag || drag.pointerId !== event.pointerId) return
     const distance = event.clientY - drag.y
+    if (Math.abs(distance) > 8) drag.moved = true
     setListOffset(listCollapsed ? Math.min(0, distance) : Math.max(0, distance))
   }
   function endListDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -108,13 +110,22 @@ export default function App() {
     listDrag.current = null
     setListDragging(false)
     setListOffset(0)
+    ignoreListTap.current = drag.moved
+    if (drag.moved) window.setTimeout(() => { ignoreListTap.current = false }, 0)
     if (listCollapsed) {
-      if (distance < -24) setListCollapsed(false)
+      if (distance < -42) { setListCollapsed(false); setListExpanded(true) }
       return
     }
-    if (distance > 82) setListCollapsed(true)
-    else if (distance < -42) setListExpanded(true)
+    if (distance > 52) { setListCollapsed(true); setListExpanded(false) }
+    else if (distance < -52) setListExpanded(true)
     else if (distance > 24) setListExpanded(false)
+  }
+  function tapListHandle() {
+    if (ignoreListTap.current || !listCollapsed) return
+    // A tap opens the normal resting panel; only an upward swipe fully expands it.
+    setListCollapsed(false)
+    setListExpanded(false)
+    setListOffset(0)
   }
 
   async function handleLogin() {
@@ -210,7 +221,7 @@ export default function App() {
       <main>
         <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} onSelect={selectCourse} onAddPoint={addPoint} />
         <section className={`explore-panel open ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''}`} style={{ transform: listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
-          <div className="explore-drag-handle" aria-label="下へスワイプしてコース一覧を閉じる。上へスワイプしてコース一覧を広げる" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} />
+          <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="タップでコース一覧を表示。下へスワイプで閉じ、上へスワイプで最大表示" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
           <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
           <div className="filter-row">
             <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
