@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
-import type { Feature, FeatureCollection, LineString } from 'geojson'
+import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
@@ -47,6 +47,24 @@ export const toContourFeatureCollection = (course: Course | null): FeatureCollec
     }
   }
   return { type: 'FeatureCollection' as const, features }
+}
+
+type CourseAnnotationProperties = { label: string; kind: 'ic' | 'place' | 'viewpoint' | 'gradient' | 'curves' }
+export const toCourseAnnotationCollection = (course: Course | null): FeatureCollection<Point, CourseAnnotationProperties> => {
+  if (!course || course.route.length < 2) return { type: 'FeatureCollection', features: [] }
+  const features: Feature<Point, CourseAnnotationProperties>[] = []
+  const pointAt = (progress: number) => course.route[Math.min(course.route.length - 1, Math.max(0, Math.round(progress * (course.route.length - 1))))]
+  const landmarks = course.landmarks?.length ? course.landmarks : []
+  landmarks.forEach((landmark) => features.push({ type: 'Feature', properties: { label: landmark.name, kind: landmark.type ?? 'place' }, geometry: { type: 'Point', coordinates: pointAt(landmark.progress) } }))
+  const profile = course.elevationProfile.length > 1 ? course.elevationProfile : [course.minElevation, course.maxElevation]
+  let steepIndex = 0; let steepScore = 0
+  for (let index = 1; index < profile.length; index += 1) { const score = Math.abs(profile[index] - profile[index - 1]); if (score > steepScore) { steepScore = score; steepIndex = index } }
+  if (steepScore > 20) features.push({ type: 'Feature', properties: { label: '急勾配', kind: 'gradient' }, geometry: { type: 'Point', coordinates: pointAt(steepIndex / Math.max(1, profile.length - 1)) } })
+  let curveIndex = Math.floor((course.route.length - 1) * .35); let curveScore = 0
+  for (let index = 1; index < course.route.length - 1; index += 1) { const a = course.route[index - 1]; const b = course.route[index]; const c = course.route[index + 1]; const bend = Math.abs((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])); if (bend > curveScore) { curveScore = bend; curveIndex = index } }
+  if (curveScore > 0) features.push({ type: 'Feature', properties: { label: '連続カーブ', kind: 'curves' }, geometry: { type: 'Point', coordinates: course.route[curveIndex] } })
+  features.push({ type: 'Feature', properties: { label: '展望区間', kind: 'viewpoint' }, geometry: { type: 'Point', coordinates: pointAt(.72) } })
+  return { type: 'FeatureCollection', features }
 }
 
 export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect, onAddPoint }: MapViewProps) {
@@ -110,6 +128,9 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
       map.addSource('draft', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
       map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
       map.addLayer({ id: 'selected-contour-labels', type: 'symbol', source: 'selected-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
+      map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
+      map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
+      map.addLayer({ id: 'course-annotation-labels', type: 'symbol', source: 'course-annotations', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, -1.25], 'text-anchor': 'bottom', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd', 'text-halo-width': 2 } })
     })
 
     map.on('mouseenter', 'courses-line', () => { map.getCanvas().style.cursor = 'pointer' })
@@ -147,6 +168,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
     const source = map.getSource('selected-course') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected?.route ?? [] } })
     ;(map.getSource('selected-contours') as GeoJSONSource | undefined)?.setData(toContourFeatureCollection(selected))
+    ;(map.getSource('course-annotations') as GeoJSONSource | undefined)?.setData(toCourseAnnotationCollection(selected))
     if (!selected) return
     const bounds = selected.route.reduce(
       (value, point) => value.extend(point),
