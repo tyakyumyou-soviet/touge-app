@@ -227,7 +227,7 @@ export default function App() {
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} />}
         {drawing && <CourseForm route={draftRoute} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onCancel={() => { setDrawing(false); setDraftRoute([]) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
-        {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} />}
+        {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
       </main>
       {notice && <div className="notice" role="status">{notice}</div>}

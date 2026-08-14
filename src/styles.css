@@ -198,7 +198,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-title .model-zoom-buttons { display: flex; gap: 4px; margin-left: auto; }
 .model-title .model-zoom-buttons button { width: 26px; margin: 0; padding: 0; font-size: 16px; line-height: 24px; }
 .model-title .model-zoom-buttons + button { margin-left: 0; }
-.route-model-panel svg { width: 100%; height: calc(100% - 28px); display: block; overflow: visible; }
+.route-model-panel svg { width: 100%; height: calc(100% - 118px); display: block; overflow: visible; }
+.model-tools { display: flex; justify-content: space-between; gap: 8px; margin: 7px 0 2px; }
+.model-preset-buttons, .line-mode { display: flex; gap: 4px; }
+.model-tools button { padding: 5px 7px; color: #d7e4dc; background: #ffffff10; border: 1px solid #ffffff22; border-radius: 5px; font-size: 9px; font-weight: 700; }
+.model-tools .active { color: #101915; background: var(--yellow); border-color: var(--yellow); }
 .route-model-canvas { cursor: grab; touch-action: none; user-select: none; }
 .route-model-canvas:active { cursor: grabbing; }
 .route-model-panel text { fill: #fff; font-size: 16px; font-weight: 700; }
@@ -207,6 +211,21 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-ribbon polygon { stroke: none; }
 .model-route-line-glow { fill: none; stroke: #07100ccc; stroke-width: 15px; stroke-linecap: round; stroke-linejoin: round; }
 .model-route-line { fill: none; stroke: url(#model-route-line); stroke-width: 9px; stroke-linecap: round; stroke-linejoin: round; }
+.model-grade-line polyline { fill: none; stroke-width: 9px; stroke-linecap: round; }
+.route-travel-dot { filter: drop-shadow(0 1px 3px #000); }
+.distance-marker circle { fill: #fff; stroke: #1e3529; stroke-width: 2px; }
+.distance-marker text, .route-highlight text { fill: #fff; stroke: #07100c; stroke-width: 3px; paint-order: stroke; font-size: 12px; font-weight: 800; }
+.route-highlight circle { fill: #07100c66; stroke-width: 3px; }
+.model-bottom-panels { position: absolute; right: 16px; bottom: 10px; left: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.cross-section, .compare-panel { min-width: 0; padding: 7px 9px; background: #07100cd9; border: 1px solid #ffffff20; border-radius: 7px; }
+.cross-section label, .compare-panel label { display: flex; align-items: center; gap: 6px; color: #c9d7cf; font-size: 9px; font-weight: 700; }
+.cross-section input { min-width: 0; flex: 1; accent-color: var(--yellow); }
+.cross-section svg { height: 34px; margin-top: 3px; }
+.cross-section polyline { fill: none; stroke: var(--yellow); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; }
+.compare-panel select { min-width: 0; flex: 1; color: #eaf2ed; background: #ffffff12; border: 1px solid #ffffff20; border-radius: 4px; font-size: 9px; }
+.compare-panel p { margin: 5px 0 0; color: #cad8d0; font-size: 9px; line-height: 1.5; }
+.landmark-card { position: absolute; z-index: 4; right: 22px; bottom: 94px; display: grid; gap: 4px; max-width: 220px; padding: 10px 34px 10px 12px; color: #e8f0eb; background: #07100cf2; border: 1px solid #f2d16b88; border-radius: 8px; box-shadow: 0 8px 26px #0008; }
+.landmark-card strong { color: var(--yellow); font-size: 13px; }.landmark-card span { color: #c2d2c9; font-size: 10px; line-height: 1.5; }.landmark-card button { position: absolute; top: 5px; right: 6px; color: #fff; background: none; border: 0; font-size: 18px; }
 .model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2.5px; }
 .model-landmark line { stroke: #f2d16b; stroke-width: 2px; }
 .model-landmark text { fill: #fff2b5; stroke: #07100c; stroke-width: 5px; paint-order: stroke; font-size: 16px; font-weight: 800; letter-spacing: .02em; }
@@ -306,6 +325,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .model-title .model-zoom-buttons button { width: 22px; padding: 0; font-size: 14px; }
   .route-model-panel text { font-size: 20px; }
   .route-model-panel .model-landmark text { font-size: 17px; stroke-width: 6px; }
+  .route-model-panel svg { height: calc(100% - 154px); }
+  .model-tools { align-items: flex-start; }
+  .model-preset-buttons { flex-wrap: wrap; }.model-tools button { padding: 4px 5px; font-size: 8px; }
+  .line-mode { flex: 0 0 auto; }
+  .model-bottom-panels { right: 8px; bottom: 6px; left: 8px; gap: 5px; }.cross-section, .compare-panel { padding: 5px 6px; }.compare-panel p { font-size: 8px; }.cross-section svg { height: 27px; }.landmark-card { right: 12px; bottom: 132px; max-width: 190px; }
   .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
   .three-d-controls input { width: 80px; }
   .three-d-legend { right: 8px; top: 92px; bottom: auto; }

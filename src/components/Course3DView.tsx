@@ -4,6 +4,7 @@ import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 
 type ViewMode = 'overview' | 'preview' | 'model'
+type LineMode = 'direction' | 'grade'
 
 function pointAt(route: Coordinate[], progress: number): Coordinate {
   const index = Math.min(route.length - 1, Math.max(0, Math.round(progress * (route.length - 1))))
@@ -53,7 +54,7 @@ function viewDepth([x, y]: Point3, yaw: number): number {
 function pointsText(points: Point2[]): string { return points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ') }
 function wrapDegrees(value: number): number { return ((value + 180) % 360 + 360) % 360 - 180 }
 
-export function Course3DView({ course, onClose }: { course: Course; onClose: () => void }) {
+export function Course3DView({ course, courses, onClose }: { course: Course; courses: Course[]; onClose: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
@@ -70,6 +71,10 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
   const [modelPitch, setModelPitch] = useState(49)
   const [modelZoom, setModelZoom] = useState(1.15)
   const [modelPan, setModelPan] = useState<Point2>([0, 0])
+  const [lineMode, setLineMode] = useState<LineMode>('direction')
+  const [activeLandmark, setActiveLandmark] = useState<{ name: string; progress: number; type?: string } | null>(null)
+  const [sectionProgress, setSectionProgress] = useState(.5)
+  const [compareCourseId, setCompareCourseId] = useState('')
   const [exaggeration, setExaggeration] = useState(1.5)
   const [mapError, setMapError] = useState('')
   const [compactModel, setCompactModel] = useState(() => window.matchMedia('(max-width: 760px)').matches)
@@ -214,6 +219,47 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
       return { ...landmark, x, y, labelX: x + (labelOnLeft ? -12 : 12), labelY: y - 12, labelOnLeft }
     })
   }, [course.distanceKm, course.landmarks, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
+  const visibleLandmarks = useMemo(() => {
+    const limit = effectiveZoom < .9 ? 2 : effectiveZoom < 1.35 ? 3 : modelLandmarks.length
+    return modelLandmarks.filter((_, index) => index < limit)
+  }, [effectiveZoom, modelLandmarks])
+  const distanceMarkers = useMemo(() => {
+    const markers: { distance: number; x: number; y: number }[] = []
+    for (let distance = 5; distance < course.distanceKm; distance += 5) {
+      const point = model.centers[Math.round((distance / course.distanceKm) * (model.centers.length - 1))]
+      const [x, y] = projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)
+      markers.push({ distance, x, y })
+    }
+    return markers
+  }, [course.distanceKm, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
+  const gradeSegments = useMemo(() => model.centers.slice(1).map((point, index) => {
+    const before = model.centers[index]
+    const gradient = point[2] - before[2]
+    const color = gradient > .35 ? '#e86a4d' : gradient < -.35 ? '#54a8f7' : '#54bd86'
+    return { points: pointsText([projectPoint(before, modelYaw, modelPitch, effectiveZoom, modelPan), projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)]), color }
+  }), [effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
+  const highlights = useMemo(() => {
+    const entries = [
+      { key: 'gradient', label: '急勾配', color: '#e86a4d', progress: 0 },
+      { key: 'curves', label: '連続カーブ', color: '#f2d16b', progress: 0 },
+      { key: 'view', label: '展望区間', color: '#78c4ff', progress: .72 },
+    ]
+    let steepest = 0; let steepIndex = 0; let curveScore = 0; let curveIndex = 0
+    for (let index = 1; index < model.centers.length - 1; index += 1) {
+      const a = model.centers[index - 1]; const b = model.centers[index]; const c = model.centers[index + 1]
+      const steep = Math.abs(c[2] - a[2]); if (steep > steepest) { steepest = steep; steepIndex = index }
+      const vx = b[0] - a[0]; const vy = b[1] - a[1]; const wx = c[0] - b[0]; const wy = c[1] - b[1]
+      const bend = Math.abs(vx * wy - vy * wx); if (bend > curveScore) { curveScore = bend; curveIndex = index }
+    }
+    entries[0].progress = steepIndex / Math.max(1, model.centers.length - 1)
+    entries[1].progress = curveIndex / Math.max(1, model.centers.length - 1)
+    return entries.map((entry) => ({ ...entry, point: model.centers[Math.round(entry.progress * (model.centers.length - 1))] }))
+  }, [model.centers])
+  const sectionValues = useMemo(() => {
+    const center = Math.round(sectionProgress * (profile.length - 1)); const start = Math.max(0, center - 2); const end = Math.min(profile.length - 1, center + 2)
+    return profile.slice(start, end + 1)
+  }, [profile, sectionProgress])
+  const comparedCourse = courses.find((item) => item.id === compareCourseId)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -364,7 +410,23 @@ export function Course3DView({ course, onClose }: { course: Course; onClose: () 
         {([['overview', '俯瞰'], ['preview', '走行プレビュー'], ['model', '3Dルート模型']] as [ViewMode, string][]).map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => { setMode(value); if (value !== 'preview') setPlaying(false) }}>{label}</button>)}
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
-      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型"><div className="model-title"><strong>滑らかな3Dルートライン</strong><span>START → GOAL · 1本指で視点移動 · 2本指で拡大・平行移動（{Math.round(effectiveZoom * 100)}%）</span><div className="model-zoom-buttons" aria-label="模型の縮尺"><button onClick={() => scheduleModelZoom(modelZoom / 1.18)} aria-label="縮小">−</button><button onClick={() => scheduleModelZoom(modelZoom * 1.18)} aria-label="拡大">＋</button></div><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1.15); setModelPan([0, 0]) }}>視点を戻す</button></div><svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の滑らかな3Dルートライン。1本指で視点を変更し、2本指のピンチで拡大縮小と平行移動ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}><defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs><g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g><polyline className="model-route-line-glow" points={modelLinePoints} /><polyline className="model-route-line" points={modelLinePoints} />{modelLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`}><circle cx={landmark.x} cy={landmark.y} r="4" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}<circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text></svg></section>}
+      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型">
+        <div className="model-title"><strong>滑らかな3Dルートライン</strong><span>START → GOAL · 1本指で視点移動 · 2本指で拡大・平行移動（{Math.round(effectiveZoom * 100)}%）</span><div className="model-zoom-buttons" aria-label="模型の縮尺"><button onClick={() => scheduleModelZoom(modelZoom / 1.18)} aria-label="縮小">−</button><button onClick={() => scheduleModelZoom(modelZoom * 1.18)} aria-label="拡大">＋</button></div><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1.15); setModelPan([0, 0]) }}>視点を戻す</button></div>
+        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelPan([0, 0]) }}>全体</button><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(8); setModelZoom(1.45) }}>横から</button><button onClick={() => { setModelYaw(model.defaultYaw + 35); setModelPitch(62); setModelZoom(1.25) }}>進行方向</button><button onClick={() => { setModelYaw(model.defaultYaw - 55); setModelPitch(72); setModelZoom(1.35) }}>カーブ</button></div><div className="line-mode"><button className={lineMode === 'direction' ? 'active' : ''} onClick={() => setLineMode('direction')}>進行色</button><button className={lineMode === 'grade' ? 'active' : ''} onClick={() => setLineMode('grade')}>勾配色</button></div></div>
+        <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の滑らかな3Dルートライン。1本指で視点を変更し、2本指のピンチで拡大縮小と平行移動ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
+          <defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
+          <g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
+          <polyline className="model-route-line-glow" points={modelLinePoints} />
+          {lineMode === 'direction' ? <polyline className="model-route-line" points={modelLinePoints} /> : <g className="model-grade-line">{gradeSegments.map((segment, index) => <polyline key={index} points={segment.points} stroke={segment.color} />)}</g>}
+          <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
+          {distanceMarkers.map((marker) => <g className="distance-marker" key={marker.distance}><circle cx={marker.x} cy={marker.y} r="4" /><text x={marker.x + 8} y={marker.y - 8}>{marker.distance}km</text></g>)}
+          {highlights.map((item) => { const [x, y] = projectPoint(item.point, modelYaw, modelPitch, effectiveZoom, modelPan); return <g className="route-highlight" key={item.key}><circle cx={x} cy={y} r="9" stroke={item.color} /><text x={x + 12} y={y + 5}>{item.label}</text></g> })}
+          {visibleLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`} role="button" tabIndex={0} aria-label={`${landmark.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }}><circle cx={landmark.x} cy={landmark.y} r="7" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}
+          <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text>
+        </svg>
+        <div className="model-bottom-panels"><section className="cross-section"><label>断面位置 <input type="range" min="0" max="1" step=".01" value={sectionProgress} onChange={(event) => setSectionProgress(Number(event.target.value))} /></label><svg viewBox="0 0 160 45" aria-label="選択地点周辺の高低断面"><polyline points={pointsText(sectionValues.map((value, index) => [index * (160 / Math.max(1, sectionValues.length - 1)), 40 - ((value - Math.min(...sectionValues)) / Math.max(1, Math.max(...sectionValues) - Math.min(...sectionValues))) * 32] as Point2))} /></svg></section><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {course.maxElevation - course.minElevation}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
+        {activeLandmark && <aside className="landmark-card"><button onClick={() => setActiveLandmark(null)} aria-label="地点情報を閉じる">×</button><strong>{activeLandmark.name}</strong><span>{activeLandmark.type === 'ic' ? 'IC・出入口' : activeLandmark.type === 'viewpoint' ? '展望・休憩地点' : '周辺地点'} · STARTから約{(activeLandmark.progress * course.distanceKm).toFixed(1)}km</span></aside>}
+      </section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
       <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {course.maxElevation - course.minElevation}m</b></div>
     </div>
