@@ -4,7 +4,6 @@ import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 
 type ViewMode = 'overview' | 'preview' | 'model'
-type LineMode = 'direction' | 'grade'
 
 function pointAt(route: Coordinate[], progress: number): Coordinate {
   const index = Math.min(route.length - 1, Math.max(0, Math.round(progress * (route.length - 1))))
@@ -54,15 +53,16 @@ function viewDepth([x, y]: Point3, yaw: number): number {
 
 function pointsText(points: Point2[]): string { return points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ') }
 function wrapDegrees(value: number): number { return ((value + 180) % 360 + 360) % 360 - 180 }
+function angleBetween(first: { x: number; y: number }, second: { x: number; y: number }): number { return Math.atan2(second.y - first.y, second.x - first.x) * 180 / Math.PI }
 
 export function Course3DView({ course, courses, onClose }: { course: Course; courses: Course[]; onClose: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
-  const modelDragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
+  const modelDragRef = useRef<{ pointerId: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
   const modelPointersRef = useRef(new Map<number, { x: number; y: number }>())
-  const pinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
-  const touchPinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2 } | null>(null)
+  const pinchRef = useRef<{ distance: number; angle: number; zoom: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
+  const touchPinchRef = useRef<{ distance: number; angle: number; zoom: number; y: number; yaw: number; pitch: number } | null>(null)
   // Gestures can emit far more events than a phone can paint. Keep one canonical
   // view state and commit only the most recent input once per animation frame.
   // This also prevents a queued zoom from overwriting a later reset/preset.
@@ -76,9 +76,7 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   const [modelPitch, setModelPitch] = useState(49)
   const [modelZoom, setModelZoom] = useState(1.15)
   const [modelPan, setModelPan] = useState<Point2>([0, 0])
-  const [lineMode, setLineMode] = useState<LineMode>('direction')
   const [activeLandmark, setActiveLandmark] = useState<{ name: string; progress: number; type?: string } | null>(null)
-  const [sectionProgress, setSectionProgress] = useState(.5)
   const [compareCourseId, setCompareCourseId] = useState('')
   const [exaggeration, setExaggeration] = useState(1.5)
   const [mapError, setMapError] = useState('')
@@ -257,10 +255,6 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     entries[1].progress = curveIndex / Math.max(1, model.centers.length - 1)
     return entries.map((entry) => ({ ...entry, point: model.centers[Math.round(entry.progress * (model.centers.length - 1))] }))
   }, [model.centers])
-  const sectionValues = useMemo(() => {
-    const center = Math.round(sectionProgress * (profile.length - 1)); const start = Math.max(0, center - 2); const end = Math.min(profile.length - 1, center + 2)
-    return profile.slice(start, end + 1)
-  }, [profile, sectionProgress])
   const comparedCourse = courses.find((item) => item.id === compareCourseId)
 
   useEffect(() => {
@@ -354,26 +348,19 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     })
   }
 
-  function resetModelView() {
-    modelPointersRef.current.clear()
-    modelDragRef.current = null
-    pinchRef.current = null
-    touchPinchRef.current = null
-    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
-  }
-
   function startModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic pointer events may not be capturable. */ }
     modelPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (modelPointersRef.current.size === 1) {
-      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+      const rect = event.currentTarget.getBoundingClientRect()
+      // Google Maps-style: one finger moves the map without changing its view.
+      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
       pinchRef.current = null
       return
     }
     if (modelPointersRef.current.size === 2) {
       const [first, second] = [...modelPointersRef.current.values()]
-      const rect = event.currentTarget.getBoundingClientRect()
-      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
+      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), angle: angleBetween(first, second), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
       modelDragRef.current = null
     }
   }
@@ -385,14 +372,15 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       const [first, second] = [...modelPointersRef.current.values()]
       const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y))
       scheduleModelZoom(pinchRef.current.zoom * (distance / pinchRef.current.distance))
-      const centerX = (first.x + second.x) / 2; const centerY = (first.y + second.y) / 2
-      applyModelView({ pan: [pinchRef.current.pan[0] + (centerX - pinchRef.current.x) * pinchRef.current.scale, pinchRef.current.pan[1] + (centerY - pinchRef.current.y) * pinchRef.current.scale] })
+      const angleDelta = wrapDegrees(angleBetween(first, second) - pinchRef.current.angle)
+      const centerY = (first.y + second.y) / 2
+      // Two fingers rotate and tilt, matching Google Maps' 3D gesture model.
+      applyModelView({ yaw: pinchRef.current.yaw + angleDelta, pitch: pinchRef.current.pitch + (centerY - pinchRef.current.y) * .35 })
       return
     }
     const drag = modelDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    // Dragging moves the model in the same apparent direction as the pointer.
-    applyModelView({ yaw: drag.yaw - (event.clientX - drag.x) * .45, pitch: drag.pitch + (event.clientY - drag.y) * .35 })
+    applyModelView({ pan: [drag.pan[0] + (event.clientX - drag.x) * drag.scale, drag.pan[1] + (event.clientY - drag.y) * drag.scale] })
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
@@ -402,7 +390,8 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     // Continue rotating naturally with the finger that remains after a pinch.
     if (modelPointersRef.current.size === 1) {
       const [pointerId, pointer] = [...modelPointersRef.current.entries()][0]
-      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+      const rect = event.currentTarget.getBoundingClientRect()
+      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
     }
   }
 
@@ -418,15 +407,15 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     // Pointer events are the primary path. This fallback is only for installed
     // WebViews which fail to deliver a second pointer to the SVG.
     if (modelPointersRef.current.size) return
-    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), zoom: modelViewRef.current.zoom, x: (event.touches[0].clientX + event.touches[1].clientX) / 2, y: (event.touches[0].clientY + event.touches[1].clientY) / 2, pan: modelViewRef.current.pan }
+    const first = { x: event.touches[0].clientX, y: event.touches[0].clientY }; const second = { x: event.touches[1].clientX, y: event.touches[1].clientY }
+    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), angle: angleBetween(first, second), zoom: modelViewRef.current.zoom, y: (first.y + second.y) / 2, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
   }
 
   function moveModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
     if (event.touches.length !== 2 || !touchPinchRef.current || modelPointersRef.current.size) return
     scheduleModelZoom(touchPinchRef.current.zoom * (touchDistance(event.touches) / touchPinchRef.current.distance))
-    const centerX = (event.touches[0].clientX + event.touches[1].clientX) / 2; const centerY = (event.touches[0].clientY + event.touches[1].clientY) / 2
-    const rect = event.currentTarget.getBoundingClientRect(); const scale = 1000 / Math.max(1, rect.width)
-    applyModelView({ pan: [touchPinchRef.current.pan[0] + (centerX - touchPinchRef.current.x) * scale, touchPinchRef.current.pan[1] + (centerY - touchPinchRef.current.y) * scale] })
+    const first = { x: event.touches[0].clientX, y: event.touches[0].clientY }; const second = { x: event.touches[1].clientX, y: event.touches[1].clientY }
+    applyModelView({ yaw: touchPinchRef.current.yaw + wrapDegrees(angleBetween(first, second) - touchPinchRef.current.angle), pitch: touchPinchRef.current.pitch + (((first.y + second.y) / 2) - touchPinchRef.current.y) * .35 })
   }
 
   function endModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
@@ -452,20 +441,19 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
       {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型">
-        <div className="model-title"><strong>滑らかな3Dルートライン</strong><span>START → GOAL · 1本指で視点移動 · 2本指で拡大・平行移動（{Math.round(effectiveZoom * 100)}%）</span><div className="model-zoom-buttons" aria-label="模型の縮尺"><button onClick={() => scheduleModelZoom(modelViewRef.current.zoom / 1.18)} aria-label="縮小">−</button><button onClick={() => scheduleModelZoom(modelViewRef.current.zoom * 1.18)} aria-label="拡大">＋</button></div><button onClick={resetModelView}>視点を戻す</button></div>
-        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: 1.45, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: 1.25, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: 1.35, pan: [0, 0] })}>カーブ</button></div><div className="line-mode"><button className={lineMode === 'direction' ? 'active' : ''} onClick={() => setLineMode('direction')}>進行色</button><button className={lineMode === 'grade' ? 'active' : ''} onClick={() => setLineMode('grade')}>勾配色</button></div></div>
-        <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の滑らかな3Dルートライン。1本指で視点を変更し、2本指のピンチで拡大縮小と平行移動ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
+        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: 1.45, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: 1.25, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: 1.35, pan: [0, 0] })}>カーブ</button></div></div>
+        <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で平行移動、2本指で拡大縮小・回転・俯角調整ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
           <defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
           <g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
           <polyline className="model-route-line-glow" points={modelLinePoints} />
-          {lineMode === 'direction' ? <polyline className="model-route-line" points={modelLinePoints} /> : <g className="model-grade-line">{gradeSegments.map((segment, index) => <polyline key={index} points={segment.points} stroke={segment.color} />)}</g>}
+          <g className="model-grade-line">{gradeSegments.map((segment, index) => <polyline key={index} points={segment.points} stroke={segment.color} />)}</g>
           <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
           {distanceMarkers.map((marker) => <g className="distance-marker" key={marker.distance}><circle cx={marker.x} cy={marker.y} r="4" /><text x={marker.x + 8} y={marker.y - 8}>{marker.distance}km</text></g>)}
           {highlights.map((item) => { const [x, y] = projectPoint(item.point, modelYaw, modelPitch, effectiveZoom, modelPan); return <g className="route-highlight" key={item.key}><circle cx={x} cy={y} r="9" stroke={item.color} /><text x={x + 12} y={y + 5}>{item.label}</text></g> })}
           {visibleLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`} role="button" tabIndex={0} aria-label={`${landmark.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }}><circle cx={landmark.x} cy={landmark.y} r="7" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}
           <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text>
         </svg>
-        <div className="model-bottom-panels"><section className="cross-section"><label>断面位置 <input type="range" min="0" max="1" step=".01" value={sectionProgress} onChange={(event) => setSectionProgress(Number(event.target.value))} /></label><svg viewBox="0 0 160 45" aria-label="選択地点周辺の高低断面"><polyline points={pointsText(sectionValues.map((value, index) => [index * (160 / Math.max(1, sectionValues.length - 1)), 40 - ((value - Math.min(...sectionValues)) / Math.max(1, Math.max(...sectionValues) - Math.min(...sectionValues))) * 32] as Point2))} /></svg></section><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {course.maxElevation - course.minElevation}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
+        <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {course.maxElevation - course.minElevation}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
         {activeLandmark && <aside className="landmark-card"><button onClick={() => setActiveLandmark(null)} aria-label="地点情報を閉じる">×</button><strong>{activeLandmark.name}</strong><span>{activeLandmark.type === 'ic' ? 'IC・出入口' : activeLandmark.type === 'viewpoint' ? '展望・休憩地点' : '周辺地点'} · STARTから約{(activeLandmark.progress * course.distanceKm).toFixed(1)}km</span></aside>}
       </section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
