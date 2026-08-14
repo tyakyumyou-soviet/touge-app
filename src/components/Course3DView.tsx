@@ -37,6 +37,7 @@ function interpolatedElevationAt(values: number[], progress: number): number {
 
 type Point3 = [number, number, number]
 type Point2 = [number, number]
+type ModelView = { yaw: number; pitch: number; zoom: number; pan: Point2 }
 
 function projectPoint([x, y, z]: Point3, yaw: number, pitch: number, zoom = 1, [panX, panY]: Point2 = [0, 0]): Point2 {
   const yawRad = (yaw * Math.PI) / 180
@@ -62,8 +63,12 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   const modelPointersRef = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
   const touchPinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2 } | null>(null)
-  const zoomFrameRef = useRef<number | null>(null)
-  const pendingZoomRef = useRef<number | null>(null)
+  // Gestures can emit far more events than a phone can paint. Keep one canonical
+  // view state and commit only the most recent input once per animation frame.
+  // This also prevents a queued zoom from overwriting a later reset/preset.
+  const modelViewRef = useRef<ModelView>({ yaw: 0, pitch: 49, zoom: 1.15, pan: [0, 0] })
+  const modelViewFrameRef = useRef<number | null>(null)
+  const pendingModelViewRef = useRef<ModelView | null>(null)
   const [mode, setMode] = useState<ViewMode>('overview')
   const [progress, setProgress] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -136,10 +141,7 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   const effectiveZoom = model.autoFit * modelZoom
 
   useEffect(() => {
-    setModelYaw(model.defaultYaw)
-    setModelPitch(49)
-    setModelZoom(1.15)
-    setModelPan([0, 0])
+    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
   }, [course.id, model.defaultYaw])
 
   useEffect(() => {
@@ -149,7 +151,7 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     return () => query.removeEventListener('change', update)
   }, [])
 
-  useEffect(() => () => { if (zoomFrameRef.current) window.cancelAnimationFrame(zoomFrameRef.current) }, [])
+  useEffect(() => () => { if (modelViewFrameRef.current) window.cancelAnimationFrame(modelViewFrameRef.current) }, [])
   const modelFaces = useMemo(() => {
     const faces: { points: string; color: string; depth: number }[] = []
     const addFace = (points: Point3[], color: string) => {
@@ -322,18 +324,56 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     if (mode === 'preview') setPlaying(false)
   }
 
+  function applyModelView(next: Partial<ModelView>, immediately = false) {
+    const base = pendingModelViewRef.current ?? modelViewRef.current
+    const view: ModelView = {
+      yaw: next.yaw === undefined ? base.yaw : wrapDegrees(next.yaw),
+      pitch: next.pitch === undefined ? base.pitch : Math.min(89, Math.max(-89, next.pitch)),
+      // Keep a generous close-inspection range while still bounding SVG coordinates.
+      // Long courses start with a smaller automatic fit, so 80× preserves a
+      // genuinely close view even after that fit has been applied.
+      zoom: next.zoom === undefined ? base.zoom : Math.min(80, Math.max(.1, next.zoom)),
+      pan: next.pan === undefined ? base.pan : next.pan,
+    }
+    modelViewRef.current = view
+    pendingModelViewRef.current = view
+    if (immediately) {
+      if (modelViewFrameRef.current) window.cancelAnimationFrame(modelViewFrameRef.current)
+      modelViewFrameRef.current = null
+      pendingModelViewRef.current = null
+      setModelYaw(view.yaw); setModelPitch(view.pitch); setModelZoom(view.zoom); setModelPan(view.pan)
+      return
+    }
+    if (modelViewFrameRef.current) return
+    modelViewFrameRef.current = window.requestAnimationFrame(() => {
+      modelViewFrameRef.current = null
+      const latest = pendingModelViewRef.current
+      pendingModelViewRef.current = null
+      if (!latest) return
+      setModelYaw(latest.yaw); setModelPitch(latest.pitch); setModelZoom(latest.zoom); setModelPan(latest.pan)
+    })
+  }
+
+  function resetModelView() {
+    modelPointersRef.current.clear()
+    modelDragRef.current = null
+    pinchRef.current = null
+    touchPinchRef.current = null
+    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
+  }
+
   function startModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic pointer events may not be capturable. */ }
     modelPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (modelPointersRef.current.size === 1) {
-      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: modelYaw, pitch: modelPitch }
+      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
       pinchRef.current = null
       return
     }
     if (modelPointersRef.current.size === 2) {
       const [first, second] = [...modelPointersRef.current.values()]
       const rect = event.currentTarget.getBoundingClientRect()
-      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), zoom: modelZoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelPan, scale: 1000 / Math.max(1, rect.width) }
+      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
       modelDragRef.current = null
     }
   }
@@ -346,20 +386,24 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y))
       scheduleModelZoom(pinchRef.current.zoom * (distance / pinchRef.current.distance))
       const centerX = (first.x + second.x) / 2; const centerY = (first.y + second.y) / 2
-      setModelPan([pinchRef.current.pan[0] + (centerX - pinchRef.current.x) * pinchRef.current.scale, pinchRef.current.pan[1] + (centerY - pinchRef.current.y) * pinchRef.current.scale])
+      applyModelView({ pan: [pinchRef.current.pan[0] + (centerX - pinchRef.current.x) * pinchRef.current.scale, pinchRef.current.pan[1] + (centerY - pinchRef.current.y) * pinchRef.current.scale] })
       return
     }
     const drag = modelDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     // Dragging moves the model in the same apparent direction as the pointer.
-    setModelYaw(wrapDegrees(drag.yaw - (event.clientX - drag.x) * .45))
-    setModelPitch(Math.min(89, Math.max(-89, drag.pitch + (event.clientY - drag.y) * .35)))
+    applyModelView({ yaw: drag.yaw - (event.clientX - drag.x) * .45, pitch: drag.pitch + (event.clientY - drag.y) * .35 })
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     modelPointersRef.current.delete(event.pointerId)
     if (modelPointersRef.current.size < 2) pinchRef.current = null
     if (modelDragRef.current?.pointerId === event.pointerId) modelDragRef.current = null
+    // Continue rotating naturally with the finger that remains after a pinch.
+    if (modelPointersRef.current.size === 1) {
+      const [pointerId, pointer] = [...modelPointersRef.current.entries()][0]
+      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+    }
   }
 
   function touchDistance(touches: { length: number; [index: number]: { clientX: number; clientY: number } }): number {
@@ -371,15 +415,18 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   // to SVG. Keep a native touch fallback so pinch remains available there too.
   function startModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
     if (event.touches.length !== 2) return
-    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), zoom: modelZoom, x: (event.touches[0].clientX + event.touches[1].clientX) / 2, y: (event.touches[0].clientY + event.touches[1].clientY) / 2, pan: modelPan }
+    // Pointer events are the primary path. This fallback is only for installed
+    // WebViews which fail to deliver a second pointer to the SVG.
+    if (modelPointersRef.current.size) return
+    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), zoom: modelViewRef.current.zoom, x: (event.touches[0].clientX + event.touches[1].clientX) / 2, y: (event.touches[0].clientY + event.touches[1].clientY) / 2, pan: modelViewRef.current.pan }
   }
 
   function moveModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
-    if (event.touches.length !== 2 || !touchPinchRef.current) return
+    if (event.touches.length !== 2 || !touchPinchRef.current || modelPointersRef.current.size) return
     scheduleModelZoom(touchPinchRef.current.zoom * (touchDistance(event.touches) / touchPinchRef.current.distance))
     const centerX = (event.touches[0].clientX + event.touches[1].clientX) / 2; const centerY = (event.touches[0].clientY + event.touches[1].clientY) / 2
     const rect = event.currentTarget.getBoundingClientRect(); const scale = 1000 / Math.max(1, rect.width)
-    setModelPan([touchPinchRef.current.pan[0] + (centerX - touchPinchRef.current.x) * scale, touchPinchRef.current.pan[1] + (centerY - touchPinchRef.current.y) * scale])
+    applyModelView({ pan: [touchPinchRef.current.pan[0] + (centerX - touchPinchRef.current.x) * scale, touchPinchRef.current.pan[1] + (centerY - touchPinchRef.current.y) * scale] })
   }
 
   function endModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
@@ -387,18 +434,12 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   }
 
   function scheduleModelZoom(nextZoom: number) {
-    pendingZoomRef.current = Math.min(10, Math.max(.25, nextZoom))
-    if (zoomFrameRef.current) return
-    zoomFrameRef.current = window.requestAnimationFrame(() => {
-      zoomFrameRef.current = null
-      if (pendingZoomRef.current !== null) setModelZoom(pendingZoomRef.current)
-      pendingZoomRef.current = null
-    })
+    applyModelView({ zoom: nextZoom })
   }
 
   function zoomModel(event: ReactWheelEvent<SVGSVGElement>) {
     event.preventDefault()
-    scheduleModelZoom(modelZoom * (event.deltaY > 0 ? .9 : 1.1))
+    scheduleModelZoom(modelViewRef.current.zoom * (event.deltaY > 0 ? .9 : 1.1))
   }
 
   return (
@@ -411,8 +452,8 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
       {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型">
-        <div className="model-title"><strong>滑らかな3Dルートライン</strong><span>START → GOAL · 1本指で視点移動 · 2本指で拡大・平行移動（{Math.round(effectiveZoom * 100)}%）</span><div className="model-zoom-buttons" aria-label="模型の縮尺"><button onClick={() => scheduleModelZoom(modelZoom / 1.18)} aria-label="縮小">−</button><button onClick={() => scheduleModelZoom(modelZoom * 1.18)} aria-label="拡大">＋</button></div><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelZoom(1.15); setModelPan([0, 0]) }}>視点を戻す</button></div>
-        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(49); setModelPan([0, 0]) }}>全体</button><button onClick={() => { setModelYaw(model.defaultYaw); setModelPitch(8); setModelZoom(1.45) }}>横から</button><button onClick={() => { setModelYaw(model.defaultYaw + 35); setModelPitch(62); setModelZoom(1.25) }}>進行方向</button><button onClick={() => { setModelYaw(model.defaultYaw - 55); setModelPitch(72); setModelZoom(1.35) }}>カーブ</button></div><div className="line-mode"><button className={lineMode === 'direction' ? 'active' : ''} onClick={() => setLineMode('direction')}>進行色</button><button className={lineMode === 'grade' ? 'active' : ''} onClick={() => setLineMode('grade')}>勾配色</button></div></div>
+        <div className="model-title"><strong>滑らかな3Dルートライン</strong><span>START → GOAL · 1本指で視点移動 · 2本指で拡大・平行移動（{Math.round(effectiveZoom * 100)}%）</span><div className="model-zoom-buttons" aria-label="模型の縮尺"><button onClick={() => scheduleModelZoom(modelViewRef.current.zoom / 1.18)} aria-label="縮小">−</button><button onClick={() => scheduleModelZoom(modelViewRef.current.zoom * 1.18)} aria-label="拡大">＋</button></div><button onClick={resetModelView}>視点を戻す</button></div>
+        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: 1.45, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: 1.25, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: 1.35, pan: [0, 0] })}>カーブ</button></div><div className="line-mode"><button className={lineMode === 'direction' ? 'active' : ''} onClick={() => setLineMode('direction')}>進行色</button><button className={lineMode === 'grade' ? 'active' : ''} onClick={() => setLineMode('grade')}>勾配色</button></div></div>
         <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の滑らかな3Dルートライン。1本指で視点を変更し、2本指のピンチで拡大縮小と平行移動ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
           <defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
           <g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
