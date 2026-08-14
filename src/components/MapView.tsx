@@ -28,7 +28,7 @@ const toFeatureCollection = (courses: Course[]) => ({
 // used by the course rating. They are intentionally shown only at broad
 // intervals so the map remains readable while still making large climbs obvious.
 type ContourProperties = { elevation: number; label: string }
-const toContourFeatureCollection = (course: Course | null): FeatureCollection<LineString, ContourProperties> => {
+export const toContourFeatureCollection = (course: Course | null): FeatureCollection<LineString, ContourProperties> => {
   if (!course || course.route.length < 2) return { type: 'FeatureCollection', features: [] }
   const values = course.elevationProfile.length > 1 ? course.elevationProfile : [course.minElevation, course.maxElevation]
   const min = Math.min(...values); const max = Math.max(...values); const step = max - min >= 500 ? 100 : 50
