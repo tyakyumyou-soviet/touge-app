@@ -190,8 +190,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .preview-panel span { color: #bdc9c2; font-size: 13px; }
 .preview-panel input { accent-color: var(--yellow); }
 .preview-panel button { padding: 9px 14px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 13px; font-weight: 700; }
-.route-model-panel { inset: 110px 20px 85px; padding: 18px; }
-.model-title { display: flex; align-items: baseline; gap: 13px; }
+.route-model-panel { inset: 110px 20px 85px; padding: 18px; isolation: isolate; }
+/* The route may become much larger than the drawing area while zooming. Keep
+   it inside its canvas and below every HTML label/control in this panel. */
+.model-title { position: relative; z-index: 3; display: flex; align-items: baseline; gap: 13px; }
 .model-title strong { color: var(--yellow); font-size: 16px; }
 .model-title span { color: #bdc9c2; font-size: 12px; }
 .model-title button { margin-left: auto; padding: 7px 10px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 12px; font-weight: 700; }
@@ -199,11 +201,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-title .model-zoom-buttons button { width: 30px; margin: 0; padding: 0; font-size: 19px; line-height: 28px; }
 .model-title .model-zoom-buttons + button { margin-left: 0; }
 .route-model-panel svg { width: 100%; height: calc(100% - 118px); display: block; overflow: visible; }
-.model-tools { display: flex; justify-content: space-between; gap: 8px; margin: 7px 0 2px; }
+.model-tools { position: relative; z-index: 3; display: flex; justify-content: space-between; gap: 8px; margin: 7px 0 2px; }
 .model-preset-buttons, .line-mode { display: flex; gap: 4px; }
 .model-tools button { padding: 6px 9px; color: #d7e4dc; background: #ffffff10; border: 1px solid #ffffff22; border-radius: 5px; font-size: 11px; font-weight: 700; }
 .model-tools .active { color: #101915; background: var(--yellow); border-color: var(--yellow); }
-.route-model-canvas { cursor: grab; touch-action: none; user-select: none; }
+.route-model-panel .route-model-canvas { position: relative; z-index: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
 .route-model-canvas:active { cursor: grabbing; }
 .route-model-panel text { fill: #fff; font-size: 20px; font-weight: 700; }
 .model-terrain { opacity: .58; pointer-events: none; }
@@ -216,7 +218,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .distance-marker circle { fill: #fff; stroke: #1e3529; stroke-width: 2px; }
 .distance-marker text, .route-highlight text { fill: #fff; stroke: #07100c; stroke-width: 4px; paint-order: stroke; font-size: 16px; font-weight: 800; }
 .route-highlight circle { fill: #07100c66; stroke-width: 3px; }
-.model-bottom-panels { position: absolute; right: 16px; bottom: 10px; left: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.model-bottom-panels { position: absolute; z-index: 4; right: 16px; bottom: 10px; left: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .cross-section, .compare-panel { min-width: 0; padding: 7px 9px; background: #07100cd9; border: 1px solid #ffffff20; border-radius: 7px; }
 .cross-section label, .compare-panel label { display: flex; align-items: center; gap: 6px; color: #c9d7cf; font-size: 11px; font-weight: 700; }
 .cross-section input { min-width: 0; flex: 1; accent-color: var(--yellow); }
@@ -224,7 +226,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .cross-section polyline { fill: none; stroke: var(--yellow); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; }
 .compare-panel select { min-width: 0; flex: 1; color: #eaf2ed; background: #ffffff12; border: 1px solid #ffffff20; border-radius: 4px; font-size: 11px; }
 .compare-panel p { margin: 5px 0 0; color: #cad8d0; font-size: 11px; line-height: 1.5; }
-.landmark-card { position: absolute; z-index: 4; right: 22px; bottom: 94px; display: grid; gap: 4px; max-width: 220px; padding: 10px 34px 10px 12px; color: #e8f0eb; background: #07100cf2; border: 1px solid #f2d16b88; border-radius: 8px; box-shadow: 0 8px 26px #0008; }
+.landmark-card { position: absolute; z-index: 5; right: 22px; bottom: 94px; display: grid; gap: 4px; max-width: 220px; padding: 10px 34px 10px 12px; color: #e8f0eb; background: #07100cf2; border: 1px solid #f2d16b88; border-radius: 8px; box-shadow: 0 8px 26px #0008; }
 .landmark-card strong { color: var(--yellow); font-size: 16px; }.landmark-card span { color: #c2d2c9; font-size: 12px; line-height: 1.5; }.landmark-card button { position: absolute; top: 5px; right: 6px; color: #fff; background: none; border: 0; font-size: 21px; }
 .model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2.5px; }
 .model-landmark line { stroke: #f2d16b; stroke-width: 2px; }
