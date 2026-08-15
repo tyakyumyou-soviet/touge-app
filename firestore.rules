@@ -6,9 +6,13 @@ service cloud.firestore {
     function validVisibility(value) { return value in ['public', 'limited', 'private']; }
 
     match /users/{userId} {
-      allow read: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn() && (request.auth.uid == userId || resource.data.mapVisibility == 'all');
       allow create, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
+      match /following/{targetId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create, delete: if signedIn() && request.auth.uid == userId;
+      }
     }
 
     match /courses/{courseId} {
@@ -36,6 +40,21 @@ service cloud.firestore {
           && request.resource.data.scenery >= 1 && request.resource.data.scenery <= 5;
         allow delete: if signedIn() && request.auth.uid == userId;
       }
+      match /likes/{userId} {
+        allow read: if true;
+        allow create, delete: if signedIn() && request.auth.uid == userId;
+      }
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if signedIn() && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.body is string && request.resource.data.body.size() > 0
+          && request.resource.data.body.size() <= 1000;
+        allow update, delete: if signedIn() && resource.data.authorId == request.auth.uid;
+      }
+      match /live/{infoId} {
+        allow read: if true;
+        allow write: if signedIn() && request.auth.token.admin == true;
+      }
     }
 
     match /reports/{reportId} {
@@ -43,7 +62,7 @@ service cloud.firestore {
         && (resource.data.authorId == request.auth.uid || request.auth.token.admin == true);
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.type in ['toll-info', 'road-condition']
+        && request.resource.data.type in ['toll-info', 'road-condition', 'discovery', 'quality', 'road']
         && request.resource.data.courseId is string
         && request.resource.data.sourceUrl is string
         && request.resource.data.sourceUrl.size() <= 1000
@@ -53,6 +72,12 @@ service cloud.firestore {
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.status == 'pending';
       allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    match /adminQueue/{itemId} {
+      allow read, update: if signedIn() && request.auth.token.admin == true;
+      allow create: if signedIn();
+      allow delete: if signedIn() && request.auth.token.admin == true;
     }
   }
 }

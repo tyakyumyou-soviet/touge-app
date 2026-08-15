@@ -71,6 +71,39 @@ export interface CourseDraft {
   visibility: Course['visibility']
 }
 
+export interface UserProfile {
+  id: string
+  displayName: string
+  bio: string
+  photoURL?: string | null
+  homeArea?: string
+  mapVisibility: 'all' | 'friends' | 'none'
+  followingIds: string[]
+  followerCount: number
+  updatedAt?: string
+}
+
+export interface CourseComment {
+  id: string
+  courseId: string
+  authorId: string
+  authorName: string
+  body: string
+  createdAt?: string
+  likeCount: number
+}
+
+export interface LiveRoadInfo {
+  weather: string
+  temperature?: string
+  restriction: string
+  traffic: string
+  sourceName: string
+  sourceUrl?: string
+  updatedAt: string
+  status: 'good' | 'caution' | 'closed'
+}
+
 export interface RatingSubmission extends Ratings {
   courseId: string
   comment?: string

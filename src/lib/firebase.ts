@@ -14,6 +14,7 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -27,7 +28,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type Course, type RatingKey, type RatingSubmission, type Ratings } from '../types'
+import { ratingLabels, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type UserProfile } from '../types'
 import { combinedRatings, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -139,4 +140,45 @@ export async function submitTollReport(courseId: string, report: { fee: string; 
     status: 'pending',
     createdAt: serverTimestamp(),
   })
+}
+
+export async function loadUserProfile(userId: string): Promise<UserProfile | null> {
+  const snapshot = await getDoc(doc(db, 'users', userId))
+  return snapshot.exists() ? ({ id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...snapshot.data() } as UserProfile) : null
+}
+
+export async function saveUserProfileSettings(user: User, values: Pick<UserProfile, 'displayName' | 'bio' | 'homeArea' | 'mapVisibility'>): Promise<void> {
+  await setDoc(doc(db, 'users', user.uid), { ...values, displayName: values.displayName || user.displayName || 'ドライバー', updatedAt: serverTimestamp() }, { merge: true })
+}
+
+export async function toggleFollow(targetId: string, user: User): Promise<boolean> {
+  const followRef = doc(db, 'users', user.uid, 'following', targetId)
+  const existing = await getDoc(followRef)
+  if (existing.exists()) { await deleteDoc(followRef); return false }
+  await setDoc(followRef, { targetId, createdAt: serverTimestamp() }); return true
+}
+
+export async function toggleCourseLike(courseId: string, user: User): Promise<boolean> {
+  const likeRef = doc(db, 'courses', courseId, 'likes', user.uid)
+  const existing = await getDoc(likeRef)
+  if (existing.exists()) { await deleteDoc(likeRef); return false }
+  await setDoc(likeRef, { userId: user.uid, userName: user.displayName ?? 'ドライバー', createdAt: serverTimestamp() }); return true
+}
+
+export async function loadCourseComments(courseId: string): Promise<CourseComment[]> {
+  const snapshot = await getDocs(collection(db, 'courses', courseId, 'comments'))
+  return snapshot.docs.map((item) => ({ id: item.id, courseId, likeCount: 0, ...item.data() } as CourseComment))
+}
+
+export async function addCourseComment(courseId: string, body: string, user: User): Promise<void> {
+  await addDoc(collection(db, 'courses', courseId, 'comments'), { authorId: user.uid, authorName: user.displayName ?? 'ドライバー', body, likeCount: 0, createdAt: serverTimestamp() })
+}
+
+export async function loadLiveRoadInfo(courseId: string): Promise<LiveRoadInfo | null> {
+  const snapshot = await getDoc(doc(db, 'courses', courseId, 'live', 'current'))
+  return snapshot.exists() ? snapshot.data() as LiveRoadInfo : null
+}
+
+export async function submitAdminReport(courseId: string, type: 'discovery' | 'quality' | 'road', payload: Record<string, unknown>, user: User): Promise<void> {
+  await addDoc(collection(db, 'reports'), { type, courseId, ...payload, authorId: user.uid, status: 'pending', createdAt: serverTimestamp() })
 }

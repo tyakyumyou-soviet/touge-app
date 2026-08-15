@@ -8,8 +8,9 @@ import { RatingForm } from './components/RatingForm'
 import { InstallPrompt } from './components/InstallPrompt'
 import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
+import { CommunityPanel } from './components/CommunityPanel'
 import { sampleCourses } from './data/courses'
-import { addUserRating, approximateElevationProfile, estimateSystemRatings } from './lib/course'
+import { addUserRating, approximateElevationProfile, estimateSystemRatings, routeDistanceKm, validateRouteQuality } from './lib/course'
 import { auth, completeRedirectLogin, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, RatingSubmission } from './types'
@@ -42,6 +43,7 @@ export default function App() {
   const listDrag = useRef<{ pointerId: number; y: number; moved: boolean } | null>(null)
   const ignoreListTap = useRef(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+  const [communityOpen, setCommunityOpen] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser)
@@ -158,6 +160,8 @@ export default function App() {
   async function handleCreate(draft: CourseDraft) {
     const activeUser = auth.currentUser
     if (!activeUser) throw new Error('Authentication required')
+    const quality = validateRouteQuality(draft.route)
+    if (!quality.ok) throw new Error(`ルート検証: ${quality.warnings.join('、')}`)
     const routed = await routeAlongRoads(draft.route)
     const elevation = approximateElevationProfile(routed.route)
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
@@ -181,6 +185,21 @@ export default function App() {
     const id = await createCourse(data)
     const created = { id, ...data }
     setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setNotice('コースを保存しました')
+  }
+
+  async function handleCreateJoined(joinedCourses: Course[]) {
+    const activeUser = auth.currentUser
+    if (!activeUser || joinedCourses.length < 2) throw new Error('Authentication required')
+    const route = joinedCourses.flatMap((item, index) => index === 0 ? item.route : item.route.slice(1))
+    const elevation = approximateElevationProfile(route)
+    const systemRatings = estimateSystemRatings(route, elevation, [...new Set(joinedCourses.flatMap((item) => item.tags))])
+    const data: Omit<Course, 'id'> = {
+      name: `${joinedCourses.map((item) => item.name).join(' ＋ ')}（連結）`, area: joinedCourses.map((item) => item.area).join(' → '), prefecture: joinedCourses[0].prefecture,
+      description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], visibility: 'limited', authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
+      distanceKm: Number(routeDistanceKm(route).toFixed(1)), durationMin: Math.round(joinedCourses.reduce((sum, item) => sum + item.durationMin, 0)), minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, ratings: systemRatings, systemRatings, ratingCount: 0,
+      systemRatingSource: ['連結元コースの道路形状・地形データ', '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10), updatedAt: new Date().toISOString().slice(0, 10), isSeed: false,
+    }
+    const id = await createCourse(data); const created = { id, ...data }; setCourses((items) => [created, ...items]); setSelected(created); setCommunityOpen(false); setNotice('オリジナル連結コースを保存しました（限定公開）')
   }
 
   async function handleTollReport(report: TollReport) {
@@ -214,7 +233,7 @@ export default function App() {
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="峠・エリア・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
           <button className="new-route" onClick={startDrawing}><span>＋</span>コース登録</button>
-          {user ? <button className="user-button" onClick={() => setLogoutConfirmOpen(true)} title="ログアウトメニューを開く" aria-label="ログアウトメニューを開く">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
+          {user ? <button className="user-button" onClick={() => setCommunityOpen(true)} title="プロフィールとコミュニティ" aria-label="プロフィールとコミュニティ">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
         </div>
       </header>
 
@@ -235,7 +254,7 @@ export default function App() {
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
         </div>
 
-        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} />}
+        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} />}
         {drawing && <CourseForm route={draftRoute} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onCancel={() => { setDrawing(false); setDraftRoute([]) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} />}
@@ -249,6 +268,7 @@ export default function App() {
           <footer><button className="button secondary" onClick={() => setLogoutConfirmOpen(false)}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
         </section>
       </div>}
+      {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} />}
       <InstallPrompt />
     </div>
   )

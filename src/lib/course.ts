@@ -16,6 +16,18 @@ export function routeDistanceKm(route: Coordinate[]): number {
   return route.slice(1).reduce((total, point, index) => total + distanceKm(route[index], point), 0)
 }
 
+/** Deterministic client-side sanity checks; production can be supplemented by an
+ * admin/Cloud Function validator before a route becomes public. */
+export function validateRouteQuality(route: Coordinate[]): { ok: boolean; warnings: string[] } {
+  const warnings: string[] = []
+  if (route.length < 2) warnings.push('始点と終点が必要です')
+  if (routeDistanceKm(route) < 0.2) warnings.push('ルートが短すぎます')
+  const unique = new Set(route.map(([lng, lat]) => `${lng.toFixed(5)},${lat.toFixed(5)}`))
+  if (unique.size < Math.max(2, route.length * 0.7)) warnings.push('同じ地点が連続しており、ルート形状を確認してください')
+  if (route.some(([lng, lat]) => !Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lng) > 180 || Math.abs(lat) > 90)) warnings.push('座標が不正です')
+  return { ok: warnings.length === 0, warnings }
+}
+
 export function overallRating(ratings: Ratings): number {
   const primary: RatingKey[] = ['curves', 'elevation', 'width']
   const secondary: RatingKey[] = ['scenery', 'surface', 'traffic', 'access']

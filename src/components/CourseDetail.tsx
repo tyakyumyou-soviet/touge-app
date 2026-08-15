@@ -1,6 +1,8 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
+import { loadLiveRoadInfo } from '../lib/firebase'
+import type { LiveRoadInfo } from '../types'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
 
@@ -11,17 +13,20 @@ interface Props {
   onShare: () => void
   onOpen3d: () => void
   onReportToll: () => void
+  onCommunity: () => void
 }
 
-export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll }: Props) {
+export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll, onCommunity }: Props) {
   const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
   const [sheetExpanded, setSheetExpanded] = useState(false)
   const [sheetCollapsed, setSheetCollapsed] = useState(false)
+  const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const systemRatings = systemRatingsFor(course)
   const mergedRatings = combinedRatings(course)
   const userCount = userRatingCountFor(course)
+  useEffect(() => { loadLiveRoadInfo(course.id).then(setLiveInfo).catch(() => setLiveInfo(null)) }, [course.id])
 
   function startSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -68,6 +73,11 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
         <p className="description">{course.description}</p>
         <button className="three-d-cta" onClick={onOpen3d}><span>3D</span><div><strong>立体コースビュー</strong><small>地形と高低差を俯瞰して確認</small></div><b>→</b></button>
         <ElevationChart values={course.elevationProfile} />
+        <section className={`live-road-info ${liveInfo?.status ?? 'caution'}`} aria-label="リアルタイム道路情報">
+          <div className="live-road-head"><h3>走行前のライブ情報</h3><span>{liveInfo ? '同期済み' : '未同期'}</span></div>
+          {liveInfo ? <div className="live-road-grid"><div><b>天候</b><span>{liveInfo.weather}{liveInfo.temperature ? ` · ${liveInfo.temperature}` : ''}</span></div><div><b>通行規制</b><span>{liveInfo.restriction}</span></div><div><b>交通量</b><span>{liveInfo.traffic}</span></div></div> : <p>天候・通行規制・交通量は管理者が公的情報から同期すると表示されます。現地標識を優先してください。</p>}
+          <small>{liveInfo ? `${liveInfo.sourceName} · 更新 ${liveInfo.updatedAt}` : '外部APIのキーをクライアントに置かず、Firebase Functions等から取り込む設計です。'}</small>
+        </section>
         <section className="rating-summary" aria-label="評価の内訳">
           <div className="rating-summary-head"><strong>総合評価 {overallRating(mergedRatings)}</strong><span>システム評価を基準にユーザー評価を反映</span></div>
           <RatingBars ratings={mergedRatings} />
@@ -87,6 +97,7 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
         <div className="secondary-actions">
           <button onClick={onRate}>項目別に評価</button>
           <button onClick={onShare}>コースを共有</button>
+          <button onClick={onCommunity}>コメント・いいね</button>
         </div>
       </div>
       <footer className="nav-actions">
