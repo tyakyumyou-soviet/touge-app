@@ -163,7 +163,9 @@ export default function App() {
     if (!activeUser) throw new Error('Authentication required')
     const quality = validateRouteQuality(draft.route)
     if (!quality.ok) throw new Error(`ルート検証: ${quality.warnings.join('、')}`)
-    const routed = await routeAlongRoads(draft.route)
+    let routed
+    try { routed = await routeAlongRoads(draft.route) }
+    catch (error) { throw new Error(error instanceof Error ? error.message : '道路ルートを取得できませんでした') }
     const elevation = approximateElevationProfile(routed.route)
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const data: Omit<Course, 'id'> = {
@@ -183,7 +185,13 @@ export default function App() {
       authorName: activeUser.displayName ?? 'ドライバー',
       updatedAt: new Date().toISOString().slice(0, 10),
     }
-    const id = await createCourse(data)
+    let id: string
+    try { id = await createCourse(data) }
+    catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+      if (code) throw new Error(`Firebase保存エラー (${code})`)
+      throw error
+    }
     const created = { id, ...data }
     setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setNotice('コースを保存しました')
   }

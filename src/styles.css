@@ -351,6 +351,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 }
 
 .community-panel { width: min(720px, calc(100% - 32px)); max-height: min(88dvh, 860px); overflow: auto; }
+.course-form-steps { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 12px; color: var(--muted); }
+.course-form-steps span { padding: 5px 8px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 80%, var(--line)); }
+.course-form-steps .active, .course-form-steps .done { color: var(--ink); background: color-mix(in srgb, var(--accent) 45%, var(--panel)); font-weight: 700; }
 .community-panel > header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
 .profile-editor { display: grid; grid-template-columns: 72px 1fr; gap: 16px; align-items: start; margin-bottom: 14px; }
 .profile-avatar { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #18231f; font-size: 28px; font-weight: 800; }

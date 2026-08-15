@@ -27,13 +27,22 @@ export function CourseForm({ route, onUndo, onCancel, onSave }: Props) {
       visibility: String(data.get('visibility')) as CourseDraft['visibility'],
     }
     setBusy(true)
-    try { await onSave(draft) } catch { setError('保存できませんでした。通信状態とFirebase設定を確認してください。') } finally { setBusy(false) }
+    try { await onSave(draft) } catch (caught: unknown) {
+      const code = typeof caught === 'object' && caught && 'code' in caught ? String(caught.code) : ''
+      const message = caught instanceof Error ? caught.message : ''
+      if (code.includes('permission-denied') || code.includes('unauthenticated') || message === 'Authentication required') setError('保存にはGoogleログインが必要です。ログイン状態とFirestoreルールを確認してください。')
+      else if (message.includes('道路ルート') || message.includes('道路で結べ')) setError(`${message}。地点を道路上に置き直してください。`)
+      else if (message.includes('ルート検証')) setError(message)
+      else if (code.includes('unavailable') || code.includes('network')) setError('Firebaseに接続できませんでした。通信状態を確認して、もう一度お試しください。')
+      else setError(`保存できませんでした${message ? `: ${message}` : '。入力内容とFirebase設定を確認してください。'}`)
+    } finally { setBusy(false) }
   }
   return (
     <div className="modal-backdrop" role="presentation">
       <form className="modal course-form" onSubmit={submit} aria-labelledby="course-form-title">
         <header><div><p className="eyebrow">NEW ROUTE</p><h2 id="course-form-title">峠コースを登録</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
-        <p className="route-status">地図をクリックしてルートを描画 · {route.length}地点 · 約{routeDistanceKm(route).toFixed(1)}km</p>
+        <div className="course-form-steps" aria-label="登録手順"><span className={route.length >= 2 ? 'done' : 'active'}>1 地図で道を指定</span><b>→</b><span className={route.length >= 2 ? 'active' : ''}>2 詳細を入力して保存</span></div>
+        <p className="route-status">地図上の道路を順番にタップして始点・経由点・終点を指定 · {route.length}地点 · 約{routeDistanceKm(route).toFixed(1)}km</p>
         <button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>最後の地点を戻す</button>
         <div className="form-grid">
           <label>コース名<input required name="name" placeholder="例: 箱根ターンパイク" /></label>
