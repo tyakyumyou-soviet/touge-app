@@ -279,7 +279,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .explore-drag-handle { position: relative; display: block; flex: 0 0 32px; width: 144px; height: 32px; margin: 0 auto; background: transparent; cursor: grab; touch-action: none; }
   .explore-drag-handle::after { content: ''; position: absolute; top: 14px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
   .explore-drag-handle:active { cursor: grabbing; }
-  .panel-heading { padding-bottom: 10px; }
+  .panel-heading { padding-bottom: 10px; cursor: grab; touch-action: none; }
+  .panel-heading:active { cursor: grabbing; }
   .panel-heading h1 { font-size: 20px; }
   .result-count { margin-top: 12px; }
   .course-card { padding: 13px; }
