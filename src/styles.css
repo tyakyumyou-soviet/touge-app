@@ -54,6 +54,7 @@ main { position: relative; height: calc(100% - 72px); }
 .maplibregl-ctrl-group { box-shadow: 0 5px 18px #17231c30 !important; border-radius: 10px !important; overflow: hidden; }
 
 .explore-panel { position: absolute; z-index: 10; inset: 0 auto 0 0; width: 365px; display: flex; flex-direction: column; padding: 26px 18px 0; background: rgba(247, 245, 237, .97); box-shadow: 10px 0 40px #18241e18; border-right: 1px solid var(--line); }
+.explore-panel.drawing { display: none; }
 .panel-heading { display: flex; justify-content: space-between; align-items: start; padding: 0 7px 17px; }
 .eyebrow { margin: 0 0 5px; color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: .15em; }
 h1, h2, h3, p { margin-top: 0; }
