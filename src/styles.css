@@ -171,13 +171,15 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-search-results small, .route-builder-help { color: var(--muted); font-size: 11px; }
 .route-builder-help { margin: 0; line-height: 1.55; }
 .route-stop-list { display: grid; gap: 3px; max-height: 150px; overflow: auto; padding-left: 8px; border-left: 2px solid var(--accent); }
-.route-stop-list div { display: grid; grid-template-columns: 64px 1fr; gap: 6px; padding: 6px 8px; background: #f2f5f3; border-radius: 6px; font-size: 11px; }
+.route-stop-list div { display: grid; grid-template-columns: 64px 1fr auto; gap: 6px; align-items: center; padding: 6px 8px; background: #f2f5f3; border-radius: 6px; font-size: 11px; }
 .route-stop-list b { color: #27775b; }
 .route-stop-list span { color: var(--muted); }
+.route-stop-list button { width: 26px; height: 26px; padding: 0; color: #7a4037; background: #fff; border: 1px solid #d9c8c1; border-radius: 50%; font-size: 18px; line-height: 1; cursor: pointer; }
 .route-stop-list p { margin: 7px; color: var(--muted); font-size: 12px; }
 .route-builder-summary { display: flex; gap: 12px; align-items: baseline; padding: 9px 11px; background: #e2f0e7; border-radius: 8px; }
 .route-builder-summary strong { color: #225f48; }
 .route-builder-summary span { color: var(--muted); font-size: 12px; }
+.route-privacy-note { margin: 0; color: #805a24; font-size: 11px; line-height: 1.5; }
 .route-builder-stage footer, .route-details-stage footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .text-button { padding: 0; color: var(--green); background: none; border: 0; text-decoration: underline; font-size: 11px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }

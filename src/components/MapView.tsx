@@ -24,6 +24,15 @@ const toFeatureCollection = (courses: Course[]) => ({
   })),
 })
 
+const toDraftPointCollection = (route: Coordinate[]) => ({
+  type: 'FeatureCollection' as const,
+  features: route.map((point, index) => ({
+    type: 'Feature' as const,
+    properties: { label: index === 0 ? 'S' : index === route.length - 1 ? 'G' : String(index) },
+    geometry: { type: 'Point' as const, coordinates: point },
+  })),
+})
+
 // Build lightweight route-local contour cues from the same elevation profile
 // used by the course rating. They are intentionally shown only at broad
 // intervals so the map remains readable while still making large climbs obvious.
@@ -127,6 +136,9 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
       map.addLayer({ id: 'selected-line', type: 'line', source: 'selected-course', paint: { 'line-color': '#f2d16b', 'line-width': 6 } })
       map.addSource('draft', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
       map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
+      map.addSource('draft-points', { type: 'geojson', data: toDraftPointCollection([]) })
+      map.addLayer({ id: 'draft-points', type: 'circle', source: 'draft-points', paint: { 'circle-radius': 12, 'circle-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'draft-point-labels', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#142018' } })
       map.addLayer({ id: 'selected-contour-labels', type: 'symbol', source: 'selected-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
       map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
@@ -159,6 +171,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
     if (!map?.isStyleLoaded()) return
     const source = map.getSource('draft') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
+    ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute))
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
   }, [drawing, draftRoute])
 

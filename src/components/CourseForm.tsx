@@ -7,6 +7,7 @@ interface Props {
   courses: Course[]
   onAddPoint: (point: Coordinate) => void
   onAddCourse: (course: Course) => void
+  onRemovePoint: (index: number) => void
   onUndo: () => void
   onClear: () => void
   onCancel: () => void
@@ -22,7 +23,7 @@ async function geocode(query: string): Promise<Coordinate> {
   return [Number(items[0].lon), Number(items[0].lat)]
 }
 
-export function CourseForm({ route, courses, onAddPoint, onAddCourse, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePoint, onUndo, onClear, onCancel, onSave }: Props) {
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -64,11 +65,12 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onUndo, on
     <header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div>
     {stage === 'route' ? <div className="route-builder-stage">
-      <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '追加'}</button></form>
+      <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
-      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして追加してください。住所は「静岡県伊豆市○○」のように入力できます。最初がSTART、最後がGOALになります。</p>
-      <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span></div>) : <p>まだ地点がありません</p>}</div>
+      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして追加してください。住所は「静岡県伊豆市○○」のように入力できます。地図の番号と下の地点は対応しており、不要な地点は個別に削除できます。</p>
+      <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由地 ${index}`}を削除`}>×</button></div>) : <p>まだ地点がありません</p>}</div>
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
+      <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2} onClick={() => { setError(''); setStage('details') }}>詳細へ →</button></footer>
     </div> : <form className="route-details-stage" onSubmit={submit}>
