@@ -1,5 +1,8 @@
 export type Coordinate = [number, number]
 
+/** The intended role of a stop while building a route. */
+export type DraftPointRole = 'start' | 'via' | 'goal'
+
 /** A recognised landmark placed along a published route. progress is 0–1 from START. */
 export interface RouteLandmark {
   name: string

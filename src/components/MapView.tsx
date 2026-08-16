@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { Coordinate, Course } from '../types'
+import type { Coordinate, Course, DraftPointRole } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 
 interface MapViewProps {
@@ -12,9 +12,10 @@ interface MapViewProps {
   drawing: boolean
   draftRoute: Coordinate[]
   draftLabels: string[]
+  draftRoles: DraftPointRole[]
   focusPoint: Coordinate | null
   onSelect: (course: Course) => void
-  onAddPoint: (point: Coordinate, label?: string) => void
+  onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal') => void
   onMovePoint: (index: number, point: Coordinate) => void
 }
 
@@ -27,11 +28,15 @@ const toFeatureCollection = (courses: Course[]) => ({
   })),
 })
 
-const toDraftPointCollection = (route: Coordinate[], labels: string[] = []) => ({
+const toDraftPointCollection = (route: Coordinate[], labels: string[] = [], roles: DraftPointRole[] = []) => ({
   type: 'FeatureCollection' as const,
   features: route.map((point, index) => ({
     type: 'Feature' as const,
-    properties: { index, label: index === 0 ? 'S' : index === route.length - 1 ? 'G' : String(index), name: labels[index] || '地図指定' },
+    properties: {
+      index,
+      label: roles[index] === 'start' || (!roles.length && index === 0) ? 'S' : roles[index] === 'goal' || (!roles.length && index === route.length - 1) ? 'G' : String(roles.slice(0, index + 1).filter((role) => role === 'via').length || index),
+      name: labels[index] || '地図指定',
+    },
     geometry: { type: 'Point' as const, coordinates: point },
   })),
 })
@@ -79,7 +84,7 @@ export const toCourseAnnotationCollection = (course: Course | null): FeatureColl
   return { type: 'FeatureCollection', features }
 }
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, focusPoint, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, focusPoint, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -90,6 +95,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   const draftPopupRef = useRef<maplibregl.Popup | null>(null)
   const draftRouteRef = useRef(draftRoute)
   const draftLabelsRef = useRef(draftLabels)
+  const draftRolesRef = useRef(draftRoles)
   const [mapError, setMapError] = useState('')
   const [mapReady, setMapReady] = useState(false)
 
@@ -100,6 +106,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
   useEffect(() => { draftRouteRef.current = draftRoute }, [draftRoute])
   useEffect(() => { draftLabelsRef.current = draftLabels }, [draftLabels])
+  useEffect(() => { draftRolesRef.current = draftRoles }, [draftRoles])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -163,7 +170,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
       map.addLayer({ id: 'course-annotation-labels', type: 'symbol', source: 'course-annotations', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, -1.25], 'text-anchor': 'bottom', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd', 'text-halo-width': 2 } })
       ;(map.getSource('draft') as GeoJSONSource).setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRouteRef.current } })
-      ;(map.getSource('draft-points') as GeoJSONSource).setData(toDraftPointCollection(draftRouteRef.current, draftLabelsRef.current))
+      ;(map.getSource('draft-points') as GeoJSONSource).setData(toDraftPointCollection(draftRouteRef.current, draftLabelsRef.current, draftRolesRef.current))
       setMapReady(true)
     })
 
@@ -201,12 +208,17 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       const coordinate: Coordinate = [event.lngLat.lng, event.lngLat.lat]
       const content = document.createElement('div')
       content.className = 'draft-point-popup'
-      const message = document.createElement('strong'); message.textContent = 'この位置を地点として追加しますか？'
-      const add = document.createElement('button'); add.type = 'button'; add.textContent = '地点を追加'
+      const isFirstStop = draftRolesRef.current.length === 0
+      const message = document.createElement('strong'); message.textContent = isFirstStop ? '最初の地点を始点として追加しますか？' : 'この位置を経由地またはゴールとして追加しますか？'
+      const via = document.createElement('button'); via.type = 'button'; via.textContent = isFirstStop ? '始点として追加' : '経由地として追加'
+      const goal = document.createElement('button'); goal.type = 'button'; goal.textContent = 'ゴールとして追加'
       const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
-      add.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定'); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      via.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'via'); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      goal.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'goal'); draftPopupRef.current?.remove(); draftPopupRef.current = null })
       cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
-      content.append(message, add, cancel)
+      content.append(message, via)
+      if (!isFirstStop) content.append(goal)
+      content.append(cancel)
       draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
     })
     mapRef.current = map
@@ -226,10 +238,10 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     if (!mapReady || !map?.isStyleLoaded()) return
     const source = map.getSource('draft') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
-    ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels))
+    ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels, draftRoles))
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
     if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
-  }, [drawing, draftRoute, draftLabels, mapReady])
+  }, [drawing, draftRoute, draftLabels, draftRoles, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
