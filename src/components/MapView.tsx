@@ -11,6 +11,7 @@ interface MapViewProps {
   is3d: boolean
   drawing: boolean
   draftRoute: Coordinate[]
+  focusPoint: Coordinate | null
   onSelect: (course: Course) => void
   onAddPoint: (point: Coordinate) => void
   onMovePoint: (index: number, point: Coordinate) => void
@@ -77,7 +78,7 @@ export const toCourseAnnotationCollection = (course: Course | null): FeatureColl
   return { type: 'FeatureCollection', features }
 }
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, is3d, drawing, draftRoute, focusPoint, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -212,6 +213,12 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
     if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
   }, [drawing, draftRoute])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !focusPoint) return
+    map.flyTo({ center: focusPoint, zoom: Math.max(map.getZoom(), 15), duration: 500 })
+  }, [focusPoint])
 
   useEffect(() => {
     const map = mapRef.current

@@ -32,6 +32,7 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [draftRoute, setDraftRoute] = useState<Coordinate[]>([])
+  const [draftFocus, setDraftFocus] = useState<Coordinate | null>(null)
   const [ratingOpen, setRatingOpen] = useState(false)
   const [course3dOpen, setCourse3dOpen] = useState(false)
   const [tollReportOpen, setTollReportOpen] = useState(false)
@@ -153,7 +154,7 @@ export default function App() {
   }
 
   async function startDrawing() {
-    setSelected(null); setDraftRoute([]); setDrawing(true)
+    setSelected(null); setDraftRoute([]); setDraftFocus(null); setDrawing(true)
     setListCollapsed(true); setListExpanded(false); setListOffset(0); setListDragging(false)
   }
 
@@ -251,7 +252,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} onSelect={selectCourse} onAddPoint={addPoint} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} focusPoint={draftFocus} onSelect={selectCourse} onAddPoint={(point) => { addPoint(point); setDraftFocus(point) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section className={`explore-panel open ${drawing ? 'drawing' : ''} ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''}`} style={{ transform: drawing ? undefined : listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
           <div className="explore-panel-top" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
@@ -270,7 +271,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} />}
-        {drawing && <CourseForm route={draftRoute} courses={courses} onAddPoint={addPoint} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); setDraftRoute((route) => [...route, ...sampled]) }} onRemovePoint={(index) => setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index))} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onClear={() => setDraftRoute([])} onCancel={() => { setDrawing(false); setDraftRoute([]); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
+        {drawing && <CourseForm route={draftRoute} courses={courses} onAddPoint={(point) => { addPoint(point); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); setDraftRoute((route) => [...route, ...sampled]); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index))} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onClear={() => setDraftRoute([])} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}

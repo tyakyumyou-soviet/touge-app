@@ -14,7 +14,7 @@ interface Props {
   onSave: (draft: CourseDraft) => Promise<void>
 }
 
-interface GeocodedPoint { coordinate: Coordinate }
+interface GeocodedPoint { coordinate: Coordinate; label: string; level?: number }
 
 async function geocode(query: string): Promise<GeocodedPoint> {
   const normalized = query.trim().replace(/[－ー−]/g, '-')
@@ -35,7 +35,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
         const longitude = Number(result?.querySelector('longitude')?.textContent)
         const latitude = Number(result?.querySelector('latitude')?.textContent)
         const level = Number(result?.querySelector('iLvl')?.textContent)
-        if (Number.isFinite(longitude) && Number.isFinite(latitude) && level >= 6) return { coordinate: [longitude, latitude] }
+        if (Number.isFinite(longitude) && Number.isFinite(latitude) && level >= 6) return { coordinate: [longitude, latitude], label: result?.querySelector('address')?.textContent?.replaceAll('/', '') || candidate, level }
       }
     } catch { /* Continue with exact-match sources below. */ }
     throw new Error(`「${query}」の番地レベルの位置を確認できませんでした。概算位置は追加していません。地図上で正確な場所を指定してください`)
@@ -47,7 +47,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
       if (!addressResponse.ok) continue
       const result = await addressResponse.json() as { features?: Array<{ geometry?: { coordinates?: [number, number] } }> }
       const coordinates = result.features?.[0]?.geometry?.coordinates
-      if (coordinates && coordinates.every(Number.isFinite)) return { coordinate: coordinates }
+      if (coordinates && coordinates.every(Number.isFinite)) return { coordinate: coordinates, label: candidate }
     }
   } catch { /* Continue with the named-place search below. */ }
   for (const candidate of candidates) {
@@ -55,7 +55,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
     const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=jp&q=${encodeURIComponent(placeQuery)}`)
     if (!response.ok) continue
     const items = await response.json() as Array<{ lon: string; lat: string }>
-    if (items[0]) return { coordinate: [Number(items[0].lon), Number(items[0].lat)] }
+    if (items[0]) return { coordinate: [Number(items[0].lon), Number(items[0].lat)], label: candidate }
   }
   throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
@@ -66,6 +66,7 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
+  const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
   const courseMatches = useMemo(() => {
     const value = query.trim().toLocaleLowerCase('ja')
     if (!value) return []
@@ -73,10 +74,10 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
   }, [courses, query])
 
   async function addSearchedPlace(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(''); setSearchNotice('')
+    event.preventDefault(); setError(''); setSearchNotice(''); setPendingSearchPoint(null)
     if (!query.trim()) return
     setBusy(true)
-    try { const result = await geocode(query.trim()); onAddPoint(result.coordinate); setSearchNotice('地点を追加しました。地図上のピン位置を確認してください。'); setQuery('') } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
+    try { const result = await geocode(query.trim()); setPendingSearchPoint(result); setQuery('') } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -104,6 +105,7 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
     <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div>
     {stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
+      {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の位置を確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate); setSearchNotice('地点を追加しました。必要なら地図上のピンを長押しして調整できます。'); setPendingSearchPoint(null) }}>追加して地図で調整</button><button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate); setSearchNotice('検索結果の位置を地点として追加しました。'); setPendingSearchPoint(null) }}>この位置で追加</button></div></section>}
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
       <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして地点追加を確定してください。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。ピンはPCではドラッグ、スマホでは長押し後のドラッグで位置を動かせます。</p>
       <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由地 ${index}`}を削除`}>×</button></div>) : <p>まだ地点がありません</p>}</div>

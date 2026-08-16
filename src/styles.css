@@ -169,6 +169,12 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-search-results { display: grid; gap: 5px; }
 .route-search-results button { display: grid; gap: 2px; padding: 9px 11px; text-align: left; color: inherit; background: #edf3ef; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .route-search-results small, .route-builder-help { color: var(--muted); font-size: 11px; }
+.address-match-confirm { display: grid; gap: 5px; padding: 10px; background: #fff7dc; border: 1px solid #dfc66b; border-radius: 9px; }
+.address-match-confirm strong { font-size: 12px; }
+.address-match-confirm span { font-weight: 700; font-size: 13px; }
+.address-match-confirm small { color: #625d4b; font-size: 11px; line-height: 1.45; }
+.address-match-confirm div { display: flex; flex-wrap: wrap; gap: 6px; }
+.address-match-confirm .button { min-height: 36px; padding: 0 10px; font-size: 11px; }
 .route-builder-help { margin: 0; line-height: 1.55; }
 .route-stop-list { display: grid; gap: 3px; max-height: 150px; overflow: auto; padding-left: 8px; border-left: 2px solid var(--accent); }
 .route-stop-list div { display: grid; grid-template-columns: 64px 1fr auto; gap: 6px; align-items: center; padding: 6px 8px; background: #f2f5f3; border-radius: 6px; font-size: 11px; }
