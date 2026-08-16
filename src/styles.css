@@ -163,6 +163,22 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .modal-backdrop:has(.course-form) { pointer-events: none; place-items: start; background: transparent; backdrop-filter: none; }
 .course-form { pointer-events: auto; box-shadow: 0 20px 70px #10221955; }
 .route-status { padding: 9px 12px; color: #225f48; background: #e2f0e7; border-radius: 7px; font-size: 11px; }
+.route-builder-stage, .route-details-stage { display: grid; gap: 10px; }
+.route-search { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+.route-search button { padding: 0 14px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 8px; font-weight: 800; }
+.route-search-results { display: grid; gap: 5px; }
+.route-search-results button { display: grid; gap: 2px; padding: 9px 11px; text-align: left; color: inherit; background: #edf3ef; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.route-search-results small, .route-builder-help { color: var(--muted); font-size: 11px; }
+.route-builder-help { margin: 0; line-height: 1.55; }
+.route-stop-list { display: grid; gap: 3px; max-height: 150px; overflow: auto; padding-left: 8px; border-left: 2px solid var(--accent); }
+.route-stop-list div { display: grid; grid-template-columns: 64px 1fr; gap: 6px; padding: 6px 8px; background: #f2f5f3; border-radius: 6px; font-size: 11px; }
+.route-stop-list b { color: #27775b; }
+.route-stop-list span { color: var(--muted); }
+.route-stop-list p { margin: 7px; color: var(--muted); font-size: 12px; }
+.route-builder-summary { display: flex; gap: 12px; align-items: baseline; padding: 9px 11px; background: #e2f0e7; border-radius: 8px; }
+.route-builder-summary strong { color: #225f48; }
+.route-builder-summary span { color: var(--muted); font-size: 12px; }
+.route-builder-stage footer, .route-details-stage footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .text-button { padding: 0; color: var(--green); background: none; border: 0; text-decoration: underline; font-size: 11px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 .form-grid .wide { grid-column: 1 / -1; }
@@ -351,17 +367,6 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 }
 
 .community-panel { width: min(720px, calc(100% - 32px)); max-height: min(88dvh, 860px); overflow: auto; }
-.create-launcher { width: min(620px, calc(100% - 32px)); }
-.create-launcher > header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
-.create-mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.create-mode-card { display: grid; gap: 8px; min-height: 150px; padding: 18px 14px; text-align: left; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; transition: transform .15s ease, border-color .15s ease; }
-.create-mode-card:hover, .create-mode-card:focus-visible { transform: translateY(-2px); border-color: var(--accent); }
-.create-mode-card span { font-size: 28px; }
-.create-mode-card strong { font-size: 16px; }
-.create-mode-card small, .form-hint { color: var(--muted); line-height: 1.5; }
-.search-route-form { display: grid; gap: 12px; }
-.search-route-form label { display: grid; gap: 6px; font-weight: 700; }
-.search-route-form footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .course-form-steps { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 12px; color: var(--muted); }
 .course-form-steps span { padding: 5px 8px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 80%, var(--line)); }
 .course-form-steps .active, .course-form-steps .done { color: var(--ink); background: color-mix(in srgb, var(--accent) 45%, var(--panel)); font-weight: 700; }
@@ -399,8 +404,4 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .profile-editor { grid-template-columns: 1fr; }
   .profile-avatar { width: 52px; height: 52px; font-size: 23px; }
   .join-options { grid-template-columns: 1fr; }
-  .create-launcher { width: calc(100% - 16px); padding: 16px; }
-  .create-mode-grid { grid-template-columns: 1fr; }
-  .create-mode-card { min-height: 0; grid-template-columns: auto 1fr; align-items: center; }
-  .create-mode-card small { grid-column: 2; }
 }

@@ -9,7 +9,6 @@ import { InstallPrompt } from './components/InstallPrompt'
 import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
-import { CourseCreateLauncher } from './components/CourseCreateLauncher'
 import { sampleCourses } from './data/courses'
 import { addUserRating, approximateElevationProfile, estimateSystemRatings, routeDistanceKm, validateRouteQuality } from './lib/course'
 import { auth, completeRedirectLogin, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
@@ -45,7 +44,6 @@ export default function App() {
   const ignoreListTap = useRef(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
-  const [createModeOpen, setCreateModeOpen] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser)
@@ -161,12 +159,7 @@ export default function App() {
 
   async function openCreateFlow() {
     if (!user) { await handleLogin(); if (!auth.currentUser) return }
-    setCreateModeOpen(true)
-  }
-
-  async function startSearchDrawing(points: Coordinate[]) {
-    setCreateModeOpen(false); setSelected(null); setDraftRoute(points); setDrawing(true)
-    setListCollapsed(true); setListExpanded(false); setListOffset(0); setListDragging(false)
+    await startDrawing()
   }
 
   async function handleCreate(draft: CourseDraft) {
@@ -277,7 +270,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} />}
-        {drawing && <CourseForm route={draftRoute} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onCancel={() => { setDrawing(false); setDraftRoute([]); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
+        {drawing && <CourseForm route={draftRoute} courses={courses} onAddPoint={addPoint} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); setDraftRoute((route) => [...route, ...sampled]) }} onUndo={() => setDraftRoute((route) => route.slice(0, -1))} onClear={() => setDraftRoute([])} onCancel={() => { setDrawing(false); setDraftRoute([]); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
@@ -291,7 +284,6 @@ export default function App() {
         </section>
       </div>}
       {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} />}
-      {createModeOpen && <CourseCreateLauncher onClose={() => setCreateModeOpen(false)} onMapCreate={() => { setCreateModeOpen(false); startDrawing() }} onJoinCreate={() => { setCreateModeOpen(false); setCommunityOpen(true) }} onSearchCreate={startSearchDrawing} />}
       <InstallPrompt />
     </div>
   )
