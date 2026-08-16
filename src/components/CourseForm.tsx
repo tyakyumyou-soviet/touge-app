@@ -4,8 +4,9 @@ import { routeDistanceKm } from '../lib/course'
 
 interface Props {
   route: Coordinate[]
+  pointLabels: string[]
   courses: Course[]
-  onAddPoint: (point: Coordinate) => void
+  onAddPoint: (point: Coordinate, label?: string) => void
   onAddCourse: (course: Course) => void
   onRemovePoint: (index: number) => void
   onUndo: () => void
@@ -60,7 +61,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
   throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
 
-export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePoint, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ route, pointLabels, courses, onAddPoint, onAddCourse, onRemovePoint, onUndo, onClear, onCancel, onSave }: Props) {
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -105,10 +106,10 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
     <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div>
     {stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
-      {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の位置を確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate); setSearchNotice('地点を追加しました。必要なら地図上のピンを長押しして調整できます。'); setPendingSearchPoint(null) }}>追加して地図で調整</button><button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate); setSearchNotice('検索結果の位置を地点として追加しました。'); setPendingSearchPoint(null) }}>この位置で追加</button></div></section>}
+      {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の位置を確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label); setSearchNotice('地点を追加しました。必要なら地図上のピンを長押しして調整できます。'); setPendingSearchPoint(null) }}>追加して地図で調整</button><button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label); setSearchNotice('検索結果の位置を地点として追加しました。'); setPendingSearchPoint(null) }}>この位置で追加</button></div></section>}
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
       <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして地点追加を確定してください。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。ピンはPCではドラッグ、スマホでは長押し後のドラッグで位置を動かせます。</p>
-      <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由地 ${index}`}を削除`}>×</button></div>) : <p>まだ地点がありません</p>}</div>
+      <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span><strong>{pointLabels[index] || '地図指定'}</strong><small>{point[1].toFixed(5)}, {point[0].toFixed(5)}</small></span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由地 ${index}`}を削除`}>×</button></div>) : <p>まだ地点がありません</p>}</div>
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       {searchNotice && <p className="form-success" role="status">{searchNotice}</p>}
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
