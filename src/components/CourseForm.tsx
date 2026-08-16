@@ -15,11 +15,23 @@ interface Props {
 }
 
 async function geocode(query: string): Promise<Coordinate> {
-  const normalized = /日本|東京都|神奈川県|静岡県/.test(query) ? query : `${query}, 日本`
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=jp&q=${encodeURIComponent(normalized)}`)
+  const normalized = query.trim().replace(/[－ー−]/g, '-')
+  // GSI's official Japanese address search covers address-level data much
+  // better than place POI data. Fall back to Nominatim for mountains, ICs and
+  // other named features that are not an address.
+  try {
+    const addressResponse = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(normalized)}`)
+    if (addressResponse.ok) {
+      const result = await addressResponse.json() as { features?: Array<{ geometry?: { coordinates?: [number, number] } }> }
+      const coordinates = result.features?.[0]?.geometry?.coordinates
+      if (coordinates && coordinates.every(Number.isFinite)) return coordinates
+    }
+  } catch { /* Continue with the named-place search below. */ }
+  const placeQuery = /日本|東京都|神奈川県|静岡県/.test(normalized) ? normalized : `${normalized}, 日本`
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=jp&q=${encodeURIComponent(placeQuery)}`)
   if (!response.ok) throw new Error('場所を検索できませんでした')
   const items = await response.json() as Array<{ lon: string; lat: string }>
-  if (!items[0]) throw new Error(`「${query}」が見つかりませんでした`)
+  if (!items[0]) throw new Error(`「${query}」が見つかりませんでした。番地を省略して町名までで検索するか、地図上で地点を追加してください`)
   return [Number(items[0].lon), Number(items[0].lat)]
 }
 
@@ -67,7 +79,7 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
     {stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
-      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして追加してください。住所は「静岡県伊豆市○○」のように入力できます。地図の番号と下の地点は対応しており、不要な地点は個別に削除できます。</p>
+      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして追加してください。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。地図の番号と下の地点は対応しており、不要な地点は個別に削除できます。</p>
       <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由地 ${index}`}を削除`}>×</button></div>) : <p>まだ地点がありません</p>}</div>
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
