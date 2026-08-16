@@ -34,6 +34,7 @@ export default function App() {
   const [draftRoute, setDraftRoute] = useState<Coordinate[]>([])
   const [draftPointLabels, setDraftPointLabels] = useState<string[]>([])
   const [draftPointRoles, setDraftPointRoles] = useState<DraftPointRole[]>([])
+  const [draftViaInsertAfter, setDraftViaInsertAfter] = useState<number | null>(null)
   const [draftFocus, setDraftFocus] = useState<Coordinate | null>(null)
   const [ratingOpen, setRatingOpen] = useState(false)
   const [course3dOpen, setCourse3dOpen] = useState(false)
@@ -93,13 +94,16 @@ export default function App() {
   }, [courses, prefecture, search, sort])
 
   const selectCourse = useCallback((course: Course) => { setSelected(course); setListCollapsed(true) }, [])
-  const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via') => {
+  const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
     // Keep all three parallel arrays in the same operation. A new via point is
     // placed before an existing goal; choosing a new goal promotes the old one
     // to a via point and makes the newly selected location the route endpoint.
     setDraftPointRoles((roles) => {
       const goalIndex = roles.indexOf('goal')
-      const insertAt = requestedRole === 'via' && goalIndex >= 0 ? goalIndex : roles.length
+      const automaticInsertAt = goalIndex >= 0 ? goalIndex : roles.length
+      const insertAt = requestedRole === 'via' && requestedInsertAfter !== null
+        ? Math.min(Math.max(1, requestedInsertAfter + 1), goalIndex >= 0 ? goalIndex : roles.length)
+        : requestedRole === 'via' ? automaticInsertAt : roles.length
       const nextRoles: DraftPointRole[] = roles.length === 0
         ? ['start']
         : requestedRole === 'goal'
@@ -107,6 +111,7 @@ export default function App() {
           : [...roles.slice(0, insertAt), 'via', ...roles.slice(insertAt)]
       setDraftRoute((route) => roles.length === 0 || requestedRole === 'goal' ? [...route, point] : [...route.slice(0, insertAt), point, ...route.slice(insertAt)])
       setDraftPointLabels((labels) => roles.length === 0 || requestedRole === 'goal' ? [...labels, label] : [...labels.slice(0, insertAt), label, ...labels.slice(insertAt)])
+      setDraftViaInsertAfter(null)
       return nextRoles
     })
   }, [])
@@ -172,7 +177,7 @@ export default function App() {
   }
 
   async function startDrawing() {
-    setSelected(null); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftFocus(null); setDrawing(true)
+    setSelected(null); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDrawing(true)
     setListCollapsed(true); setListExpanded(false); setListOffset(0); setListDragging(false)
   }
 
@@ -216,7 +221,7 @@ export default function App() {
       throw error
     }
     const created = { id, ...data }
-    setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setNotice('コースを保存しました')
+    setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setNotice('コースを保存しました')
   }
 
   async function handleCreateJoined(joinedCourses: Course[]) {
@@ -270,7 +275,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} focusPoint={draftFocus} onSelect={selectCourse} onAddPoint={(point, label, role) => { addPoint(point, label, role); setDraftFocus(point) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section className={`explore-panel open ${drawing ? 'drawing' : ''} ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''}`} style={{ transform: drawing ? undefined : listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
           <div className="explore-panel-top" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
@@ -289,7 +294,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} />}
-        {drawing && <CourseForm route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} courses={courses} onAddPoint={(point, label, role) => { addPoint(point, label, role); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)) }} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]) }} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
+        {drawing && <CourseForm route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}

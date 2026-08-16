@@ -13,9 +13,10 @@ interface MapViewProps {
   draftRoute: Coordinate[]
   draftLabels: string[]
   draftRoles: DraftPointRole[]
+  viaInsertAfter: number | null
   focusPoint: Coordinate | null
   onSelect: (course: Course) => void
-  onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal') => void
+  onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onMovePoint: (index: number, point: Coordinate) => void
 }
 
@@ -84,7 +85,7 @@ export const toCourseAnnotationCollection = (course: Course | null): FeatureColl
   return { type: 'FeatureCollection', features }
 }
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, focusPoint, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -96,6 +97,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   const draftRouteRef = useRef(draftRoute)
   const draftLabelsRef = useRef(draftLabels)
   const draftRolesRef = useRef(draftRoles)
+  const viaInsertAfterRef = useRef(viaInsertAfter)
   const [mapError, setMapError] = useState('')
   const [mapReady, setMapReady] = useState(false)
 
@@ -107,6 +109,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   useEffect(() => { draftRouteRef.current = draftRoute }, [draftRoute])
   useEffect(() => { draftLabelsRef.current = draftLabels }, [draftLabels])
   useEffect(() => { draftRolesRef.current = draftRoles }, [draftRoles])
+  useEffect(() => { viaInsertAfterRef.current = viaInsertAfter }, [viaInsertAfter])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -213,7 +216,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       const via = document.createElement('button'); via.type = 'button'; via.textContent = isFirstStop ? '始点として追加' : '経由地として追加'
       const goal = document.createElement('button'); goal.type = 'button'; goal.textContent = 'ゴールとして追加'
       const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
-      via.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'via'); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      via.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'via', viaInsertAfterRef.current); draftPopupRef.current?.remove(); draftPopupRef.current = null })
       goal.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'goal'); draftPopupRef.current?.remove(); draftPopupRef.current = null })
       cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
       content.append(message, via)

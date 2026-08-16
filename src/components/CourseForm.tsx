@@ -6,10 +6,12 @@ interface Props {
   route: Coordinate[]
   pointLabels: string[]
   pointRoles: DraftPointRole[]
+  viaInsertAfter: number | null
   courses: Course[]
-  onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal') => void
+  onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onAddCourse: (course: Course) => void
   onRemovePoint: (index: number) => void
+  onChooseViaInsertion: (index: number | null) => void
   onUndo: () => void
   onClear: () => void
   onCancel: () => void
@@ -62,7 +64,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
   throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
 
-export function CourseForm({ route, pointLabels, pointRoles, courses, onAddPoint, onAddCourse, onRemovePoint, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, courses, onAddPoint, onAddCourse, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -108,10 +110,10 @@ export function CourseForm({ route, pointLabels, pointRoles, courses, onAddPoint
     <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div>
     {stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
-      {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の位置を確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via'); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null) }}>ゴールとして追加</button>}</div></section>}
+      {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の位置を確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via', viaInsertAfter); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null) }}>ゴールとして追加</button>}</div></section>}
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
-      <p className="route-builder-help">最初に始点を追加し、地図上の道路をタップしたら「経由地」または「ゴール」を選びます。ゴール設定後に経由地を追加すると、ゴール直前へ入ります。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。ピンはPCではドラッグ、スマホでは長押し後のドラッグで位置を動かせます。</p>
-      <div className="route-stop-list">{route.length ? route.map((point, index) => { const role = pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'); const roleText = role === 'start' ? 'START' : role === 'goal' ? 'GOAL' : `経由 ${pointRoles.slice(0, index + 1).filter((item) => item === 'via').length || index}`; return <div key={`${point[0]}-${point[1]}-${index}`}><b>{roleText}</b><span><strong>{pointLabels[index] || '地図指定'}</strong><small>{point[1].toFixed(5)}, {point[0].toFixed(5)}</small></span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${roleText}を削除`}>×</button></div> }) : <p>まだ地点がありません</p>}</div>
+      <p className="route-builder-help">最初に始点を追加し、地図上の道路をタップしたら「経由地」または「ゴール」を選びます。地点一覧の「＋」を押すと、その地点の直後を追加先に選べます。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。ピンはPCではドラッグ、スマホでは長押し後のドラッグで位置を動かせます。</p>
+      <div className="route-stop-list">{route.length ? route.map((point, index) => { const role = pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'); const roleText = role === 'start' ? 'START' : role === 'goal' ? 'GOAL' : `経由 ${pointRoles.slice(0, index + 1).filter((item) => item === 'via').length || index}`; return <div key={`${point[0]}-${point[1]}-${index}`}><b>{roleText}</b><span><strong>{pointLabels[index] || '地図指定'}</strong><small>{point[1].toFixed(5)}, {point[0].toFixed(5)}</small></span>{role !== 'goal' && <button type="button" className={`insert-stop ${viaInsertAfter === index ? 'active' : ''}`} onClick={() => onChooseViaInsertion(viaInsertAfter === index ? null : index)} aria-label={`${roleText}の直後に経由地を追加`}>{viaInsertAfter === index ? '追加先' : '＋'}</button>}<button type="button" onClick={() => onRemovePoint(index)} aria-label={`${roleText}を削除`}>×</button></div> }) : <p>まだ地点がありません</p>}</div>
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       {searchNotice && <p className="form-success" role="status">{searchNotice}</p>}
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
