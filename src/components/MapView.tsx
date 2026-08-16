@@ -13,6 +13,7 @@ interface MapViewProps {
   draftRoute: Coordinate[]
   onSelect: (course: Course) => void
   onAddPoint: (point: Coordinate) => void
+  onMovePoint: (index: number, point: Coordinate) => void
 }
 
 const toFeatureCollection = (courses: Course[]) => ({
@@ -28,7 +29,7 @@ const toDraftPointCollection = (route: Coordinate[]) => ({
   type: 'FeatureCollection' as const,
   features: route.map((point, index) => ({
     type: 'Feature' as const,
-    properties: { label: index === 0 ? 'S' : index === route.length - 1 ? 'G' : String(index) },
+    properties: { index, label: index === 0 ? 'S' : index === route.length - 1 ? 'G' : String(index) },
     geometry: { type: 'Point' as const, coordinates: point },
   })),
 })
@@ -76,15 +77,20 @@ export const toCourseAnnotationCollection = (course: Course | null): FeatureColl
   return { type: 'FeatureCollection', features }
 }
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect, onAddPoint }: MapViewProps) {
+export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
   const drawingRef = useRef(drawing)
+  const onAddPointRef = useRef(onAddPoint)
+  const onMovePointRef = useRef(onMovePoint)
+  const draftPopupRef = useRef<maplibregl.Popup | null>(null)
   const [mapError, setMapError] = useState('')
 
   useEffect(() => { coursesRef.current = courses }, [courses])
   useEffect(() => { drawingRef.current = drawing }, [drawing])
+  useEffect(() => { onAddPointRef.current = onAddPoint }, [onAddPoint])
+  useEffect(() => { onMovePointRef.current = onMovePoint }, [onMovePoint])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -153,11 +159,42 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
       const course = coursesRef.current.find((item) => item.id === id)
       if (course) onSelect(course)
     })
+    let movingPointIndex: number | null = null
+    let touchPressTimer: number | undefined
+    let suppressNextMapClick = false
+    const beginPointMove = (index: number) => { suppressNextMapClick = true; movingPointIndex = index; map.dragPan.disable(); map.getCanvas().style.cursor = 'grabbing' }
+    const finishPointMove = () => { if (movingPointIndex === null) return; movingPointIndex = null; map.dragPan.enable(); map.getCanvas().style.cursor = drawingRef.current ? 'crosshair' : '' }
+    map.on('mousedown', 'draft-points', (event) => { const index = Number(event.features?.[0]?.properties?.index); if (Number.isFinite(index)) { event.preventDefault(); beginPointMove(index) } })
+    map.on('mousemove', (event) => { if (movingPointIndex !== null) onMovePointRef.current(movingPointIndex, [event.lngLat.lng, event.lngLat.lat]) })
+    map.on('mouseup', finishPointMove)
+    map.on('touchstart', 'draft-points', (event) => {
+      const index = Number(event.features?.[0]?.properties?.index)
+      if (!Number.isFinite(index)) return
+      touchPressTimer = window.setTimeout(() => beginPointMove(index), 420)
+    })
+    map.on('touchmove', (event) => {
+      if (movingPointIndex === null) return
+      event.preventDefault()
+      onMovePointRef.current(movingPointIndex, [event.lngLat.lng, event.lngLat.lat])
+    })
+    map.on('touchend', () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); touchPressTimer = undefined; finishPointMove() })
     map.on('click', (event) => {
-      if (drawingRef.current) onAddPoint([event.lngLat.lng, event.lngLat.lat])
+      if (suppressNextMapClick) { suppressNextMapClick = false; return }
+      if (!drawingRef.current || movingPointIndex !== null) return
+      draftPopupRef.current?.remove()
+      const coordinate: Coordinate = [event.lngLat.lng, event.lngLat.lat]
+      const content = document.createElement('div')
+      content.className = 'draft-point-popup'
+      const message = document.createElement('strong'); message.textContent = 'この位置を地点として追加しますか？'
+      const add = document.createElement('button'); add.type = 'button'; add.textContent = '地点を追加'
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
+      add.addEventListener('click', () => { onAddPointRef.current(coordinate); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      content.append(message, add, cancel)
+      draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
     })
     mapRef.current = map
-    return () => { map.remove(); mapRef.current = null }
+    return () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); draftPopupRef.current?.remove(); map.remove(); mapRef.current = null }
   }, [onAddPoint, onSelect])
 
   useEffect(() => {
@@ -173,6 +210,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, onSelect
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
     ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute))
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
+    if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
   }, [drawing, draftRoute])
 
   useEffect(() => {

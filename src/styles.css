@@ -180,6 +180,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-builder-summary strong { color: #225f48; }
 .route-builder-summary span { color: var(--muted); font-size: 12px; }
 .route-privacy-note { margin: 0; color: #805a24; font-size: 11px; line-height: 1.5; }
+.draft-point-popup { display: grid; gap: 7px; min-width: 190px; }
+.draft-point-popup strong { font-size: 12px; line-height: 1.4; }
+.draft-point-popup button { padding: 7px 9px; color: #1b261f; background: #f2d16b; border: 0; border-radius: 6px; font-size: 12px; font-weight: 800; cursor: pointer; }
+.draft-point-popup button:last-child { color: #405149; background: #edf2ee; }
 .route-builder-stage footer, .route-details-stage footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .text-button { padding: 0; color: var(--green); background: none; border: 0; text-decoration: underline; font-size: 11px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }

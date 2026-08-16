@@ -91,7 +91,7 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
     {stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
-      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして追加してください。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。地図の番号と下の地点は対応しており、不要な地点は個別に削除できます。</p>
+      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして地点追加を確定してください。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。ピンはPCではドラッグ、スマホでは長押し後のドラッグで位置を動かせます。</p>
       <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span><button type="button" onClick={() => onRemovePoint(index)} aria-label={`${index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由地 ${index}`}を削除`}>×</button></div>) : <p>まだ地点がありません</p>}</div>
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       {searchNotice && <p className="form-success" role="status">{searchNotice}</p>}
