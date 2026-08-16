@@ -351,6 +351,17 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 }
 
 .community-panel { width: min(720px, calc(100% - 32px)); max-height: min(88dvh, 860px); overflow: auto; }
+.create-launcher { width: min(620px, calc(100% - 32px)); }
+.create-launcher > header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+.create-mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.create-mode-card { display: grid; gap: 8px; min-height: 150px; padding: 18px 14px; text-align: left; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; transition: transform .15s ease, border-color .15s ease; }
+.create-mode-card:hover, .create-mode-card:focus-visible { transform: translateY(-2px); border-color: var(--accent); }
+.create-mode-card span { font-size: 28px; }
+.create-mode-card strong { font-size: 16px; }
+.create-mode-card small, .form-hint { color: var(--muted); line-height: 1.5; }
+.search-route-form { display: grid; gap: 12px; }
+.search-route-form label { display: grid; gap: 6px; font-weight: 700; }
+.search-route-form footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .course-form-steps { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 12px; color: var(--muted); }
 .course-form-steps span { padding: 5px 8px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 80%, var(--line)); }
 .course-form-steps .active, .course-form-steps .done { color: var(--ink); background: color-mix(in srgb, var(--accent) 45%, var(--panel)); font-weight: 700; }
@@ -388,4 +399,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .profile-editor { grid-template-columns: 1fr; }
   .profile-avatar { width: 52px; height: 52px; font-size: 23px; }
   .join-options { grid-template-columns: 1fr; }
+  .create-launcher { width: calc(100% - 16px); padding: 16px; }
+  .create-mode-grid { grid-template-columns: 1fr; }
+  .create-mode-card { min-height: 0; grid-template-columns: auto 1fr; align-items: center; }
+  .create-mode-card small { grid-column: 2; }
 }

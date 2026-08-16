@@ -9,6 +9,7 @@ import { InstallPrompt } from './components/InstallPrompt'
 import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
+import { CourseCreateLauncher } from './components/CourseCreateLauncher'
 import { sampleCourses } from './data/courses'
 import { addUserRating, approximateElevationProfile, estimateSystemRatings, routeDistanceKm, validateRouteQuality } from './lib/course'
 import { auth, completeRedirectLogin, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
@@ -44,6 +45,7 @@ export default function App() {
   const ignoreListTap = useRef(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
+  const [createModeOpen, setCreateModeOpen] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser)
@@ -153,8 +155,17 @@ export default function App() {
   }
 
   async function startDrawing() {
-    if (!user) { await handleLogin(); if (!auth.currentUser) return }
     setSelected(null); setDraftRoute([]); setDrawing(true)
+    setListCollapsed(true); setListExpanded(false); setListOffset(0); setListDragging(false)
+  }
+
+  async function openCreateFlow() {
+    if (!user) { await handleLogin(); if (!auth.currentUser) return }
+    setCreateModeOpen(true)
+  }
+
+  async function startSearchDrawing(points: Coordinate[]) {
+    setCreateModeOpen(false); setSelected(null); setDraftRoute(points); setDrawing(true)
     setListCollapsed(true); setListExpanded(false); setListOffset(0); setListDragging(false)
   }
 
@@ -241,7 +252,7 @@ export default function App() {
         </button>
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="峠・エリア・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
-          <button className="new-route" onClick={startDrawing}><span>＋</span>コース登録</button>
+          <button className="new-route" onClick={openCreateFlow}><span>＋</span>コース登録</button>
           {user ? <button className="user-button" onClick={() => setCommunityOpen(true)} title="プロフィールとコミュニティ" aria-label="プロフィールとコミュニティ">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
         </div>
       </header>
@@ -280,6 +291,7 @@ export default function App() {
         </section>
       </div>}
       {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} />}
+      {createModeOpen && <CourseCreateLauncher onClose={() => setCreateModeOpen(false)} onMapCreate={() => { setCreateModeOpen(false); startDrawing() }} onJoinCreate={() => { setCreateModeOpen(false); setCommunityOpen(true) }} onSearchCreate={startSearchDrawing} />}
       <InstallPrompt />
     </div>
   )
