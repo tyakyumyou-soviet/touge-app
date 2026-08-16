@@ -14,36 +14,50 @@ interface Props {
   onSave: (draft: CourseDraft) => Promise<void>
 }
 
-interface GeocodedPoint { coordinate: Coordinate; approximate: boolean }
+interface GeocodedPoint { coordinate: Coordinate }
 
 async function geocode(query: string): Promise<GeocodedPoint> {
   const normalized = query.trim().replace(/[－ー−]/g, '-')
-  const localityOnly = normalized.replace(/[0-9０-９]+(?:\s*(?:-|番|丁目|地|号)\s*[0-9０-９]+)*\s*$/u, '').trim()
   const candidates = [...new Set([
     normalized,
     normalized.replace(/([0-9０-９]+)\s*-\s*([0-9０-９]+)/g, '$1番$2号'),
-    localityOnly,
   ].filter(Boolean))]
-  // GSI's official Japanese address search covers address-level data much
-  // better than place POI data. Fall back to Nominatim for mountains, ICs and
-  // other named features that are not an address.
+  // CSIS provides Japanese residence-address-level results. Do not silently
+  // degrade an address to a town-centre result: exactness matters for homes.
+  const looksLikeAddress = /[0-9０-９]/.test(normalized)
+  if (looksLikeAddress) {
+    try {
+      for (const candidate of candidates) {
+        const response = await fetch(`https://geocode.csis.u-tokyo.ac.jp/cgi-bin/simple_geocode.cgi?charset=UTF8&series=ADDRESS&addr=${encodeURIComponent(candidate)}`)
+        if (!response.ok) continue
+        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml')
+        const result = xml.querySelector('candidate')
+        const longitude = Number(result?.querySelector('longitude')?.textContent)
+        const latitude = Number(result?.querySelector('latitude')?.textContent)
+        const level = Number(result?.querySelector('iLvl')?.textContent)
+        if (Number.isFinite(longitude) && Number.isFinite(latitude) && level >= 6) return { coordinate: [longitude, latitude] }
+      }
+    } catch { /* Continue with exact-match sources below. */ }
+    throw new Error(`「${query}」の番地レベルの位置を確認できませんでした。概算位置は追加していません。地図上で正確な場所を指定してください`)
+  }
+  // GSI and Nominatim remain useful for named locations such as ICs and peaks.
   try {
-    for (const [index, candidate] of candidates.entries()) {
+    for (const candidate of candidates) {
       const addressResponse = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(candidate)}`)
       if (!addressResponse.ok) continue
       const result = await addressResponse.json() as { features?: Array<{ geometry?: { coordinates?: [number, number] } }> }
       const coordinates = result.features?.[0]?.geometry?.coordinates
-      if (coordinates && coordinates.every(Number.isFinite)) return { coordinate: coordinates, approximate: index > 0 }
+      if (coordinates && coordinates.every(Number.isFinite)) return { coordinate: coordinates }
     }
   } catch { /* Continue with the named-place search below. */ }
-  for (const [index, candidate] of candidates.entries()) {
+  for (const candidate of candidates) {
     const placeQuery = /日本|東京都|神奈川県|静岡県/.test(candidate) ? candidate : `${candidate}, 日本`
     const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=jp&q=${encodeURIComponent(placeQuery)}`)
     if (!response.ok) continue
     const items = await response.json() as Array<{ lon: string; lat: string }>
-    if (items[0]) return { coordinate: [Number(items[0].lon), Number(items[0].lat)], approximate: index > 0 }
+    if (items[0]) return { coordinate: [Number(items[0].lon), Number(items[0].lat)] }
   }
-  throw new Error(`「${query}」が見つかりませんでした。住所表記を確認するか、地図上で地点を追加してください`)
+  throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
 
 export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePoint, onUndo, onClear, onCancel, onSave }: Props) {
@@ -62,7 +76,7 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
     event.preventDefault(); setError(''); setSearchNotice('')
     if (!query.trim()) return
     setBusy(true)
-    try { const result = await geocode(query.trim()); onAddPoint(result.coordinate); setSearchNotice(result.approximate ? '番地ではなく町名付近の位置を追加しました。地図のピン位置を確認してください。' : '地点を追加しました。'); setQuery('') } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
+    try { const result = await geocode(query.trim()); onAddPoint(result.coordinate); setSearchNotice('地点を追加しました。地図上のピン位置を確認してください。'); setQuery('') } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -96,6 +110,7 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onRemovePo
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       {searchNotice && <p className="form-success" role="status">{searchNotice}</p>}
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
+      <p className="geocoder-credit">住所検索: <a href="https://geocode.csis.u-tokyo.ac.jp/" target="_blank" rel="noreferrer">CSISシンプルジオコーディング実験</a></p>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2} onClick={() => { setError(''); setStage('details') }}>詳細へ →</button></footer>
     </div> : <form className="route-details-stage" onSubmit={submit}>
