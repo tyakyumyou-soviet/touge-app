@@ -86,6 +86,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   const drawingRef = useRef(drawing)
   const onAddPointRef = useRef(onAddPoint)
   const onMovePointRef = useRef(onMovePoint)
+  const onSelectRef = useRef(onSelect)
   const draftPopupRef = useRef<maplibregl.Popup | null>(null)
   const draftRouteRef = useRef(draftRoute)
   const draftLabelsRef = useRef(draftLabels)
@@ -96,6 +97,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   useEffect(() => { drawingRef.current = drawing }, [drawing])
   useEffect(() => { onAddPointRef.current = onAddPoint }, [onAddPoint])
   useEffect(() => { onMovePointRef.current = onMovePoint }, [onMovePoint])
+  useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
   useEffect(() => { draftRouteRef.current = draftRoute }, [draftRoute])
   useEffect(() => { draftLabelsRef.current = draftLabels }, [draftLabels])
 
@@ -171,7 +173,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       if (drawingRef.current) return
       const id = event.features?.[0]?.properties?.id as string | undefined
       const course = coursesRef.current.find((item) => item.id === id)
-      if (course) onSelect(course)
+      if (course) onSelectRef.current(course)
     })
     let movingPointIndex: number | null = null
     let touchPressTimer: number | undefined
@@ -209,7 +211,9 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     })
     mapRef.current = map
     return () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); draftPopupRef.current?.remove(); map.remove(); mapRef.current = null; setMapReady(false) }
-  }, [onAddPoint, onSelect])
+  // Event handlers intentionally use refs above. Recreating the MapLibre map on
+  // every parent render interrupts touch interactions, especially long-press drag.
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
