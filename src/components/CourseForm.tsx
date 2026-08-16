@@ -14,7 +14,8 @@ interface Props {
 }
 
 async function geocode(query: string): Promise<Coordinate> {
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&q=${encodeURIComponent(query)}`)
+  const normalized = /日本|東京都|神奈川県|静岡県/.test(query) ? query : `${query}, 日本`
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=jp&q=${encodeURIComponent(normalized)}`)
   if (!response.ok) throw new Error('場所を検索できませんでした')
   const items = await response.json() as Array<{ lon: string; lat: string }>
   if (!items[0]) throw new Error(`「${query}」が見つかりませんでした`)
@@ -63,9 +64,9 @@ export function CourseForm({ route, courses, onAddPoint, onAddCourse, onUndo, on
     <header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div>
     {stage === 'route' ? <div className="route-builder-stage">
-      <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・IC・峠・コースを検索" aria-label="ルートへ追加する場所を検索" /><button disabled={busy}>{busy ? '検索中…' : '追加'}</button></form>
+      <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '追加'}</button></form>
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
-      <p className="route-builder-help">検索するか、地図上の道路をタップして追加してください。最初がSTART、最後がGOALになります。</p>
+      <p className="route-builder-help">地名・住所・IC・峠を入力するか、地図上の道路をタップして追加してください。住所は「静岡県伊豆市○○」のように入力できます。最初がSTART、最後がGOALになります。</p>
       <div className="route-stop-list">{route.length ? route.map((point, index) => <div key={`${point[0]}-${point[1]}-${index}`}><b>{index === 0 ? 'START' : index === route.length - 1 ? 'GOAL' : `経由 ${index}`}</b><span>{point[1].toFixed(5)}, {point[0].toFixed(5)}</span></div>) : <p>まだ地点がありません</p>}</div>
       <div className="route-builder-summary"><strong>{route.length}地点</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       {error && <p className="form-error" role="alert">{error}</p>}
