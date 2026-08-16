@@ -87,12 +87,17 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   const onAddPointRef = useRef(onAddPoint)
   const onMovePointRef = useRef(onMovePoint)
   const draftPopupRef = useRef<maplibregl.Popup | null>(null)
+  const draftRouteRef = useRef(draftRoute)
+  const draftLabelsRef = useRef(draftLabels)
   const [mapError, setMapError] = useState('')
+  const [mapReady, setMapReady] = useState(false)
 
   useEffect(() => { coursesRef.current = courses }, [courses])
   useEffect(() => { drawingRef.current = drawing }, [drawing])
   useEffect(() => { onAddPointRef.current = onAddPoint }, [onAddPoint])
   useEffect(() => { onMovePointRef.current = onMovePoint }, [onMovePoint])
+  useEffect(() => { draftRouteRef.current = draftRoute }, [draftRoute])
+  useEffect(() => { draftLabelsRef.current = draftLabels }, [draftLabels])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -145,13 +150,19 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       map.addSource('draft', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
       map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
       map.addSource('draft-points', { type: 'geojson', data: toDraftPointCollection([]) })
-      map.addLayer({ id: 'draft-points', type: 'circle', source: 'draft-points', paint: { 'circle-radius': 12, 'circle-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#fff8e7' } })
-      map.addLayer({ id: 'draft-point-labels', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#142018' } })
-      map.addLayer({ id: 'draft-point-names', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['concat', ['get', 'label'], '  ', ['get', 'name']], 'text-size': 12, 'text-offset': [0, 1.9], 'text-anchor': 'top', 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2 } })
+      // Keep the draft stops above every course layer.  The small triangular tip
+      // makes the otherwise compact numbered marker read as a map pin.
+      map.addLayer({ id: 'draft-point-pin-tip', type: 'symbol', source: 'draft-points', layout: { 'text-field': '▼', 'text-size': 19, 'text-offset': [0, .72], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'] } })
+      map.addLayer({ id: 'draft-points', type: 'circle', source: 'draft-points', paint: { 'circle-radius': 13, 'circle-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'draft-point-labels', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true, 'text-ignore-placement': true }, paint: { 'text-color': '#142018' } })
+      map.addLayer({ id: 'draft-point-names', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['concat', ['get', 'label'], '  ', ['get', 'name']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
       map.addLayer({ id: 'selected-contour-labels', type: 'symbol', source: 'selected-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
       map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
       map.addLayer({ id: 'course-annotation-labels', type: 'symbol', source: 'course-annotations', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, -1.25], 'text-anchor': 'bottom', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd', 'text-halo-width': 2 } })
+      ;(map.getSource('draft') as GeoJSONSource).setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRouteRef.current } })
+      ;(map.getSource('draft-points') as GeoJSONSource).setData(toDraftPointCollection(draftRouteRef.current, draftLabelsRef.current))
+      setMapReady(true)
     })
 
     map.on('mouseenter', 'courses-line', () => { map.getCanvas().style.cursor = 'pointer' })
@@ -197,24 +208,24 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
     })
     mapRef.current = map
-    return () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); draftPopupRef.current?.remove(); map.remove(); mapRef.current = null }
+    return () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); draftPopupRef.current?.remove(); map.remove(); mapRef.current = null; setMapReady(false) }
   }, [onAddPoint, onSelect])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.isStyleLoaded()) return
+    if (!mapReady || !map?.isStyleLoaded()) return
     ;(map.getSource('courses') as GeoJSONSource | undefined)?.setData(toFeatureCollection(courses))
-  }, [courses])
+  }, [courses, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.isStyleLoaded()) return
+    if (!mapReady || !map?.isStyleLoaded()) return
     const source = map.getSource('draft') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
     ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels))
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
     if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
-  }, [drawing, draftRoute, draftLabels])
+  }, [drawing, draftRoute, draftLabels, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
