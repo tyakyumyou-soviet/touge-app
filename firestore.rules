@@ -3,6 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function owns(resourceData) { return signedIn() && resourceData.authorId == request.auth.uid; }
+    function ownsCourse(courseId) { return signedIn() && get(/databases/$(database)/documents/courses/$(courseId)).data.authorId == request.auth.uid; }
     function validVisibility(value) { return value in ['public', 'limited', 'private']; }
 
     match /users/{userId} {
@@ -38,22 +39,25 @@ service cloud.firestore {
           && request.resource.data.elevation >= 1 && request.resource.data.elevation <= 5
           && request.resource.data.width >= 1 && request.resource.data.width <= 5
           && request.resource.data.scenery >= 1 && request.resource.data.scenery <= 5;
-        allow delete: if signedIn() && request.auth.uid == userId;
+        allow delete: if (signedIn() && request.auth.uid == userId) || ownsCourse(courseId);
       }
       match /likes/{userId} {
         allow read: if true;
-        allow create, delete: if signedIn() && request.auth.uid == userId;
+        allow create: if signedIn() && request.auth.uid == userId;
+        allow delete: if (signedIn() && request.auth.uid == userId) || ownsCourse(courseId);
       }
       match /comments/{commentId} {
         allow read: if true;
         allow create: if signedIn() && request.resource.data.authorId == request.auth.uid
           && request.resource.data.body is string && request.resource.data.body.size() > 0
           && request.resource.data.body.size() <= 1000;
-        allow update, delete: if signedIn() && resource.data.authorId == request.auth.uid;
+        allow update: if signedIn() && resource.data.authorId == request.auth.uid;
+        allow delete: if (signedIn() && resource.data.authorId == request.auth.uid) || ownsCourse(courseId);
       }
       match /live/{infoId} {
         allow read: if true;
-        allow write: if signedIn() && request.auth.token.admin == true;
+        allow create, update: if signedIn() && request.auth.token.admin == true;
+        allow delete: if (signedIn() && request.auth.token.admin == true) || ownsCourse(courseId);
       }
     }
 

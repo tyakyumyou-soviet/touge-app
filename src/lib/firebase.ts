@@ -22,14 +22,17 @@ import {
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
+  onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
+  writeBatch,
   query,
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 import { ratingLabels, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type UserProfile } from '../types'
-import { combinedRatings, userRatingAverage } from './course'
+import { combinedRatings, emptyRatings, userRatingAverage } from './course'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBXyb8s-ZAsfBUJyv_dMCgjl0Z8r0sSBGc',
@@ -73,8 +76,43 @@ function routeFromFirestore(value: unknown): Coordinate[] {
   })
 }
 
+function firestoreDate(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    const date = (value as { toDate: () => Date }).toDate()
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
+  }
+  if (value && typeof value === 'object' && typeof (value as { seconds?: unknown }).seconds === 'number') return new Date((value as { seconds: number }).seconds * 1000).toISOString().slice(0, 10)
+  return ''
+}
+
+function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [] }
+
+function ratings(value: unknown): Ratings {
+  const fallback = emptyRatings()
+  if (!value || typeof value !== 'object') return fallback
+  return Object.fromEntries(Object.keys(fallback).map((key) => [key, typeof (value as Record<string, unknown>)[key] === 'number' ? (value as Record<string, number>)[key] : fallback[key as RatingKey]])) as Ratings
+}
+
 function courseFromFirestore(id: string, value: Record<string, unknown>): Course {
-  return { ...value, id, route: routeFromFirestore(value.route) } as Course
+  const rawRatings = ratings(value.ratings)
+  const rawSystemRatings = value.systemRatings && typeof value.systemRatings === 'object' ? ratings(value.systemRatings) : undefined
+  const rawUserRatings = value.userRatings && typeof value.userRatings === 'object' ? ratings(value.userRatings) : undefined
+  return {
+    ...value,
+    id,
+    name: typeof value.name === 'string' ? value.name : '名称未設定コース',
+    area: typeof value.area === 'string' ? value.area : 'エリア未設定',
+    description: typeof value.description === 'string' ? value.description : '',
+    route: routeFromFirestore(value.route),
+    tags: strings(value.tags),
+    cautions: strings(value.cautions),
+    ratings: rawRatings,
+    systemRatings: rawSystemRatings,
+    userRatings: rawUserRatings,
+    ratingCount: typeof value.ratingCount === 'number' ? value.ratingCount : 0,
+    updatedAt: firestoreDate(value.updatedAt) || firestoreDate(value.createdAt) || '更新日不明',
+  } as Course
 }
 
 async function saveUserProfile(user: User): Promise<User> {
@@ -108,11 +146,10 @@ export async function completeRedirectLogin(): Promise<User | null> {
 
 export const logout = () => signOut(auth)
 
-export async function loadPublicCourses(): Promise<Course[]> {
-  const snapshot = await getDocs(query(collection(db, 'courses'), where('visibility', '==', 'public')))
-  return Promise.all(snapshot.docs
+async function hydrateCourses(documents: Awaited<ReturnType<typeof getDocs>>['docs']): Promise<Course[]> {
+  return Promise.all(documents
     .map(async (item) => {
-      const raw = courseFromFirestore(item.id, item.data())
+      const raw = courseFromFirestore(item.id, item.data() as Record<string, unknown>)
       const systemRatings = raw.systemRatings ?? raw.ratings
       const ratingSnapshot = await getDocs(collection(db, 'courses', item.id, 'ratings'))
       const sums = Object.fromEntries(Object.keys(ratingLabels).map((key) => [key, 0])) as Ratings
@@ -126,7 +163,17 @@ export async function loadPublicCourses(): Promise<Course[]> {
       const userRatings = ratingCount ? userRatingAverage(sums, ratingCount) : undefined
       return { ...raw, systemRatings, userRatings, ratingCount, ratings: combinedRatings({ ...raw, systemRatings, userRatings, ratingCount }) }
     }))
-    .then((items) => items.filter((course) => course.visibility === 'public'))
+}
+
+/** Load public routes plus the signed-in driver's own limited/private routes. */
+export async function loadPublicCourses(userId?: string): Promise<Course[]> {
+  const publicSnapshot = await getDocs(query(collection(db, 'courses'), where('visibility', '==', 'public')))
+  const ownSnapshot = userId
+    ? await getDocs(query(collection(db, 'courses'), where('authorId', '==', userId)))
+    : null
+  const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? [])]
+  const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
+  return hydrateCourses(uniqueDocuments)
 }
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
@@ -143,6 +190,27 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
     updatedAt: serverTimestamp(),
   })
   return result.id
+}
+
+export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>): Promise<void> {
+  await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
+}
+
+export async function deleteCourse(courseId: string): Promise<void> {
+  const courseRef = doc(db, 'courses', courseId)
+  const [ratings, likes, comments, live] = await Promise.all([
+    getDocs(collection(courseRef, 'ratings')),
+    getDocs(collection(courseRef, 'likes')),
+    getDocs(collection(courseRef, 'comments')),
+    getDoc(doc(courseRef, 'live', 'current')),
+  ])
+  const batch = writeBatch(db)
+  ratings.docs.forEach((item) => batch.delete(item.ref))
+  likes.docs.forEach((item) => batch.delete(item.ref))
+  comments.docs.forEach((item) => batch.delete(item.ref))
+  if (live.exists()) batch.delete(live.ref)
+  batch.delete(courseRef)
+  await batch.commit()
 }
 
 export async function saveRating(rating: RatingSubmission, user: User): Promise<void> {
@@ -195,13 +263,32 @@ export async function loadCourseComments(courseId: string): Promise<CourseCommen
   return snapshot.docs.map((item) => ({ id: item.id, courseId, likeCount: 0, ...item.data() } as CourseComment))
 }
 
-export async function addCourseComment(courseId: string, body: string, user: User): Promise<void> {
-  await addDoc(collection(db, 'courses', courseId, 'comments'), { authorId: user.uid, authorName: user.displayName ?? 'ドライバー', body, likeCount: 0, createdAt: serverTimestamp() })
+export async function addCourseComment(courseId: string, body: string, user: User): Promise<string> {
+  const created = await addDoc(collection(db, 'courses', courseId, 'comments'), { authorId: user.uid, authorName: user.displayName ?? 'ドライバー', body, likeCount: 0, createdAt: serverTimestamp() })
+  return created.id
+}
+
+export async function deleteCourseComment(courseId: string, commentId: string): Promise<void> {
+  await deleteDoc(doc(db, 'courses', courseId, 'comments', commentId))
+}
+
+export function subscribeCourseComments(courseId: string, onChange: (comments: CourseComment[]) => void, onError?: (error: Error) => void): () => void {
+  return onSnapshot(collection(db, 'courses', courseId, 'comments'), (snapshot) => {
+    onChange(snapshot.docs.map((item) => ({ id: item.id, courseId, likeCount: 0, ...item.data() } as CourseComment)))
+  }, (error) => onError?.(error))
+}
+
+export function subscribeCourseLikes(courseId: string, userId: string | undefined, onChange: (state: { count: number; liked: boolean }) => void): () => void {
+  return onSnapshot(collection(db, 'courses', courseId, 'likes'), (snapshot) => onChange({ count: snapshot.size, liked: Boolean(userId && snapshot.docs.some((item) => item.id === userId)) }))
 }
 
 export async function loadLiveRoadInfo(courseId: string): Promise<LiveRoadInfo | null> {
   const snapshot = await getDoc(doc(db, 'courses', courseId, 'live', 'current'))
   return snapshot.exists() ? snapshot.data() as LiveRoadInfo : null
+}
+
+export function subscribeLiveRoadInfo(courseId: string, onChange: (info: LiveRoadInfo | null) => void): () => void {
+  return onSnapshot(doc(db, 'courses', courseId, 'live', 'current'), (snapshot) => onChange(snapshot.exists() ? snapshot.data() as LiveRoadInfo : null), () => onChange(null))
 }
 
 export async function submitAdminReport(courseId: string, type: 'discovery' | 'quality' | 'road', payload: Record<string, unknown>, user: User): Promise<void> {

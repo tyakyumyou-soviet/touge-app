@@ -141,6 +141,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .toll-box > button { margin-top: 10px; padding: 7px 10px; color: #3e5549; background: #fff; border: 1px solid #c7cec9; border-radius: 6px; font-size: 9px; font-weight: 700; }
 .secondary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
 .secondary-actions button { padding: 9px; color: #3d4a43; background: transparent; border: 1px solid #cfd3cf; border-radius: 8px; font-size: 11px; font-weight: 600; }
+.secondary-actions button.danger-action { color: #9e352e; border-color: #d7a19b; background: #fff4f2; }
 .nav-actions { display: grid; grid-template-columns: .85fr 1.15fr; gap: 8px; padding: 13px 18px; background: #fff; border-top: 1px solid var(--line); }
 .button { min-height: 43px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border-radius: 9px; text-decoration: none; font-weight: 700; border: 1px solid transparent; }
 .button.primary { color: var(--ink); background: var(--yellow); border-color: #d6b64f; }

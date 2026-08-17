@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
-import { loadLiveRoadInfo } from '../lib/firebase'
+import { subscribeLiveRoadInfo } from '../lib/firebase'
 import type { LiveRoadInfo } from '../types'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
@@ -26,7 +26,7 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
   const systemRatings = systemRatingsFor(course)
   const mergedRatings = combinedRatings(course)
   const userCount = userRatingCountFor(course)
-  useEffect(() => { loadLiveRoadInfo(course.id).then(setLiveInfo).catch(() => setLiveInfo(null)) }, [course.id])
+  useEffect(() => subscribeLiveRoadInfo(course.id, setLiveInfo), [course.id])
 
   function startSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)

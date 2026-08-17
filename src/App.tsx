@@ -11,7 +11,7 @@ import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
 import { sampleCourses } from './data/courses'
 import { addUserRating, approximateElevationProfile, estimateSystemRatings, routeDistanceKm, validateRouteQuality } from './lib/course'
-import { auth, completeRedirectLogin, createCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport } from './lib/firebase'
+import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission } from './types'
 import './styles.css'
@@ -59,13 +59,16 @@ export default function App() {
   }, [])
   useEffect(() => { window.__tougeMarkReady?.() }, [])
   useEffect(() => {
-    loadPublicCourses().then((remote) => {
+    loadPublicCourses(user?.uid).then((remote) => {
       if (remote.length) {
         const seedIds = new Set(remote.map((course) => course.id))
         setCourses([...remote, ...sampleCourses.filter((course) => !seedIds.has(course.id))])
       }
-    }).catch(() => setNotice('オフラインモード: 保存済みのおすすめコースを表示しています'))
-  }, [])
+    }).catch((error: unknown) => {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+      setNotice(code === 'permission-denied' ? 'Firebaseからコースを読み込めませんでした。Firestoreルールの公開設定を確認してください。' : 'Firebaseからコースを読み込めませんでした。通信状態を確認してください。')
+    })
+  }, [user?.uid])
   useEffect(() => {
     const courseId = new URLSearchParams(location.search).get('course')
     if (!courseId) return
@@ -221,7 +224,7 @@ export default function App() {
       throw error
     }
     const created = { id, ...data }
-    setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setNotice('コースを保存しました')
+    setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setNotice(`Firebaseへコースを保存しました（ID: ${id.slice(0, 8)}）`)
   }
 
   async function handleCreateJoined(joinedCourses: Course[]) {
@@ -252,6 +255,24 @@ export default function App() {
     setCourses((items) => items.map((course) => course.id === rating.courseId ? addUserRating(course, rating) : course))
     setSelected((course) => course && course.id === rating.courseId ? addUserRating(course, rating) : course)
     setNotice('評価を投稿しました。集計への反映には時間がかかる場合があります。')
+  }
+
+  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>) {
+    const current = courses.find((course) => course.id === courseId)
+    if (!current || current.authorId !== auth.currentUser?.uid) throw new Error('Not authorized')
+    await updateCourse(courseId, changes)
+    const updated = { ...current, ...changes, updatedAt: new Date().toISOString().slice(0, 10) }
+    setCourses((items) => items.map((course) => course.id === courseId ? updated : course))
+    setSelected((course) => course?.id === courseId ? updated : course)
+  }
+
+  async function handleCourseDelete(courseId: string) {
+    const current = courses.find((course) => course.id === courseId)
+    if (!current || current.authorId !== auth.currentUser?.uid) throw new Error('Not authorized')
+    await deleteCourse(courseId)
+    setCourses((items) => items.filter((course) => course.id !== courseId))
+    setSelected((course) => course?.id === courseId ? null : course)
+    setNotice('コースをFirebaseから削除しました')
   }
 
   async function shareCourse() {
@@ -307,7 +328,7 @@ export default function App() {
           <footer><button className="button secondary" onClick={() => setLogoutConfirmOpen(false)}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
         </section>
       </div>}
-      {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} />}
+      {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} onUpdateCourse={handleCourseUpdate} onDeleteCourse={handleCourseDelete} />}
       <InstallPrompt />
     </div>
   )
