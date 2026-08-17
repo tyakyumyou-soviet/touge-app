@@ -28,7 +28,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type UserProfile } from '../types'
+import { ratingLabels, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type UserProfile } from '../types'
 import { combinedRatings, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -53,6 +53,29 @@ try {
 export const auth = getAuth(app)
 export const storage = getStorage(app)
 export { db }
+
+type StoredCoordinate = { lng: number; lat: number }
+
+// Firestore does not allow an array to contain another array. Routes are used
+// by the UI as [lng, lat] tuples, so convert them at the storage boundary.
+// The reader also understands legacy tuples to keep previously imported data
+// usable.
+function routeForFirestore(route: Coordinate[]): StoredCoordinate[] {
+  return route.map(([lng, lat]) => ({ lng, lat }))
+}
+
+function routeFromFirestore(value: unknown): Coordinate[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((point): Coordinate[] => {
+    if (Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1])) return [[Number(point[0]), Number(point[1])]]
+    if (point && typeof point === 'object' && Number.isFinite((point as StoredCoordinate).lng) && Number.isFinite((point as StoredCoordinate).lat)) return [[(point as StoredCoordinate).lng, (point as StoredCoordinate).lat]]
+    return []
+  })
+}
+
+function courseFromFirestore(id: string, value: Record<string, unknown>): Course {
+  return { ...value, id, route: routeFromFirestore(value.route) } as Course
+}
 
 async function saveUserProfile(user: User): Promise<User> {
   await setDoc(doc(db, 'users', user.uid), {
@@ -89,7 +112,7 @@ export async function loadPublicCourses(): Promise<Course[]> {
   const snapshot = await getDocs(query(collection(db, 'courses'), where('visibility', '==', 'public')))
   return Promise.all(snapshot.docs
     .map(async (item) => {
-      const raw = { id: item.id, ...item.data() } as Course
+      const raw = courseFromFirestore(item.id, item.data())
       const systemRatings = raw.systemRatings ?? raw.ratings
       const ratingSnapshot = await getDocs(collection(db, 'courses', item.id, 'ratings'))
       const sums = Object.fromEntries(Object.keys(ratingLabels).map((key) => [key, 0])) as Ratings
@@ -108,12 +131,14 @@ export async function loadPublicCourses(): Promise<Course[]> {
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
   const snapshot = await getDoc(doc(db, 'courses', courseId))
-  return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Course) : null
+  return snapshot.exists() ? courseFromFirestore(snapshot.id, snapshot.data()) : null
 }
 
 export async function createCourse(course: Omit<Course, 'id'>): Promise<string> {
+  const { route, ...courseFields } = course
   const result = await addDoc(collection(db, 'courses'), {
-    ...course,
+    ...courseFields,
+    route: routeForFirestore(route),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
