@@ -245,6 +245,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-tools .active { color: #101915; background: var(--yellow); border-color: var(--yellow); }
 .route-model-panel .route-model-canvas { position: relative; z-index: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
 .route-model-canvas:active { cursor: grabbing; }
+.model-profile-loading { position: absolute; z-index: 5; inset: 70px 18px 18px; display: grid; place-content: center; justify-items: center; gap: 10px; border-radius: 12px; background: #101915; color: #fff; text-align: center; }
+.model-profile-loading span { width: 36px; height: 36px; border: 4px solid #ffffff35; border-top-color: #f2d16b; border-radius: 50%; animation: model-profile-spin .8s linear infinite; }
+.model-profile-loading strong { font-size: 20px; }
+.model-profile-loading small { color: #c4d0ca; }
+@keyframes model-profile-spin { to { transform: rotate(360deg); } }
 .route-model-panel text { fill: #fff; font-size: 24px; font-weight: 700; }
 .model-terrain { opacity: .58; pointer-events: none; }
 .model-terrain polygon { stroke: #a7d6ba36; stroke-width: .7px; }

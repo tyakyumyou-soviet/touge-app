@@ -114,10 +114,6 @@ export function googleMapsUrl(course: Course, includeCurrentLocation: boolean): 
   return `https://www.google.com/maps/dir/?${params.toString()}`
 }
 
-export function approximateElevationProfile(route: Coordinate[]): number[] {
-  if (route.length === 0) return []
-  return route.map(([, lat], index) => Math.round(380 + (lat % 1) * 420 + Math.sin(index * 1.7) * 80))
-}
 
 export function emptyRatings(value = 3): Ratings {
   return { curves: value, elevation: value, width: value, scenery: value, surface: value, traffic: value, access: value }

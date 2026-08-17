@@ -32,7 +32,7 @@ import {
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 import { ratingLabels, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type UserProfile } from '../types'
-import { combinedRatings, emptyRatings, userRatingAverage } from './course'
+import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBXyb8s-ZAsfBUJyv_dMCgjl0Z8r0sSBGc',
@@ -95,6 +95,10 @@ function ratings(value: unknown): Ratings {
 }
 
 function courseFromFirestore(id: string, value: Record<string, unknown>): Course {
+  const route = routeFromFirestore(value.route)
+  const elevationProfile = Array.isArray(value.elevationProfile) ? value.elevationProfile.filter((item): item is number => typeof item === 'number' && Number.isFinite(item)) : []
+  const profileMin = elevationProfile.length ? Math.min(...elevationProfile) : 0
+  const profileMax = elevationProfile.length ? Math.max(...elevationProfile) : 0
   const rawRatings = ratings(value.ratings)
   const rawSystemRatings = value.systemRatings && typeof value.systemRatings === 'object' ? ratings(value.systemRatings) : undefined
   const rawUserRatings = value.userRatings && typeof value.userRatings === 'object' ? ratings(value.userRatings) : undefined
@@ -104,7 +108,12 @@ function courseFromFirestore(id: string, value: Record<string, unknown>): Course
     name: typeof value.name === 'string' ? value.name : '名称未設定コース',
     area: typeof value.area === 'string' ? value.area : 'エリア未設定',
     description: typeof value.description === 'string' ? value.description : '',
-    route: routeFromFirestore(value.route),
+    route,
+    distanceKm: typeof value.distanceKm === 'number' && Number.isFinite(value.distanceKm) ? value.distanceKm : routeDistanceKm(route),
+    durationMin: typeof value.durationMin === 'number' && Number.isFinite(value.durationMin) ? value.durationMin : Math.max(1, Math.round(routeDistanceKm(route) * 2)),
+    elevationProfile,
+    minElevation: typeof value.minElevation === 'number' && Number.isFinite(value.minElevation) ? value.minElevation : profileMin,
+    maxElevation: typeof value.maxElevation === 'number' && Number.isFinite(value.maxElevation) ? value.maxElevation : profileMax,
     tags: strings(value.tags),
     cautions: strings(value.cautions),
     ratings: rawRatings,
@@ -173,12 +182,14 @@ export async function loadPublicCourses(userId?: string): Promise<Course[]> {
     : null
   const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? [])]
   const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
-  return hydrateCourses(uniqueDocuments)
+  return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))
 }
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
   const snapshot = await getDoc(doc(db, 'courses', courseId))
-  return snapshot.exists() ? courseFromFirestore(snapshot.id, snapshot.data()) : null
+  if (!snapshot.exists()) return null
+  const course = courseFromFirestore(snapshot.id, snapshot.data())
+  return course.route.length >= 2 ? course : null
 }
 
 export async function createCourse(course: Omit<Course, 'id'>): Promise<string> {

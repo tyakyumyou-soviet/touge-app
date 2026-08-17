@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
-import { toContourFeatureCollection, toCourseAnnotationCollection } from './MapView'
+import { fetchElevationProfile, isSuspiciousElevationProfile } from '../lib/elevation'
+import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 
 type ViewMode = 'overview' | 'preview' | 'model'
 
@@ -36,12 +37,15 @@ function interpolatedElevationAt(values: number[], progress: number): number {
   return Math.min(Math.max(...values), Math.max(Math.min(...values), value))
 }
 
-function normaliseElevationProfile(raw: unknown, routeLength: number, minElevation: number, maxElevation: number): number[] {
+function normaliseElevationProfile(raw: unknown, minElevation: number, maxElevation: number): number[] {
   const source = Array.isArray(raw) ? raw.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)) : []
   const fallback = [Number.isFinite(minElevation) ? minElevation : 0, Number.isFinite(maxElevation) ? maxElevation : 0]
   if (source.length < 2) return fallback
-  if (routeLength <= 1 || source.length === routeLength) return source
-  return Array.from({ length: routeLength }, (_, index) => source[Math.min(source.length - 1, Math.round((index / Math.max(1, routeLength - 1)) * (source.length - 1)))])
+  if (!isSuspiciousElevationProfile(source)) return source
+  return source.map((_, index) => {
+    const window = source.slice(Math.max(0, index - 4), Math.min(source.length, index + 5)).sort((a, b) => a - b)
+    return window[Math.floor(window.length / 2)]
+  })
 }
 
 type Point3 = [number, number, number]
@@ -91,7 +95,12 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   const [exaggeration, setExaggeration] = useState(1.5)
   const [mapError, setMapError] = useState('')
   const [compactModel, setCompactModel] = useState(() => window.matchMedia('(max-width: 760px)').matches)
-  const profile = useMemo(() => normaliseElevationProfile(course.elevationProfile, course.route.length, course.minElevation, course.maxElevation), [course.elevationProfile, course.maxElevation, course.minElevation, course.route.length])
+  const [repairedProfile, setRepairedProfile] = useState<number[] | null>(null)
+  const repairingProfile = isSuspiciousElevationProfile(course.elevationProfile) && repairedProfile === null
+  const profile = useMemo(() => normaliseElevationProfile(repairedProfile ?? course.elevationProfile, course.minElevation, course.maxElevation), [course.elevationProfile, course.maxElevation, course.minElevation, repairedProfile])
+  const profileMin = Math.round(Math.min(...profile))
+  const profileMax = Math.round(Math.max(...profile))
+  const displayCourse = useMemo(() => ({ ...course, elevationProfile: profile, minElevation: profileMin, maxElevation: profileMax }), [course, profile, profileMax, profileMin])
   const currentElevation = elevationAt(profile, progress)
   const currentPoint = pointAt(course.route, progress)
   const model = useMemo(() => {
@@ -115,13 +124,16 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     // safety fit is applied afterwards.
     const kmPerLongitude = 111.32 * Math.cos((centerLat * Math.PI) / 180)
     const sceneScale = 620 / Math.max(5, course.distanceKm)
-    // Preserve the terrain character without allowing a steep short course's
-    // vertical exaggeration to defeat its distance-based plan scale.
-    const verticalScale = Math.min(160, Math.max(60, (elevationRange / Math.max(1, course.distanceKm)) * 3.5))
+    // Convert metres to the same real-world scene scale as the horizontal axis,
+    // then apply one stable exaggeration. The old range-normalisation made an
+    // almost-flat route look as tall as a mountain route and changed its shape
+    // depending on course length.
+    const rawVerticalRange = (elevationRange / 1000) * sceneScale * 3.2
+    const verticalCompression = rawVerticalRange > 220 ? 220 / rawVerticalRange : 1
     const centers: Point3[] = sampled.map(({ point, elevation }) => [
       (point[0] - centerLng) * kmPerLongitude * sceneScale,
       (point[1] - centerLat) * 111.32 * sceneScale,
-      ((elevation - elevationMin) / elevationRange) * verticalScale,
+      ((elevation - elevationMin) / 1000) * sceneScale * 3.2 * verticalCompression,
     ])
     // A narrower ribbon and no segment outline prevent the high-resolution mesh
     // from looking like a chain of oversized dots.
@@ -144,9 +156,17 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     // Never enlarge a short route merely to fill the canvas.  The fit only prevents
     // a long / tall route from being clipped, retaining meaningful distance scaling.
     const autoFit = Math.min(1, .96 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
-    return { centers, left, right, thickness, autoFit, defaultYaw }
+    return { centers, elevations: sampled.map(({ elevation }) => elevation), left, right, thickness, autoFit, defaultYaw, sceneScale }
   }, [compactModel, course.distanceKm, course.route, profile])
   const effectiveZoom = model.autoFit * modelZoom
+
+  useEffect(() => {
+    setRepairedProfile(null)
+    if (!isSuspiciousElevationProfile(course.elevationProfile)) return
+    let cancelled = false
+    fetchElevationProfile(course.route).then((result) => { if (!cancelled && result.values.length > 1) setRepairedProfile(result.values) })
+    return () => { cancelled = true }
+  }, [course.elevationProfile, course.id, course.route])
 
   useEffect(() => {
     applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
@@ -244,10 +264,11 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   }, [course.distanceKm, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
   const gradeSegments = useMemo(() => model.centers.slice(1).map((point, index) => {
     const before = model.centers[index]
-    const gradient = point[2] - before[2]
-    const color = gradient > .35 ? '#e86a4d' : gradient < -.35 ? '#54a8f7' : '#54bd86'
+    const horizontalMetres = (Math.hypot(point[0] - before[0], point[1] - before[1]) / model.sceneScale) * 1000
+    const gradientPercent = horizontalMetres > .1 ? ((model.elevations[index + 1] - model.elevations[index]) / horizontalMetres) * 100 : 0
+    const color = gradientPercent > 4 ? '#e86a4d' : gradientPercent < -4 ? '#54a8f7' : '#54bd86'
     return { points: pointsText([projectPoint(before, modelYaw, modelPitch, effectiveZoom, modelPan), projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)]), color }
-  }), [effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
+  }), [effectiveZoom, model.centers, model.elevations, model.sceneScale, modelPan, modelPitch, modelYaw])
   const highlights = useMemo(() => {
     const entries = [
       { key: 'gradient', label: '急勾配', color: '#e86a4d', progress: 0 },
@@ -257,14 +278,16 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     let steepest = 0; let steepIndex = 0; let curveScore = 0; let curveIndex = 0
     for (let index = 1; index < model.centers.length - 1; index += 1) {
       const a = model.centers[index - 1]; const b = model.centers[index]; const c = model.centers[index + 1]
-      const steep = Math.abs(c[2] - a[2]); if (steep > steepest) { steepest = steep; steepIndex = index }
+      const horizontalMetres = (Math.hypot(c[0] - a[0], c[1] - a[1]) / model.sceneScale) * 1000
+      const steep = horizontalMetres > .1 ? Math.abs((model.elevations[index + 1] - model.elevations[index - 1]) / horizontalMetres) : 0
+      if (steep > steepest) { steepest = steep; steepIndex = index }
       const vx = b[0] - a[0]; const vy = b[1] - a[1]; const wx = c[0] - b[0]; const wy = c[1] - b[1]
       const bend = Math.abs(vx * wy - vy * wx); if (bend > curveScore) { curveScore = bend; curveIndex = index }
     }
     entries[0].progress = steepIndex / Math.max(1, model.centers.length - 1)
     entries[1].progress = curveIndex / Math.max(1, model.centers.length - 1)
     return entries.map((entry) => ({ ...entry, point: model.centers[Math.round(entry.progress * (model.centers.length - 1))] }))
-  }, [model.centers])
+  }, [model.centers, model.elevations, model.sceneScale])
   const comparedCourse = courses.find((item) => item.id === compareCourseId)
 
   useEffect(() => {
@@ -281,10 +304,10 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       map.addSource('terrain-dem', { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
       map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem', paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' } })
       map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 })
-      map.addSource('course-contours', { type: 'geojson', data: toContourFeatureCollection(course) })
+      map.addSource('course-contours', { type: 'geojson', data: toContourFeatureCollection(displayCourse) })
       map.addLayer({ id: 'course-contours', type: 'line', source: 'course-contours', paint: { 'line-color': '#637e70', 'line-width': 1.2, 'line-opacity': .62, 'line-dasharray': [1, 2] } })
       map.addLayer({ id: 'course-contour-labels', type: 'symbol', source: 'course-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
-      map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(course) })
+      map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(displayCourse) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 6, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 2 } })
       map.addLayer({ id: 'course-annotation-labels', type: 'symbol', source: 'course-annotations', layout: { 'text-field': ['get', 'label'], 'text-size': 13, 'text-offset': [0, -1.35], 'text-anchor': 'bottom', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd', 'text-halo-width': 2 } })
       map.addSource('selected-course', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: course.route } } })
@@ -303,7 +326,7 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     })
     mapRef.current = map
     return () => { progressMarkerRef.current?.remove(); progressMarkerRef.current = null; map.remove() }
-  }, [course])
+  }, [course, displayCourse])
 
   useEffect(() => {
     const map = mapRef.current
@@ -462,8 +485,9 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
         {([['overview', '俯瞰'], ['preview', '走行プレビュー'], ['model', '3Dルート模型']] as [ViewMode, string][]).map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => { setMode(value); if (value !== 'preview') setPlaying(false) }}>{label}</button>)}
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
-      {mode === 'model' && <section className="route-model-panel" aria-label="3Dルート模型">
+      {mode === 'model' && <section className={`route-model-panel ${repairingProfile ? 'profile-repairing' : ''}`} aria-label="3Dルート模型" aria-busy={repairingProfile}>
         <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: 1.45, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: 1.25, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: 1.35, pan: [0, 0] })}>カーブ</button></div></div>
+        {repairingProfile && <div className="model-profile-loading" role="status"><span aria-hidden="true" /><strong>標高データを再計算中</strong><small>このコースの古い異常波形を修復しています</small></div>}
         <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で平行移動、2本指で拡大縮小・回転・俯角調整ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
           <defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
           <g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
@@ -475,11 +499,11 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
           {visibleLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`} role="button" tabIndex={0} aria-label={`${landmark.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }}><circle cx={landmark.x} cy={landmark.y} r="7" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}
           <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text>
         </svg>
-        <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {course.maxElevation - course.minElevation}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
+        <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {profileMax - profileMin}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
         {activeLandmark && <aside className="landmark-card"><button onClick={() => setActiveLandmark(null)} aria-label="地点情報を閉じる">×</button><strong>{activeLandmark.name}</strong><span>{activeLandmark.type === 'ic' ? 'IC・出入口' : activeLandmark.type === 'viewpoint' ? '展望・休憩地点' : '周辺地点'} · STARTから約{(activeLandmark.progress * course.distanceKm).toFixed(1)}km</span></aside>}
       </section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>
-      <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {course.maxElevation - course.minElevation}m</b></div>
+      <div className="three-d-legend"><span><i className="start" />START</span><span><i className="route" />ROUTE</span><span><i className="goal" />GOAL</span><b>高低差 {profileMax - profileMin}m</b></div>
     </div>
   )
 }

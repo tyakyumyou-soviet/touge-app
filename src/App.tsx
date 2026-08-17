@@ -10,7 +10,8 @@ import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
 import { sampleCourses } from './data/courses'
-import { addUserRating, approximateElevationProfile, estimateSystemRatings, routeDistanceKm, validateRouteQuality } from './lib/course'
+import { addUserRating, estimateSystemRatings, validateRouteQuality } from './lib/course'
+import { fetchElevationProfile } from './lib/elevation'
 import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission } from './types'
@@ -197,7 +198,8 @@ export default function App() {
     let routed
     try { routed = await routeAlongRoads(draft.route) }
     catch (error) { throw new Error(error instanceof Error ? error.message : '道路ルートを取得できませんでした') }
-    const elevation = approximateElevationProfile(routed.route)
+    const elevationResult = await fetchElevationProfile(routed.route)
+    const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const data: Omit<Course, 'id'> = {
       ...draft,
@@ -210,7 +212,7 @@ export default function App() {
       ratings: systemRatings,
       systemRatings,
       ratingCount: 0,
-      systemRatingSource: ['道路形状・曲率（道路ルーティング）', '標高・高低差（地形データ）', '登録タグ・公開情報'],
+      systemRatingSource: ['道路形状・曲率（道路ルーティング）', `標高・高低差（${elevationResult.source}）`, '登録タグ・公開情報'],
       systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
       authorId: activeUser.uid,
       authorName: activeUser.displayName ?? 'ドライバー',
@@ -230,14 +232,18 @@ export default function App() {
   async function handleCreateJoined(joinedCourses: Course[]) {
     const activeUser = auth.currentUser
     if (!activeUser || joinedCourses.length < 2) throw new Error('Authentication required')
-    const route = joinedCourses.flatMap((item, index) => index === 0 ? item.route : item.route.slice(1))
-    const elevation = approximateElevationProfile(route)
+    const samplesPerCourse = Math.max(2, Math.floor(24 / joinedCourses.length))
+    const waypoints = joinedCourses.flatMap((item, courseIndex) => Array.from({ length: samplesPerCourse }, (_, index) => item.route[Math.round((index / Math.max(1, samplesPerCourse - 1)) * (item.route.length - 1))]).filter((_, index) => courseIndex === 0 || index > 0)).slice(0, 25)
+    const routed = await routeAlongRoads(waypoints)
+    const route = routed.route
+    const elevationResult = await fetchElevationProfile(route)
+    const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(route, elevation, [...new Set(joinedCourses.flatMap((item) => item.tags))])
     const data: Omit<Course, 'id'> = {
       name: `${joinedCourses.map((item) => item.name).join(' ＋ ')}（連結）`, area: joinedCourses.map((item) => item.area).join(' → '), prefecture: joinedCourses[0].prefecture,
       description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], visibility: 'limited', authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
-      distanceKm: Number(routeDistanceKm(route).toFixed(1)), durationMin: Math.round(joinedCourses.reduce((sum, item) => sum + item.durationMin, 0)), minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, ratings: systemRatings, systemRatings, ratingCount: 0,
-      systemRatingSource: ['連結元コースの道路形状・地形データ', '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10), updatedAt: new Date().toISOString().slice(0, 10), isSeed: false,
+      distanceKm: routed.distanceKm, durationMin: routed.durationMin, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, ratings: systemRatings, systemRatings, ratingCount: 0,
+      systemRatingSource: [`連結元コースの道路形状`, `標高・高低差（${elevationResult.source}）`, '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10), updatedAt: new Date().toISOString().slice(0, 10), isSeed: false,
     }
     const id = await createCourse(data); const created = { id, ...data }; setCourses((items) => [created, ...items]); setSelected(created); setCommunityOpen(false); setNotice('オリジナル連結コースを保存しました（限定公開）')
   }
