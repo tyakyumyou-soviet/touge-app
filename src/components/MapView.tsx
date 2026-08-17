@@ -4,6 +4,7 @@ import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Coordinate, Course, DraftPointRole } from '../types'
 import { supportsWebGL } from '../lib/webgl'
+import { routeAlongRoads } from '../lib/routing'
 
 interface MapViewProps {
   courses: Course[]
@@ -160,7 +161,9 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       map.addLayer({ id: 'selected-glow', type: 'line', source: 'selected-course', paint: { 'line-color': '#101915', 'line-width': 12, 'line-opacity': .58 } })
       map.addLayer({ id: 'selected-line', type: 'line', source: 'selected-course', paint: { 'line-color': '#f2d16b', 'line-width': 6 } })
       map.addSource('draft', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
-      map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
+      map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', layout: { visibility: 'none' }, paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
+      map.addSource('draft-road', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
+      map.addLayer({ id: 'draft-road-line', type: 'line', source: 'draft-road', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-opacity': .9 } })
       map.addSource('draft-points', { type: 'geojson', data: toDraftPointCollection([]) })
       // Keep the draft stops above every course layer.  The small triangular tip
       // makes the otherwise compact numbered marker read as a map pin.
@@ -245,6 +248,26 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
     if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
   }, [drawing, draftRoute, draftLabels, draftRoles, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const source = map?.getSource('draft-road') as GeoJSONSource | undefined
+    if (!mapReady || !source) return
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      if (draftRoute.length < 2) {
+        source.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
+        return
+      }
+      try {
+        const routed = await routeAlongRoads(draftRoute)
+        if (!cancelled) source.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: routed.route } })
+      } catch {
+        if (!cancelled) source.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
+      }
+    }, 280)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [draftRoute, mapReady])
 
   useEffect(() => {
     const map = mapRef.current

@@ -32,7 +32,16 @@ function interpolatedPointAt(route: Coordinate[], progress: number): Coordinate 
 function interpolatedElevationAt(values: number[], progress: number): number {
   const position = Math.min(values.length - 1, Math.max(0, progress * (values.length - 1)))
   const index = Math.floor(position); const amount = position - index
-  return smoothValue(values[Math.max(0, index - 1)], values[index], values[Math.min(values.length - 1, index + 1)], values[Math.min(values.length - 1, index + 2)], amount)
+  const value = smoothValue(values[Math.max(0, index - 1)], values[index], values[Math.min(values.length - 1, index + 1)], values[Math.min(values.length - 1, index + 2)], amount)
+  return Math.min(Math.max(...values), Math.max(Math.min(...values), value))
+}
+
+function normaliseElevationProfile(raw: unknown, routeLength: number, minElevation: number, maxElevation: number): number[] {
+  const source = Array.isArray(raw) ? raw.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)) : []
+  const fallback = [Number.isFinite(minElevation) ? minElevation : 0, Number.isFinite(maxElevation) ? maxElevation : 0]
+  if (source.length < 2) return fallback
+  if (routeLength <= 1 || source.length === routeLength) return source
+  return Array.from({ length: routeLength }, (_, index) => source[Math.min(source.length - 1, Math.round((index / Math.max(1, routeLength - 1)) * (source.length - 1)))])
 }
 
 type Point3 = [number, number, number]
@@ -82,7 +91,7 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   const [exaggeration, setExaggeration] = useState(1.5)
   const [mapError, setMapError] = useState('')
   const [compactModel, setCompactModel] = useState(() => window.matchMedia('(max-width: 760px)').matches)
-  const profile = useMemo(() => course.elevationProfile.length > 1 ? course.elevationProfile : [course.minElevation, course.maxElevation], [course.elevationProfile, course.maxElevation, course.minElevation])
+  const profile = useMemo(() => normaliseElevationProfile(course.elevationProfile, course.route.length, course.minElevation, course.maxElevation), [course.elevationProfile, course.maxElevation, course.minElevation, course.route.length])
   const currentElevation = elevationAt(profile, progress)
   const currentPoint = pointAt(course.route, progress)
   const model = useMemo(() => {
