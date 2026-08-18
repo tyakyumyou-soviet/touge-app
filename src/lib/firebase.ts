@@ -112,6 +112,9 @@ function courseFromFirestore(id: string, value: Record<string, unknown>): Course
     distanceKm: typeof value.distanceKm === 'number' && Number.isFinite(value.distanceKm) ? value.distanceKm : routeDistanceKm(route),
     durationMin: typeof value.durationMin === 'number' && Number.isFinite(value.durationMin) ? value.durationMin : Math.max(1, Math.round(routeDistanceKm(route) * 2)),
     elevationProfile,
+    elevationSource: value.elevationSource === '国土地理院 標高API' || value.elevationSource === '地形傾向による推定'
+      ? value.elevationSource
+      : strings(value.systemRatingSource).some((item) => item.includes('国土地理院 標高API')) ? '国土地理院 標高API' : undefined,
     minElevation: typeof value.minElevation === 'number' && Number.isFinite(value.minElevation) ? value.minElevation : profileMin,
     maxElevation: typeof value.maxElevation === 'number' && Number.isFinite(value.maxElevation) ? value.maxElevation : profileMax,
     tags: strings(value.tags),
@@ -209,7 +212,7 @@ export async function updateCourse(courseId: string, changes: Pick<Course, 'name
 
 /** Persist a verified elevation repair as one atomic course update. Estimated
  * profiles are intentionally never written through this path. */
-export async function updateCourseElevation(courseId: string, changes: Pick<Course, 'elevationProfile' | 'minElevation' | 'maxElevation' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt'>): Promise<void> {
+export async function updateCourseElevation(courseId: string, changes: Pick<Course, 'elevationProfile' | 'elevationSource' | 'minElevation' | 'maxElevation' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt'>): Promise<void> {
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 

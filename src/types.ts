@@ -45,6 +45,9 @@ export interface Course {
   minElevation: number
   maxElevation: number
   elevationProfile: number[]
+  /** Origin of the stored profile. Estimated data is automatically refreshed
+   * when a verified public elevation lookup succeeds. */
+  elevationSource?: '国土地理院 標高API' | '地形傾向による推定'
   ratings: Ratings
   /** System score calculated from public road, terrain and facility data. */
   systemRatings?: Ratings

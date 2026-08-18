@@ -199,7 +199,6 @@ export default function App() {
     try { routed = await routeAlongRoads(draft.route) }
     catch (error) { throw new Error(error instanceof Error ? error.message : '道路ルートを取得できませんでした') }
     const elevationResult = await fetchElevationProfile(routed.route)
-    if (elevationResult.source !== '国土地理院 標高API') throw new Error('標高データを確認できませんでした。誤った標高プロファイルを保存しないため、通信状態を確認してもう一度お試しください')
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const data: Omit<Course, 'id'> = {
@@ -210,6 +209,7 @@ export default function App() {
       minElevation: Math.min(...elevation),
       maxElevation: Math.max(...elevation),
       elevationProfile: elevation,
+      elevationSource: elevationResult.source,
       ratings: systemRatings,
       systemRatings,
       ratingCount: 0,
@@ -238,13 +238,12 @@ export default function App() {
     const routed = await routeAlongRoads(waypoints)
     const route = routed.route
     const elevationResult = await fetchElevationProfile(route)
-    if (elevationResult.source !== '国土地理院 標高API') throw new Error('標高データを確認できませんでした。誤った標高プロファイルを保存しないため、もう一度お試しください')
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(route, elevation, [...new Set(joinedCourses.flatMap((item) => item.tags))])
     const data: Omit<Course, 'id'> = {
       name: `${joinedCourses.map((item) => item.name).join(' ＋ ')}（連結）`, area: joinedCourses.map((item) => item.area).join(' → '), prefecture: joinedCourses[0].prefecture,
       description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], visibility: 'limited', authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
-      distanceKm: routed.distanceKm, durationMin: routed.durationMin, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, ratings: systemRatings, systemRatings, ratingCount: 0,
+      distanceKm: routed.distanceKm, durationMin: routed.durationMin, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, elevationSource: elevationResult.source, ratings: systemRatings, systemRatings, ratingCount: 0,
       systemRatingSource: [`連結元コースの道路形状`, `標高・高低差（${elevationResult.source}）`, '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10), updatedAt: new Date().toISOString().slice(0, 10), isSeed: false,
     }
     const id = await createCourse(data); const created = { id, ...data }; setCourses((items) => [created, ...items]); setSelected(created); setCommunityOpen(false); setNotice('オリジナル連結コースを保存しました（限定公開）')
@@ -254,10 +253,10 @@ export default function App() {
     if (source !== '国土地理院 標高API' || course.authorId !== auth.currentUser?.uid || elevation.length < 2) return
     const systemRatings = estimateSystemRatings(course.route, elevation, course.tags)
     const systemRatingSource = [...(course.systemRatingSource ?? []).filter((item) => !item.startsWith('標高・高低差')), `標高・高低差（${source}）`]
-    const base = { ...course, elevationProfile: elevation, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), systemRatings, ratings: systemRatings, systemRatingSource, systemRatingUpdatedAt: new Date().toISOString().slice(0, 10) }
+    const base = { ...course, elevationProfile: elevation, elevationSource: source, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), systemRatings, ratings: systemRatings, systemRatingSource, systemRatingUpdatedAt: new Date().toISOString().slice(0, 10) }
     const updated = { ...base, ratings: combinedRatings(base) }
     await updateCourseElevation(course.id, {
-      elevationProfile: updated.elevationProfile, minElevation: updated.minElevation, maxElevation: updated.maxElevation,
+      elevationProfile: updated.elevationProfile, elevationSource: updated.elevationSource, minElevation: updated.minElevation, maxElevation: updated.maxElevation,
       ratings: updated.ratings, systemRatings: updated.systemRatings, systemRatingSource: updated.systemRatingSource, systemRatingUpdatedAt: updated.systemRatingUpdatedAt,
     })
     setCourses((items) => items.map((item) => item.id === course.id ? updated : item))

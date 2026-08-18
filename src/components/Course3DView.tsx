@@ -96,7 +96,8 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   const [repairedProfile, setRepairedProfile] = useState<number[] | null>(null)
   const [elevationRepairFailed, setElevationRepairFailed] = useState(false)
   const [elevationPersistenceFailed, setElevationPersistenceFailed] = useState(false)
-  const repairingProfile = isSuspiciousElevationProfile(course.elevationProfile) && repairedProfile === null && !elevationRepairFailed
+  const needsElevationRepair = course.elevationSource === '地形傾向による推定' || isSuspiciousElevationProfile(course.elevationProfile)
+  const repairingProfile = needsElevationRepair && repairedProfile === null && !elevationRepairFailed
   const profile = useMemo(() => normaliseElevationProfile(repairedProfile ?? course.elevationProfile, course.minElevation, course.maxElevation), [course.elevationProfile, course.maxElevation, course.minElevation, repairedProfile])
   const profileMin = Math.round(Math.min(...profile))
   const profileMax = Math.round(Math.max(...profile))
@@ -164,7 +165,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     setRepairedProfile(null)
     setElevationRepairFailed(false)
     setElevationPersistenceFailed(false)
-    if (!isSuspiciousElevationProfile(course.elevationProfile)) return
+    if (!needsElevationRepair) return
     let cancelled = false
     fetchElevationProfile(course.route).then((result) => {
       if (cancelled) return
@@ -173,7 +174,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
       if (onElevationRepaired) void onElevationRepaired(course, result.values, result.source).catch(() => { if (!cancelled) setElevationPersistenceFailed(true) })
     })
     return () => { cancelled = true }
-  }, [course, onElevationRepaired])
+  }, [course, needsElevationRepair, onElevationRepaired])
 
   useEffect(() => {
     applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
