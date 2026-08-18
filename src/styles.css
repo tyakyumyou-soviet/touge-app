@@ -87,6 +87,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .mobile-list, .mobile-close, .explore-drag-handle { display: none; }
 
 .detail-panel { position: absolute; z-index: 12; top: 18px; right: 18px; bottom: 18px; width: min(405px, calc(100% - 420px)); display: flex; flex-direction: column; overflow: hidden; background: var(--paper); border: 1px solid #d6d5ca; border-radius: 17px; box-shadow: 0 20px 70px #13211938; animation: detailIn .25s ease-out; }
+.detail-sheet-top { touch-action: none; cursor: grab; }
+.detail-sheet-top:active { cursor: grabbing; }
 @keyframes detailIn { from { opacity: 0; transform: translateX(14px); } }
 .detail-header { display: flex; justify-content: space-between; gap: 10px; padding: 22px 22px 13px; }
 .detail-header h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; }

@@ -55,14 +55,22 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
     else if (distance > 24) setSheetExpanded(false)
   }
 
+  function tapSheetHandle() {
+    if (sheetCollapsed) {
+      setSheetCollapsed(false)
+      setSheetExpanded(false)
+      setSheetOffset(0)
+    }
+  }
+
   return (
     <article className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetCollapsed ? 'collapsed' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetCollapsed ? `translateY(calc(100% - 54px + ${sheetOffset}px))` : sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
-      <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} />
-      <header className="detail-header">
-        <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
-        <button className="icon-button" onClick={onClose} aria-label="詳細を閉じる">×</button>
-      </header>
-      <div className="detail-scroll">
+      <div className="detail-sheet-top" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}>
+        <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
+        <header className="detail-header">
+          <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
+          <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
+        </header>
         <div className="hero-metrics">
           <div><strong>{course.distanceKm}</strong><span>km</span></div>
           <div><strong>{course.durationMin}</strong><span>分</span></div>
@@ -71,6 +79,8 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
         </div>
         <div className="tag-row">{course.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
         <p className="description">{course.description}</p>
+      </div>
+      <div className="detail-scroll">
         <button className="three-d-cta" onClick={onOpen3d}><span>3D</span><div><strong>立体コースビュー</strong><small>地形と高低差を俯瞰して確認</small></div><b>→</b></button>
         <ElevationChart values={course.elevationProfile} />
         <section className={`live-road-info ${liveInfo?.status ?? 'caution'}`} aria-label="リアルタイム道路情報">
@@ -104,7 +114,7 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
         <a className="button secondary" href={googleMapsUrl(course, false)} target="_blank" rel="noreferrer">コースだけ開く</a>
         <a className="button primary" href={googleMapsUrl(course, true)} target="_blank" rel="noreferrer">現在地から案内</a>
       </footer>
-      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag}><span>{course.name}</span></div>
+      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}><span>{course.name}</span></div>
     </article>
   )
 }
