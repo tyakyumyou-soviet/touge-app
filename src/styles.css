@@ -249,6 +249,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-profile-loading span { width: 36px; height: 36px; border: 4px solid #ffffff35; border-top-color: #f2d16b; border-radius: 50%; animation: model-profile-spin .8s linear infinite; }
 .model-profile-loading strong { font-size: 20px; }
 .model-profile-loading small { color: #c4d0ca; }
+.model-profile-warning { position: absolute; z-index: 6; top: 70px; right: 18px; left: 18px; margin: 0; padding: 10px 12px; border: 1px solid #dba55b; border-radius: 8px; background: #2f2417eF; color: #fff4df; font-size: 13px; }
 @keyframes model-profile-spin { to { transform: rotate(360deg); } }
 .route-model-panel text { fill: #fff; font-size: 24px; font-weight: 700; }
 .model-terrain { opacity: .58; pointer-events: none; }

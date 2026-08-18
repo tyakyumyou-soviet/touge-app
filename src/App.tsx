@@ -10,9 +10,9 @@ import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
 import { sampleCourses } from './data/courses'
-import { addUserRating, estimateSystemRatings, validateRouteQuality } from './lib/course'
-import { fetchElevationProfile } from './lib/elevation'
-import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse } from './lib/firebase'
+import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
+import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
+import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission } from './types'
 import './styles.css'
@@ -199,6 +199,7 @@ export default function App() {
     try { routed = await routeAlongRoads(draft.route) }
     catch (error) { throw new Error(error instanceof Error ? error.message : '道路ルートを取得できませんでした') }
     const elevationResult = await fetchElevationProfile(routed.route)
+    if (elevationResult.source !== '国土地理院 標高API') throw new Error('標高データを確認できませんでした。誤った標高プロファイルを保存しないため、通信状態を確認してもう一度お試しください')
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const data: Omit<Course, 'id'> = {
@@ -237,6 +238,7 @@ export default function App() {
     const routed = await routeAlongRoads(waypoints)
     const route = routed.route
     const elevationResult = await fetchElevationProfile(route)
+    if (elevationResult.source !== '国土地理院 標高API') throw new Error('標高データを確認できませんでした。誤った標高プロファイルを保存しないため、もう一度お試しください')
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(route, elevation, [...new Set(joinedCourses.flatMap((item) => item.tags))])
     const data: Omit<Course, 'id'> = {
@@ -247,6 +249,20 @@ export default function App() {
     }
     const id = await createCourse(data); const created = { id, ...data }; setCourses((items) => [created, ...items]); setSelected(created); setCommunityOpen(false); setNotice('オリジナル連結コースを保存しました（限定公開）')
   }
+
+  const handleElevationRepair = useCallback(async (course: Course, elevation: number[], source: ElevationResult['source']) => {
+    if (source !== '国土地理院 標高API' || course.authorId !== auth.currentUser?.uid || elevation.length < 2) return
+    const systemRatings = estimateSystemRatings(course.route, elevation, course.tags)
+    const systemRatingSource = [...(course.systemRatingSource ?? []).filter((item) => !item.startsWith('標高・高低差')), `標高・高低差（${source}）`]
+    const base = { ...course, elevationProfile: elevation, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), systemRatings, ratings: systemRatings, systemRatingSource, systemRatingUpdatedAt: new Date().toISOString().slice(0, 10) }
+    const updated = { ...base, ratings: combinedRatings(base) }
+    await updateCourseElevation(course.id, {
+      elevationProfile: updated.elevationProfile, minElevation: updated.minElevation, maxElevation: updated.maxElevation,
+      ratings: updated.ratings, systemRatings: updated.systemRatings, systemRatingSource: updated.systemRatingSource, systemRatingUpdatedAt: updated.systemRatingUpdatedAt,
+    })
+    setCourses((items) => items.map((item) => item.id === course.id ? updated : item))
+    setSelected((item) => item?.id === course.id ? updated : item)
+  }, [])
 
   async function handleTollReport(report: TollReport) {
     if (!selected) return
@@ -323,7 +339,7 @@ export default function App() {
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} />}
         {drawing && <CourseForm route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
-        {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} />}
+        {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
       </main>
       {notice && <div className="notice" role="status">{notice}</div>}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
-import { fetchElevationProfile, isSuspiciousElevationProfile } from '../lib/elevation'
+import { fetchElevationProfile, isSuspiciousElevationProfile, type ElevationResult } from '../lib/elevation'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 
 type ViewMode = 'overview' | 'preview' | 'model'
@@ -67,16 +67,14 @@ function viewDepth([x, y]: Point3, yaw: number): number {
 
 function pointsText(points: Point2[]): string { return points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ') }
 function wrapDegrees(value: number): number { return ((value + 180) % 360 + 360) % 360 - 180 }
-function angleBetween(first: { x: number; y: number }, second: { x: number; y: number }): number { return Math.atan2(second.y - first.y, second.x - first.x) * 180 / Math.PI }
-
-export function Course3DView({ course, courses, onClose }: { course: Course; courses: Course[]; onClose: () => void }) {
+export function Course3DView({ course, courses, onClose, onElevationRepaired }: { course: Course; courses: Course[]; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
-  const modelDragRef = useRef<{ pointerId: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
+  const modelDragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
   const modelPointersRef = useRef(new Map<number, { x: number; y: number }>())
-  const pinchRef = useRef<{ distance: number; angle: number; zoom: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
-  const touchPinchRef = useRef<{ distance: number; angle: number; zoom: number; y: number; yaw: number; pitch: number } | null>(null)
+  const pinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
+  const touchPinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
   // Gestures can emit far more events than a phone can paint. Keep one canonical
   // view state and commit only the most recent input once per animation frame.
   // This also prevents a queued zoom from overwriting a later reset/preset.
@@ -96,7 +94,9 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
   const [mapError, setMapError] = useState('')
   const [compactModel, setCompactModel] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [repairedProfile, setRepairedProfile] = useState<number[] | null>(null)
-  const repairingProfile = isSuspiciousElevationProfile(course.elevationProfile) && repairedProfile === null
+  const [elevationRepairFailed, setElevationRepairFailed] = useState(false)
+  const [elevationPersistenceFailed, setElevationPersistenceFailed] = useState(false)
+  const repairingProfile = isSuspiciousElevationProfile(course.elevationProfile) && repairedProfile === null && !elevationRepairFailed
   const profile = useMemo(() => normaliseElevationProfile(repairedProfile ?? course.elevationProfile, course.minElevation, course.maxElevation), [course.elevationProfile, course.maxElevation, course.minElevation, repairedProfile])
   const profileMin = Math.round(Math.min(...profile))
   const profileMax = Math.round(Math.max(...profile))
@@ -162,11 +162,18 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
 
   useEffect(() => {
     setRepairedProfile(null)
+    setElevationRepairFailed(false)
+    setElevationPersistenceFailed(false)
     if (!isSuspiciousElevationProfile(course.elevationProfile)) return
     let cancelled = false
-    fetchElevationProfile(course.route).then((result) => { if (!cancelled && result.values.length > 1) setRepairedProfile(result.values) })
+    fetchElevationProfile(course.route).then((result) => {
+      if (cancelled) return
+      if (result.source !== '国土地理院 標高API' || result.values.length < 2) { setElevationRepairFailed(true); return }
+      setRepairedProfile(result.values)
+      if (onElevationRepaired) void onElevationRepaired(course, result.values, result.source).catch(() => { if (!cancelled) setElevationPersistenceFailed(true) })
+    })
     return () => { cancelled = true }
-  }, [course.elevationProfile, course.id, course.route])
+  }, [course, onElevationRepaired])
 
   useEffect(() => {
     applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
@@ -397,15 +404,16 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic pointer events may not be capturable. */ }
     modelPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (modelPointersRef.current.size === 1) {
-      const rect = event.currentTarget.getBoundingClientRect()
-      // Google Maps-style: one finger moves the map without changing its view.
-      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
+      // One finger changes the viewing angle: horizontal swipes orbit and
+      // vertical swipes alter the pitch.
+      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
       pinchRef.current = null
       return
     }
     if (modelPointersRef.current.size === 2) {
       const [first, second] = [...modelPointersRef.current.values()]
-      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), angle: angleBetween(first, second), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+      const rect = event.currentTarget.getBoundingClientRect()
+      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
       modelDragRef.current = null
     }
   }
@@ -417,26 +425,25 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       const [first, second] = [...modelPointersRef.current.values()]
       const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y))
       scheduleModelZoom(pinchRef.current.zoom * (distance / pinchRef.current.distance))
-      const angleDelta = wrapDegrees(angleBetween(first, second) - pinchRef.current.angle)
+      const centerX = (first.x + second.x) / 2
       const centerY = (first.y + second.y) / 2
-      // Two fingers rotate and tilt, matching Google Maps' 3D gesture model.
-      applyModelView({ yaw: pinchRef.current.yaw + angleDelta, pitch: pinchRef.current.pitch + (centerY - pinchRef.current.y) * .35 })
+      // Two fingers translate the viewpoint across the horizontal model plane.
+      applyModelView({ pan: [pinchRef.current.pan[0] + (centerX - pinchRef.current.x) * pinchRef.current.scale, pinchRef.current.pan[1] + (centerY - pinchRef.current.y) * pinchRef.current.scale] })
       return
     }
     const drag = modelDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    applyModelView({ pan: [drag.pan[0] + (event.clientX - drag.x) * drag.scale, drag.pan[1] + (event.clientY - drag.y) * drag.scale] })
+    applyModelView({ yaw: drag.yaw + (event.clientX - drag.x) * .35, pitch: drag.pitch + (event.clientY - drag.y) * .35 })
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     modelPointersRef.current.delete(event.pointerId)
     if (modelPointersRef.current.size < 2) pinchRef.current = null
     if (modelDragRef.current?.pointerId === event.pointerId) modelDragRef.current = null
-    // Continue rotating naturally with the finger that remains after a pinch.
+    // Resume one-finger viewpoint control when a finger remains after a pinch.
     if (modelPointersRef.current.size === 1) {
       const [pointerId, pointer] = [...modelPointersRef.current.entries()][0]
-      const rect = event.currentTarget.getBoundingClientRect()
-      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
+      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
     }
   }
 
@@ -453,14 +460,16 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
     // WebViews which fail to deliver a second pointer to the SVG.
     if (modelPointersRef.current.size) return
     const first = { x: event.touches[0].clientX, y: event.touches[0].clientY }; const second = { x: event.touches[1].clientX, y: event.touches[1].clientY }
-    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), angle: angleBetween(first, second), zoom: modelViewRef.current.zoom, y: (first.y + second.y) / 2, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+    const rect = event.currentTarget.getBoundingClientRect()
+    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
   }
 
   function moveModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
     if (event.touches.length !== 2 || !touchPinchRef.current || modelPointersRef.current.size) return
     scheduleModelZoom(touchPinchRef.current.zoom * (touchDistance(event.touches) / touchPinchRef.current.distance))
     const first = { x: event.touches[0].clientX, y: event.touches[0].clientY }; const second = { x: event.touches[1].clientX, y: event.touches[1].clientY }
-    applyModelView({ yaw: touchPinchRef.current.yaw + wrapDegrees(angleBetween(first, second) - touchPinchRef.current.angle), pitch: touchPinchRef.current.pitch + (((first.y + second.y) / 2) - touchPinchRef.current.y) * .35 })
+    const centerX = (first.x + second.x) / 2; const centerY = (first.y + second.y) / 2
+    applyModelView({ pan: [touchPinchRef.current.pan[0] + (centerX - touchPinchRef.current.x) * touchPinchRef.current.scale, touchPinchRef.current.pan[1] + (centerY - touchPinchRef.current.y) * touchPinchRef.current.scale] })
   }
 
   function endModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
@@ -488,7 +497,9 @@ export function Course3DView({ course, courses, onClose }: { course: Course; cou
       {mode === 'model' && <section className={`route-model-panel ${repairingProfile ? 'profile-repairing' : ''}`} aria-label="3Dルート模型" aria-busy={repairingProfile}>
         <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: 1.45, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: 1.25, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: 1.35, pan: [0, 0] })}>カーブ</button></div></div>
         {repairingProfile && <div className="model-profile-loading" role="status"><span aria-hidden="true" /><strong>標高データを再計算中</strong><small>このコースの古い異常波形を修復しています</small></div>}
-        <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で平行移動、2本指で拡大縮小・回転・俯角調整ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
+        {elevationRepairFailed && <p className="model-profile-warning" role="status">標高データを確認できませんでした。誤った推定値は保存していません。通信後にもう一度開いてください。</p>}
+        {elevationPersistenceFailed && <p className="model-profile-warning" role="status">表示は修復しましたが、Firestoreへの保存に失敗しました。ログイン状態と通信を確認して、もう一度開いてください。</p>}
+        <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で視点を回転、2本指で平行移動とピンチ拡大縮小ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
           <defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
           <g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
           <polyline className="model-route-line-glow" points={modelLinePoints} />

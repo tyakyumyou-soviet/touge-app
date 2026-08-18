@@ -24,9 +24,9 @@ function sampleRoute(route: Coordinate[], count: number): Coordinate[] {
 }
 
 function smooth(values: number[]): number[] {
-  if (values.length < 5) return values.map(Math.round)
+  if (values.length < 3) return values.map(Math.round)
   const median = values.map((_, index) => {
-    const window = values.slice(Math.max(0, index - 2), Math.min(values.length, index + 3)).sort((a, b) => a - b)
+    const window = values.slice(Math.max(0, index - 1), Math.min(values.length, index + 2)).sort((a, b) => a - b)
     return window[Math.floor(window.length / 2)]
   })
   return median.map((value, index) => Math.round((median[Math.max(0, index - 1)] + value * 2 + median[Math.min(median.length - 1, index + 1)]) / 4))
@@ -53,9 +53,9 @@ async function fetchPointElevation([lng, lat]: Coordinate): Promise<number | nul
 export async function fetchElevationProfile(route: Coordinate[]): Promise<ElevationResult> {
   if (route.length < 2) return { values: [], source: '地形傾向による推定' }
   const total = route.slice(1).reduce((sum, point, index) => sum + distanceKm(route[index], point), 0)
-  // A 1 km interval is already finer than the visual model needs. Keep a firm
-  // request ceiling so a failed public endpoint never stalls course saving.
-  const points = sampleRoute(route, Math.min(36, Math.max(12, Math.ceil(total) + 1)))
+  // Sample at roughly 500 m intervals. This is fine enough to retain a pass or
+  // ridge while keeping a firm ceiling on requests to the public endpoint.
+  const points = sampleRoute(route, Math.min(48, Math.max(16, Math.ceil(total * 2) + 1)))
   const results: Array<number | null> = Array(points.length).fill(null)
   let cursor = 0
   await Promise.all(Array.from({ length: Math.min(6, points.length) }, async () => {

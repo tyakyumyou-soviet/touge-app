@@ -207,6 +207,12 @@ export async function updateCourse(courseId: string, changes: Pick<Course, 'name
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 
+/** Persist a verified elevation repair as one atomic course update. Estimated
+ * profiles are intentionally never written through this path. */
+export async function updateCourseElevation(courseId: string, changes: Pick<Course, 'elevationProfile' | 'minElevation' | 'maxElevation' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt'>): Promise<void> {
+  await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
+}
+
 export async function deleteCourse(courseId: string): Promise<void> {
   const courseRef = doc(db, 'courses', courseId)
   const [ratings, likes, comments, live] = await Promise.all([
