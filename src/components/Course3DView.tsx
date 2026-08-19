@@ -462,9 +462,9 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     }
     const drag = modelDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    // Keep the established vertical gesture, but invert horizontal orbit so
-    // the model follows the driver's left/right swipe direction.
-    applyModelView({ yaw: drag.yaw - (event.clientX - drag.x) * .35, pitch: drag.pitch + (event.clientY - drag.y) * .35 })
+    // Keep the established vertical gesture. Horizontal orbit follows the
+    // driver's swipe direction so left/right movement is not mirrored.
+    applyModelView({ yaw: drag.yaw + (event.clientX - drag.x) * .35, pitch: drag.pitch + (event.clientY - drag.y) * .35 })
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
