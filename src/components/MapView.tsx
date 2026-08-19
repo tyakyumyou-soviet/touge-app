@@ -230,6 +230,14 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     const map = mapRef.current
     if (!mapReady || !map?.isStyleLoaded()) return
     const source = map.getSource('draft') as GeoJSONSource | undefined
+    if (!drawing) {
+      source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
+      ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection([]))
+      ;(map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(null, ''))
+      map.getCanvas().style.cursor = ''
+      draftPopupRef.current?.remove(); draftPopupRef.current = null
+      return
+    }
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
     ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels, draftRoles))
     // A route edit means the search candidate has either been confirmed or the
@@ -237,7 +245,6 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     // guard; this avoids a stale temporary pin if React updates are batched.
     if (draftRoute.length > 0) (map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(null, ''))
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
-    if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
   }, [drawing, draftRoute, draftLabels, draftRoles, mapReady])
 
   useEffect(() => {
@@ -252,7 +259,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     if (!mapReady || !source) return
     let cancelled = false
     const timer = window.setTimeout(async () => {
-      if (draftRoute.length < 2) {
+      if (!drawing || draftRoute.length < 2) {
         source.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
         return
       }
@@ -264,7 +271,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       }
     }, 280)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [draftRoute, mapReady])
+  }, [drawing, draftRoute, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
