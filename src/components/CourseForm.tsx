@@ -14,6 +14,7 @@ interface Props {
   courses: Course[]
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onAddCourse: (course: Course) => void
+  onFocusPoint: (point: Coordinate) => void
   onRemovePoint: (index: number) => void
   onChooseViaInsertion: (index: number | null) => void
   onUndo: () => void
@@ -78,7 +79,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
   throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
 
-export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
@@ -118,7 +119,12 @@ export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, cou
     event.preventDefault(); setError(''); setSearchNotice(''); setPendingSearchPoint(null)
     if (!query.trim()) return
     setBusy(true)
-    try { const result = await geocode(query.trim()); setPendingSearchPoint(result); setQuery('') } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
+    try {
+      const result = await geocode(query.trim())
+      setPendingSearchPoint(result)
+      onFocusPoint(result.coordinate)
+      setQuery('')
+    } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
