@@ -69,6 +69,8 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
     <article className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetCollapsed ? 'collapsed' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetCollapsed ? `translateY(calc(100% - 54px + ${sheetOffset}px))` : sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
       <div className="detail-sheet-top" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}>
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
+      </div>
+      <div className="detail-scroll">
         <header className="detail-header">
           <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
           <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
@@ -79,8 +81,6 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
           <div><strong>{course.maxElevation - course.minElevation}</strong><span>m 高低差</span></div>
           <div className="score"><strong>{overallRating(mergedRatings)}</strong><span>総合評価</span></div>
         </div>
-      </div>
-      <div className="detail-scroll">
         <div className="tag-row">{course.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
         <p className="description">{course.description}</p>
         <button className="three-d-cta" onClick={onOpen3d}><span>3D</span><div><strong>立体コースビュー</strong><small>地形と高低差を俯瞰して確認</small></div><b>→</b></button>
