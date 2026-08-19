@@ -235,7 +235,10 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const controller = new AbortController()
     setTerrainGrid(null)
     setTerrainStatus('loading')
-    const resolution = compactModel ? 20 : 28
+    // Keep the real DEM mesh deliberately modest: every cell participates in
+    // depth sorting while the user drags, so denser grids quickly become costly
+    // on mobile without adding much visible detail at this canvas size.
+    const resolution = compactModel ? 16 : 24
     fetchTerrainGrid(course.route, resolution, resolution, controller.signal).then((grid) => {
       if (controller.signal.aborted) return
       setTerrainGrid(grid)
@@ -253,10 +256,14 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const addFace = (points: Point3[], color: string) => {
       faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), color, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw, modelPitch), 0) / points.length - 5 })
     }
-    model.left.slice(1).forEach((_, index) => {
-      const i = index + 1
-      const leftBefore = model.left[i - 1]; const leftNow = model.left[i]
-      const rightBefore = model.right[i - 1]; const rightNow = model.right[i]
+    // The coloured centre line remains full resolution. The dark underside is
+    // only a depth cue, so coarser faces are visually equivalent and remove
+    // roughly two thirds of the SVG polygons from every gesture frame.
+    const faceStride = compactModel ? 3 : 2
+    for (let i = faceStride; i < model.left.length; i += faceStride) {
+      const previous = i - faceStride
+      const leftBefore = model.left[previous]; const leftNow = model.left[i]
+      const rightBefore = model.right[previous]; const rightNow = model.right[i]
       const leftUnder: Point3 = [leftNow[0], leftNow[1], leftNow[2] - model.thickness]
       const leftBeforeUnder: Point3 = [leftBefore[0], leftBefore[1], leftBefore[2] - model.thickness]
       const rightUnder: Point3 = [rightNow[0], rightNow[1], rightNow[2] - model.thickness]
@@ -266,12 +273,12 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
       addFace([rightBefore, rightNow, rightUnder, rightBeforeUnder], '#07100c')
       addFace([leftNow, leftBefore, leftBeforeUnder, leftUnder], '#10261b')
       addFace([leftBeforeUnder, rightBeforeUnder, rightUnder, leftUnder], '#050a07')
-    })
+    }
     const startLeft = model.left[0]; const startRight = model.right[0]; const endLeft = model.left.at(-1)!; const endRight = model.right.at(-1)!
     addFace([startLeft, startRight, [startRight[0], startRight[1], startRight[2] - model.thickness], [startLeft[0], startLeft[1], startLeft[2] - model.thickness]], '#122d20')
     addFace([endRight, endLeft, [endLeft[0], endLeft[1], endLeft[2] - model.thickness], [endRight[0], endRight[1], endRight[2] - model.thickness]], '#122d20')
     return faces
-  }, [effectiveZoom, model, modelPan, modelPitch, modelYaw])
+  }, [compactModel, effectiveZoom, model, modelPan, modelPitch, modelYaw])
   const terrainModel = useMemo(() => {
     const xs = model.centers.map(([x]) => x); const ys = model.centers.map(([, y]) => y)
     const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys)
