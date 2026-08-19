@@ -52,6 +52,7 @@ type Point3 = [number, number, number]
 type Point2 = [number, number]
 type ModelView = { yaw: number; pitch: number; zoom: number; pan: Point2 }
 type PinchState = { distance: number; zoom: number; pan: Point2; anchor: Point2; modelOffset: Point2 }
+type ModelDragState = { pointerId: number; x: number; y: number; yaw: number; pitch: number; anchor: Point2; pivot: Point3 }
 
 function projectPoint([x, y, z]: Point3, yaw: number, pitch: number, zoom = 1, [panX, panY]: Point2 = [0, 0]): Point2 {
   const yawRad = (yaw * Math.PI) / 180
@@ -73,11 +74,20 @@ function wrapDegrees(value: number): number { return ((value + 180) % 360 + 360)
 function svgPoint(clientX: number, clientY: number, rect: DOMRect): Point2 {
   return [(clientX - rect.left) * 1000 / Math.max(1, rect.width), (clientY - rect.top) * 480 / Math.max(1, rect.height)]
 }
+
+function unprojectGroundPoint(screen: Point2, view: ModelView, zoom: number): Point3 {
+  const rotatedX = (screen[0] - 500 - view.pan[0]) / zoom
+  const pitchSin = Math.sin((view.pitch * Math.PI) / 180)
+  const safePitchSin = Math.abs(pitchSin) < .05 ? (pitchSin < 0 ? -.05 : .05) : pitchSin
+  const depth = -(screen[1] - 365 - view.pan[1]) / (zoom * safePitchSin)
+  const yawRad = (view.yaw * Math.PI) / 180
+  return [rotatedX * Math.cos(yawRad) + depth * Math.sin(yawRad), -rotatedX * Math.sin(yawRad) + depth * Math.cos(yawRad), 0]
+}
 export function Course3DView({ course, courses, onClose, onElevationRepaired }: { course: Course; courses: Course[]; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
-  const modelDragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
+  const modelDragRef = useRef<ModelDragState | null>(null)
   const modelPointersRef = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<PinchState | null>(null)
   const touchPinchRef = useRef<PinchState | null>(null)
@@ -440,7 +450,9 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     if (modelPointersRef.current.size === 1) {
       // One finger changes the viewing angle: horizontal swipes orbit and
       // vertical swipes alter the pitch.
-      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+      const view = modelViewRef.current
+      const anchor = svgPoint(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect())
+      modelDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, yaw: view.yaw, pitch: view.pitch, anchor, pivot: unprojectGroundPoint(anchor, view, effectiveZoom) }
       pinchRef.current = null
       return
     }
@@ -464,7 +476,10 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     if (!drag || drag.pointerId !== event.pointerId) return
     // Keep the established vertical gesture. Horizontal orbit follows the
     // driver's swipe direction so left/right movement is not mirrored.
-    applyModelView({ yaw: drag.yaw + (event.clientX - drag.x) * .35, pitch: drag.pitch + (event.clientY - drag.y) * .35 })
+    const yaw = drag.yaw + (event.clientX - drag.x) * .35
+    const pitch = drag.pitch + (event.clientY - drag.y) * .35
+    const projectedPivot = projectPoint(drag.pivot, yaw, pitch, effectiveZoom)
+    applyModelView({ yaw, pitch, pan: [drag.anchor[0] - projectedPivot[0], drag.anchor[1] - projectedPivot[1]] })
   }
 
   function endModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
@@ -474,7 +489,9 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     // Resume one-finger viewpoint control when a finger remains after a pinch.
     if (modelPointersRef.current.size === 1) {
       const [pointerId, pointer] = [...modelPointersRef.current.entries()][0]
-      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, yaw: modelViewRef.current.yaw, pitch: modelViewRef.current.pitch }
+      const view = modelViewRef.current
+      const anchor = svgPoint(pointer.x, pointer.y, event.currentTarget.getBoundingClientRect())
+      modelDragRef.current = { pointerId, x: pointer.x, y: pointer.y, yaw: view.yaw, pitch: view.pitch, anchor, pivot: unprojectGroundPoint(anchor, view, effectiveZoom) }
     }
   }
 
