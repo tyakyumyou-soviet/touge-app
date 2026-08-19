@@ -237,7 +237,7 @@ export default function App() {
     const activeUser = auth.currentUser
     if (!activeUser || joinedCourses.length < 2) throw new Error('Authentication required')
     const samplesPerCourse = Math.max(2, Math.floor(24 / joinedCourses.length))
-    const waypoints = joinedCourses.flatMap((item, courseIndex) => Array.from({ length: samplesPerCourse }, (_, index) => item.route[Math.round((index / Math.max(1, samplesPerCourse - 1)) * (item.route.length - 1))]).filter((_, index) => courseIndex === 0 || index > 0)).slice(0, 25)
+    const waypoints = joinedCourses.flatMap((item, courseIndex) => Array.from({ length: samplesPerCourse }, (_, index) => item.route[Math.round((index / Math.max(1, samplesPerCourse - 1)) * (item.route.length - 1))]).filter((_, index) => courseIndex === 0 || index > 0))
     const routed = await routeAlongRoads(waypoints)
     const route = routed.route
     const elevationResult = await fetchElevationProfile(route)
