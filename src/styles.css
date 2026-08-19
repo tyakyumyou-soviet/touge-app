@@ -337,6 +337,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-landmark text { fill: #fff2b5; stroke: #07100c; stroke-width: 7px; paint-order: stroke; font-size: 26px; font-weight: 800; letter-spacing: .02em; }
 .model-landmark.ic circle, .model-landmark.ic line { fill: #79b8ff; stroke: #79b8ff; }
 .model-landmark.ic text { fill: #b6d9ff; }
+.model-terminal circle { stroke: #fff8e7; stroke-width: 3px; }.model-terminal.start circle { fill: #287e5a; }.model-terminal.goal circle { fill: #d3523c; }.model-terminal text { fill: #fff; stroke: #07100c; stroke-width: 6px; paint-order: stroke; font-size: 22px; font-weight: 800; }
+.model-compass { pointer-events: none; }.model-compass > circle { fill: #07100cd9; stroke: #ffffff6b; stroke-width: 1.5px; }.model-compass line { stroke: #d7e4dc; stroke-width: 2px; }.model-compass text { fill: #d7e4dc; stroke: none; font-size: 16px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }.model-compass .north line { stroke: #f2d16b; stroke-width: 3px; }.model-compass .north text { fill: #f2d16b; }
 .three-d-mode-model .three-d-map { opacity: .12; }
 .three-d-controls { position: absolute; z-index: 2; left: 20px; bottom: 52px; display: flex; align-items: center; gap: 12px; padding: 11px 13px; color: #fff; background: #101915e8; border: 1px solid #ffffff25; border-radius: 10px; backdrop-filter: blur(8px); }
 .three-d-controls label { display: flex; align-items: center; gap: 8px; font-size: 12px; }

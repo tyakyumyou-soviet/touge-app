@@ -243,11 +243,20 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   const modelStart = projectPoint(model.centers[0], modelYaw, modelPitch, effectiveZoom, modelPan)
   const modelEnd = projectPoint(model.centers.at(-1)!, modelYaw, modelPitch, effectiveZoom, modelPan)
   const modelCurrent = projectPoint(model.centers[Math.min(model.centers.length - 1, Math.round(progress * (model.centers.length - 1)))], modelYaw, modelPitch, effectiveZoom, modelPan)
+  const modelCompass = useMemo(() => {
+    const origin = projectPoint([0, 0, 0], modelYaw, modelPitch)
+    return ([['N', 0, 1], ['E', 1, 0], ['S', 0, -1], ['W', -1, 0]] as const).map(([label, east, north]) => {
+      const projected = projectPoint([east, north, 0], modelYaw, modelPitch)
+      const dx = projected[0] - origin[0]; const dy = projected[1] - origin[1]
+      const length = Math.max(1, Math.hypot(dx, dy))
+      return { label, x: 932 + (dx / length) * 27, y: 57 + (dy / length) * 27, labelX: 932 + (dx / length) * 36, labelY: 57 + (dy / length) * 36 }
+    })
+  }, [modelPitch, modelYaw])
   const modelLandmarks = useMemo(() => {
     const landmarks = course.landmarks?.length ? course.landmarks : [
-      { name: `約${(course.distanceKm * .25).toFixed(1)}km`, progress: .25, type: 'place' as const },
-      { name: `約${(course.distanceKm * .5).toFixed(1)}km`, progress: .5, type: 'place' as const },
-      { name: `約${(course.distanceKm * .75).toFixed(1)}km`, progress: .75, type: 'place' as const },
+      { name: `経由地点 1 · ${(course.distanceKm * .25).toFixed(1)}km`, progress: .25, type: 'place' as const },
+      { name: `経由地点 2 · ${(course.distanceKm * .5).toFixed(1)}km`, progress: .5, type: 'place' as const },
+      { name: `経由地点 3 · ${(course.distanceKm * .75).toFixed(1)}km`, progress: .75, type: 'place' as const },
     ]
     return landmarks.map((landmark) => {
       const pointIndex = Math.min(model.centers.length - 1, Math.max(0, Math.round(landmark.progress * (model.centers.length - 1))))
@@ -508,10 +517,11 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
           <polyline className="model-route-line-glow" points={modelLinePoints} />
           <g className="model-grade-line">{gradeSegments.map((segment, index) => <polyline key={index} points={segment.points} stroke={segment.color} />)}</g>
           <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
+          <g className="model-compass" aria-label="方位"><circle cx="932" cy="57" r="33" />{modelCompass.map((direction) => <g key={direction.label} className={direction.label === 'N' ? 'north' : ''}><line x1="932" y1="57" x2={direction.x} y2={direction.y} /><text x={direction.labelX} y={direction.labelY}>{direction.label}</text></g>)}</g>
           {distanceMarkers.map((marker) => <g className="distance-marker" key={marker.distance}><circle cx={marker.x} cy={marker.y} r="4" /><text x={marker.x + 8} y={marker.y - 8}>{marker.distance}km</text></g>)}
           {highlights.map((item) => { const [x, y] = projectPoint(item.point, modelYaw, modelPitch, effectiveZoom, modelPan); return <g className="route-highlight" key={item.key}><circle cx={x} cy={y} r="9" stroke={item.color} /><text x={x + 12} y={y + 5}>{item.label}</text></g> })}
           {visibleLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`} role="button" tabIndex={0} aria-label={`${landmark.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }}><circle cx={landmark.x} cy={landmark.y} r="7" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}
-          <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text><text x="410" y="455">距離 {course.distanceKm}km</text>
+          <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><g className="model-terminal start"><circle cx={modelStart[0]} cy={modelStart[1]} r="10" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text></g><g className="model-terminal goal"><circle cx={modelEnd[0]} cy={modelEnd[1]} r="10" /><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text></g><text x="410" y="455">距離 {course.distanceKm}km</text>
         </svg>
         <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {profileMax - profileMin}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
         {activeLandmark && <aside className="landmark-card"><button onClick={() => setActiveLandmark(null)} aria-label="地点情報を閉じる">×</button><strong>{activeLandmark.name}</strong><span>{activeLandmark.type === 'ic' ? 'IC・出入口' : activeLandmark.type === 'viewpoint' ? '展望・休憩地点' : '周辺地点'} · STARTから約{(activeLandmark.progress * course.distanceKm).toFixed(1)}km</span></aside>}
