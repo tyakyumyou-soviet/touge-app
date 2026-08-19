@@ -14,9 +14,11 @@ interface Props {
   onOpen3d: () => void
   onReportToll: () => void
   onCommunity: () => void
+  canManageCourse: boolean
+  onManageCourse: () => void
 }
 
-export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll, onCommunity }: Props) {
+export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll, onCommunity, canManageCourse, onManageCourse }: Props) {
   const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
@@ -104,6 +106,7 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
           <button onClick={onReportToll}>無料開放・料金変更を報告</button>
         </section>}
         <section className="caution-box"><h3>走行前に確認</h3><ul>{course.cautions.map((item) => <li key={item}>{item}</li>)}</ul><small>最終更新: {course.updatedAt}。現地標識・公的情報を優先してください。</small></section>
+        {canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>名称・説明・公開範囲・タグ・注意事項を編集できます。削除は確認後にFirebaseから実行されます。</p></div><button className="button secondary" onClick={onManageCourse}>編集・削除</button></section>}
         <div className="secondary-actions">
           <button onClick={onRate}>項目別に評価</button>
           <button onClick={onShare}>コースを共有</button>
