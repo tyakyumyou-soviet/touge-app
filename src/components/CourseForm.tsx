@@ -89,6 +89,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [searchError, setSearchError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
   const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', visibility: 'public' })
@@ -160,7 +161,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   }
 
   async function addSearchedPlace(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(''); setSearchNotice(''); setPendingSearchPoint(null); onPendingPointChange(null)
+    event.preventDefault(); setError(''); setSearchError(''); setSearchNotice(''); setPendingSearchPoint(null); onPendingPointChange(null)
     if (!query.trim()) return
     setBusy(true)
     try {
@@ -169,7 +170,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       onFocusPoint(result.coordinate)
       onPendingPointChange(result.coordinate, result.label)
       setQuery('')
-    } catch (caught) { setError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
+    } catch (caught) { setSearchError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -214,6 +215,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       <footer><button type="button" className="button secondary" onClick={() => setStage('join')}>戻る</button><button className="button primary" disabled={busy}>{busy ? '道路・標高を確認して保存中…' : '連結コースを保存'}</button></footer>
     </form> : stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
+      {searchError && <section className="search-not-found" role="alert"><strong>場所が見つかりませんでした</strong><p>{searchError}</p><small>地点は追加されていません。地名の一部・施設名・IC名で検索し直すか、地図をタップして正確な位置を指定してください。</small></section>}
       {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の赤い仮ピンを確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via', viaInsertAfter); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>ゴールとして追加</button>}<button type="button" className="text-button" onClick={() => { setPendingSearchPoint(null); onPendingPointChange(null) }}>追加しない</button></div></section>}
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
       <p className="route-builder-help">最初に始点を追加し、地図上の道路をタップしたら「経由地」または「ゴール」を選びます。地点一覧の「＋」を押すと、その地点の直後を追加先に選べます。住所は番地まで入力できます（例: 静岡県伊豆の国市南條99-3）。ピンはPCではドラッグ、スマホでは長押し後のドラッグで位置を動かせます。</p>

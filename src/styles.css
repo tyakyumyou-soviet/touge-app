@@ -222,6 +222,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-search-results { display: grid; gap: 5px; }
 .route-search-results button { display: grid; gap: 2px; padding: 9px 11px; text-align: left; color: inherit; background: #edf3ef; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .route-search-results small, .route-builder-help { color: var(--muted); font-size: 11px; }
+.search-not-found { display: grid; gap: 4px; padding: 11px 12px; color: #7d3029; background: #fff1ed; border: 1px solid #e4a59a; border-radius: 9px; }
+.search-not-found strong { font-size: 13px; }
+.search-not-found p { margin: 0; font-size: 11px; line-height: 1.5; }
+.search-not-found small { color: #7d514a; font-size: 10px; line-height: 1.5; }
 .address-match-confirm { display: grid; gap: 5px; padding: 10px; background: #fff7dc; border: 1px solid #dfc66b; border-radius: 9px; }
 .address-match-confirm strong { font-size: 12px; }
 .address-match-confirm span { font-weight: 700; font-size: 13px; }
