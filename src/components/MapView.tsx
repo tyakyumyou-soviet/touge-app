@@ -54,6 +54,20 @@ const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
   }] : [],
 })
 
+/** On phones, centre a searched place in the part of the map that remains
+ * visible above the live bottom sheet, rather than behind that sheet. */
+function mobileVisibleMapOffset(container: HTMLDivElement) {
+  if (!window.matchMedia('(max-width: 760px)').matches) return [0, 0] as [number, number]
+  const sheet = document.querySelector<HTMLElement>('.course-form:not(.surface-leaving)')
+  if (!sheet) return [0, 0] as [number, number]
+  const mapRect = container.getBoundingClientRect()
+  const sheetRect = sheet.getBoundingClientRect()
+  const visibleBottom = Math.min(mapRect.bottom, Math.max(mapRect.top, sheetRect.top))
+  const visibleHeight = visibleBottom - mapRect.top
+  if (visibleHeight < 80) return [0, 0] as [number, number]
+  return [0, visibleHeight / 2 - mapRect.height / 2] as [number, number]
+}
+
 export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -254,9 +268,10 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !focusPoint) return
-    map.flyTo({ center: focusPoint, zoom: Math.max(map.getZoom(), 15), duration: 500 })
-  }, [focusPoint])
+    const container = containerRef.current
+    if (!map || !container || !focusPoint) return
+    map.flyTo({ center: focusPoint, offset: mobileVisibleMapOffset(container), zoom: Math.max(map.getZoom(), 15), duration: 500, essential: true })
+  }, [focusPoint, drawing])
 
   useEffect(() => {
     const map = mapRef.current
