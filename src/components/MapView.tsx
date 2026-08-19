@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Coordinate, Course, DraftPointRole } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
+import { assignCourseColors } from '../lib/courseColors'
 
 interface MapViewProps {
   courses: Course[]
@@ -23,11 +24,11 @@ interface MapViewProps {
   onMovePoint: (index: number, point: Coordinate) => void
 }
 
-const toFeatureCollection = (courses: Course[]) => ({
+const toFeatureCollection = (courses: Course[], colors: Map<string, string>) => ({
   type: 'FeatureCollection' as const,
   features: courses.map((course) => ({
     type: 'Feature' as const,
-    properties: { id: course.id, name: course.name },
+    properties: { id: course.id, name: course.name, color: colors.get(course.id) ?? '#d69f35' },
     geometry: { type: 'LineString' as const, coordinates: course.route },
   })),
 })
@@ -83,6 +84,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   const viaInsertAfterRef = useRef(viaInsertAfter)
   const [mapError, setMapError] = useState('')
   const [mapReady, setMapReady] = useState(false)
+  const courseColors = useMemo(() => assignCourseColors(courses), [courses])
 
   useEffect(() => { coursesRef.current = courses }, [courses])
   useEffect(() => { drawingRef.current = drawing }, [drawing])
@@ -128,14 +130,14 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
         id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem',
         paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' },
       })
-      map.addSource('courses', { type: 'geojson', data: toFeatureCollection(coursesRef.current) })
+      map.addSource('courses', { type: 'geojson', data: toFeatureCollection(coursesRef.current, assignCourseColors(coursesRef.current)) })
       map.addLayer({
         id: 'courses-shadow', type: 'line', source: 'courses',
         paint: { 'line-color': '#101915', 'line-width': 7, 'line-opacity': 0.48 },
       })
       map.addLayer({
         id: 'courses-line', type: 'line', source: 'courses',
-        paint: { 'line-color': '#d69f35', 'line-width': 3.5 },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': .96 },
       })
       map.addSource('selected-course', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
       map.addSource('selected-contours', { type: 'geojson', data: toContourFeatureCollection(null) })
@@ -223,8 +225,8 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map?.isStyleLoaded()) return
-    ;(map.getSource('courses') as GeoJSONSource | undefined)?.setData(toFeatureCollection(courses))
-  }, [courses, mapReady])
+    ;(map.getSource('courses') as GeoJSONSource | undefined)?.setData(toFeatureCollection(courses, courseColors))
+  }, [courseColors, courses, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
