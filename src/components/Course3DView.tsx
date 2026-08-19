@@ -353,7 +353,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
       const point = model.centers[pointIndex]
       const [x, y] = projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)
       const labelOnLeft = x > 580
-      return { ...landmark, x, y, labelX: x + (labelOnLeft ? -12 : 12), labelY: y - 12, labelOnLeft }
+      return { ...landmark, point, x, y, labelX: x + (labelOnLeft ? -12 : 12), labelY: y - 12, labelOnLeft }
     })
   }, [course.distanceKm, course.landmarks, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
   const visibleLandmarks = useMemo(() => {
@@ -361,11 +361,11 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     return modelLandmarks.filter((_, index) => index < limit)
   }, [effectiveZoom, modelLandmarks])
   const distanceMarkers = useMemo(() => {
-    const markers: { distance: number; x: number; y: number }[] = []
+    const markers: { distance: number; x: number; y: number; point: Point3; depth: number }[] = []
     for (let distance = 5; distance < course.distanceKm; distance += 5) {
       const point = model.centers[Math.round((distance / course.distanceKm) * (model.centers.length - 1))]
       const [x, y] = projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)
-      markers.push({ distance, x, y })
+      markers.push({ distance, x, y, point, depth: viewDepth(point, modelYaw, modelPitch) - 9 })
     }
     return markers
   }, [course.distanceKm, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
@@ -376,11 +376,11 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const color = gradientPercent > 4 ? '#e86a4d' : gradientPercent < -4 ? '#54a8f7' : '#54bd86'
     return { points: pointsText([projectPoint(before, modelYaw, modelPitch, effectiveZoom, modelPan), projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)]), color, depth: (viewDepth(before, modelYaw, modelPitch) + viewDepth(point, modelYaw, modelPitch)) / 2 - 7 }
   }), [effectiveZoom, model.centers, model.elevations, model.sceneScale, modelPan, modelPitch, modelYaw])
-  const sceneLayers = useMemo(() => [
+  const geometryLayers = useMemo(() => [
     ...terrainModel.faces.map((face, index) => ({ kind: 'terrain' as const, key: `terrain-${index}`, ...face })),
     ...terrainModel.contours.map((contour, index) => ({ kind: 'contour' as const, key: `contour-${index}`, ...contour })),
     ...gradeSegments.map((segment, index) => ({ kind: 'route' as const, key: `route-${index}`, ...segment })),
-  ].sort((a, b) => b.depth - a.depth), [gradeSegments, terrainModel.contours, terrainModel.faces])
+  ], [gradeSegments, terrainModel.contours, terrainModel.faces])
   const highlights = useMemo(() => {
     const entries = [
       { key: 'gradient', label: '急勾配', color: '#e86a4d', progress: 0 },
@@ -400,6 +400,14 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     entries[1].progress = curveIndex / Math.max(1, model.centers.length - 1)
     return entries.map((entry) => ({ ...entry, point: model.centers[Math.round(entry.progress * (model.centers.length - 1))] }))
   }, [model.centers, model.elevations, model.sceneScale])
+  const depthLayers = useMemo(() => [
+    ...geometryLayers,
+    ...distanceMarkers.map((marker) => ({ kind: 'distance' as const, key: `distance-${marker.distance}`, ...marker })),
+    ...highlights.map((item) => { const [x, y] = projectPoint(item.point, modelYaw, modelPitch, effectiveZoom, modelPan); return { kind: 'highlight' as const, ...item, x, y, depth: viewDepth(item.point, modelYaw, modelPitch) - 9 } }),
+    ...visibleLandmarks.map((landmark) => ({ kind: 'landmark' as const, key: `landmark-${landmark.name}-${landmark.progress}`, ...landmark, depth: viewDepth(landmark.point, modelYaw, modelPitch) - 9 })),
+    { kind: 'terminal' as const, key: 'terminal-start', terminal: 'start' as const, x: modelStart[0], y: modelStart[1], elevation: profile[0], depth: viewDepth(model.centers[0], modelYaw, modelPitch) - 9 },
+    { kind: 'terminal' as const, key: 'terminal-goal', terminal: 'goal' as const, x: modelEnd[0], y: modelEnd[1], elevation: profile.at(-1) ?? 0, depth: viewDepth(model.centers.at(-1)!, modelYaw, modelPitch) - 9 },
+  ].sort((a, b) => b.depth - a.depth), [distanceMarkers, effectiveZoom, geometryLayers, highlights, model.centers, modelEnd, modelPan, modelPitch, modelStart, modelYaw, profile, visibleLandmarks])
   const comparedCourse = courses.find((item) => item.id === compareCourseId)
 
   useEffect(() => {
@@ -636,18 +644,21 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
         <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で視点を回転、2本指で平行移動とピンチ拡大縮小ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
           <defs><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
           <g className="model-depth-scene" aria-label={`${terrainModel.contourStep}m間隔の等高線`}>
-            {sceneLayers.map((layer) => layer.kind === 'terrain'
-              ? <polygon className={`model-terrain-surface ${layer.side ? 'terrain-skirt' : ''}`} key={layer.key} points={layer.points} fill={layer.fill} />
-              : layer.kind === 'contour'
-                ? <polyline className="model-terrain-contour" key={layer.key} points={layer.points} />
-                : <polyline className="model-grade-segment" key={layer.key} points={layer.points} stroke={layer.color} />)}
+            {depthLayers.map((layer) => {
+              if (layer.kind === 'terrain') return <polygon className={`model-terrain-surface ${layer.side ? 'terrain-skirt' : ''}`} key={layer.key} points={layer.points} fill={layer.fill} />
+              if (layer.kind === 'contour') return <polyline className="model-terrain-contour" key={layer.key} points={layer.points} />
+              if (layer.kind === 'route') return <polyline className="model-grade-segment" key={layer.key} points={layer.points} stroke={layer.color} />
+              if (layer.kind === 'distance') return <g className="distance-marker" key={layer.key}><circle cx={layer.x} cy={layer.y} r="4" /><text x={layer.x + 8} y={layer.y - 8}>{layer.distance}km</text></g>
+              if (layer.kind === 'highlight') return <g className="route-highlight" key={layer.key}><circle cx={layer.x} cy={layer.y} r="9" stroke={layer.color} /><text x={layer.x + 12} y={layer.y + 5}>{layer.label}</text></g>
+              if (layer.kind === 'landmark') return <g className={`model-landmark ${layer.type ?? 'place'}`} key={layer.key} role="button" tabIndex={0} aria-label={`${layer.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(layer) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(layer) }}><circle cx={layer.x} cy={layer.y} r="7" /><line x1={layer.x} y1={layer.y} x2={layer.labelX} y2={layer.labelY + 3} /><text x={layer.labelX} y={layer.labelY} textAnchor={layer.labelOnLeft ? 'end' : 'start'}>{layer.name}</text></g>
+              return layer.terminal === 'start'
+                ? <g className="model-terminal start" key={layer.key}><circle cx={layer.x} cy={layer.y} r="10" /><text x={layer.x - 32} y={layer.y + 38}>START</text><text x={layer.x - 42} y={layer.y + 59}>{layer.elevation}m</text></g>
+                : <g className="model-terminal goal" key={layer.key}><circle cx={layer.x} cy={layer.y} r="10" /><text x={layer.x - 26} y={layer.y - 27}>GOAL</text><text x={layer.x - 31} y={layer.y - 7}>{layer.elevation}m</text></g>
+            })}
           </g>
           <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
           <g className="model-compass" aria-label="方位"><circle cx="932" cy="57" r="33" />{modelCompass.map((direction) => <g key={direction.label} className={direction.label === 'N' ? 'north' : ''}><line x1="932" y1="57" x2={direction.x} y2={direction.y} /><text x={direction.labelX} y={direction.labelY}>{direction.label}</text></g>)}</g>
-          {distanceMarkers.map((marker) => <g className="distance-marker" key={marker.distance}><circle cx={marker.x} cy={marker.y} r="4" /><text x={marker.x + 8} y={marker.y - 8}>{marker.distance}km</text></g>)}
-          {highlights.map((item) => { const [x, y] = projectPoint(item.point, modelYaw, modelPitch, effectiveZoom, modelPan); return <g className="route-highlight" key={item.key}><circle cx={x} cy={y} r="9" stroke={item.color} /><text x={x + 12} y={y + 5}>{item.label}</text></g> })}
-          {visibleLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`} role="button" tabIndex={0} aria-label={`${landmark.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }}><circle cx={landmark.x} cy={landmark.y} r="7" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}
-          <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><g className="model-terminal start"><circle cx={modelStart[0]} cy={modelStart[1]} r="10" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text></g><g className="model-terminal goal"><circle cx={modelEnd[0]} cy={modelEnd[1]} r="10" /><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text></g><text x="410" y="455">距離 {course.distanceKm}km</text>
+          <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x="410" y="455">距離 {course.distanceKm}km</text>
         </svg>
         <small className="model-terrain-credit">地形: {terrainStatus === 'ready' ? 'AWS Terrain Tiles（実標高）' : '簡易推定'} · 等高線 {terrainModel.contourStep}m</small>
         <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {profileMax - profileMin}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
