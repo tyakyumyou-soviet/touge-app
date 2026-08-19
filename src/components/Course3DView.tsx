@@ -4,6 +4,7 @@ import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 import { fetchElevationProfile, isSuspiciousElevationProfile, type ElevationResult } from '../lib/elevation'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
+import { fetchTerrainGrid, type TerrainGrid } from '../lib/terrain'
 
 type ViewMode = 'overview' | 'preview' | 'model'
 
@@ -53,6 +54,7 @@ type Point2 = [number, number]
 type ModelView = { yaw: number; pitch: number; zoom: number; pan: Point2 }
 type PinchState = { distance: number; zoom: number; pan: Point2; anchor: Point2; modelOffset: Point2 }
 type ModelDragState = { pointerId: number; x: number; y: number; yaw: number; pitch: number; anchor: Point2; pivot: Point3 }
+type TerrainFace = { points: string; depth: number; fill: string; side?: boolean }
 
 function projectPoint([x, y, z]: Point3, yaw: number, pitch: number, zoom = 1, [panX, panY]: Point2 = [0, 0]): Point2 {
   const yawRad = (yaw * Math.PI) / 180
@@ -112,6 +114,8 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   const [repairedProfile, setRepairedProfile] = useState<number[] | null>(null)
   const [elevationRepairFailed, setElevationRepairFailed] = useState(false)
   const [elevationPersistenceFailed, setElevationPersistenceFailed] = useState(false)
+  const [terrainGrid, setTerrainGrid] = useState<TerrainGrid | null>(null)
+  const [terrainStatus, setTerrainStatus] = useState<'loading' | 'ready' | 'fallback'>('loading')
   const needsElevationRepair = course.elevationSource === '地形傾向による推定' || isSuspiciousElevationProfile(course.elevationProfile)
   const repairingProfile = needsElevationRepair && repairedProfile === null && !elevationRepairFailed
   const profile = useMemo(() => normaliseElevationProfile(repairedProfile ?? course.elevationProfile, course.minElevation, course.maxElevation), [course.elevationProfile, course.maxElevation, course.minElevation, repairedProfile])
@@ -145,12 +149,13 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     // then apply one stable exaggeration. The old range-normalisation made an
     // almost-flat route look as tall as a mountain route and changed its shape
     // depending on course length.
-    const rawVerticalRange = (elevationRange / 1000) * sceneScale * 3.2
+    const verticalScale = 3.2 * (exaggeration / 1.5)
+    const rawVerticalRange = (elevationRange / 1000) * sceneScale * verticalScale
     const verticalCompression = rawVerticalRange > 220 ? 220 / rawVerticalRange : 1
     const centers: Point3[] = sampled.map(({ point, elevation }) => [
       (point[0] - centerLng) * kmPerLongitude * sceneScale,
       (point[1] - centerLat) * 111.32 * sceneScale,
-      ((elevation - elevationMin) / 1000) * sceneScale * 3.2 * verticalCompression,
+      ((elevation - elevationMin) / 1000) * sceneScale * verticalScale * verticalCompression,
     ])
     // A narrower ribbon and no segment outline prevent the high-resolution mesh
     // from looking like a chain of oversized dots.
@@ -173,8 +178,8 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     // Never enlarge a short route merely to fill the canvas.  The fit only prevents
     // a long / tall route from being clipped, retaining meaningful distance scaling.
     const autoFit = Math.min(1, .96 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
-    return { centers, elevations: sampled.map(({ elevation }) => elevation), left, right, thickness, autoFit, defaultYaw, sceneScale }
-  }, [compactModel, course.distanceKm, course.route, profile])
+    return { centers, elevations: sampled.map(({ elevation }) => elevation), left, right, thickness, autoFit, defaultYaw, sceneScale, centerLng, centerLat, kmPerLongitude, elevationMin, verticalCompression, verticalScale }
+  }, [compactModel, course.distanceKm, course.route, exaggeration, profile])
   const effectiveZoom = model.autoFit * modelZoom
 
   useEffect(() => {
@@ -193,8 +198,8 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   }, [course, needsElevationRepair, onElevationRepaired])
 
   useEffect(() => {
-    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] }, true)
-  }, [course.id, model.defaultYaw])
+    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: compactModel ? 1.75 : 1.35, pan: [0, 0] }, true)
+  }, [compactModel, course.id, model.defaultYaw])
 
   useEffect(() => {
     const query = window.matchMedia('(max-width: 760px)')
@@ -202,6 +207,22 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setTerrainGrid(null)
+    setTerrainStatus('loading')
+    const resolution = compactModel ? 16 : 24
+    fetchTerrainGrid(course.route, resolution, resolution, controller.signal).then((grid) => {
+      if (controller.signal.aborted) return
+      setTerrainGrid(grid)
+      setTerrainStatus('ready')
+    }).catch((error: unknown) => {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
+      setTerrainStatus('fallback')
+    })
+    return () => controller.abort()
+  }, [compactModel, course.id, course.route])
 
   useEffect(() => () => { if (modelViewFrameRef.current) window.cancelAnimationFrame(modelViewFrameRef.current) }, [])
   const modelFaces = useMemo(() => {
@@ -228,16 +249,27 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     addFace([endRight, endLeft, [endLeft[0], endLeft[1], endLeft[2] - model.thickness], [endRight[0], endRight[1], endRight[2] - model.thickness]], '#122d20')
     return faces.sort((a, b) => a.depth - b.depth)
   }, [effectiveZoom, model, modelPan, modelPitch, modelYaw])
-  const terrainFaces = useMemo(() => {
+  const terrainModel = useMemo(() => {
     const xs = model.centers.map(([x]) => x); const ys = model.centers.map(([, y]) => y)
     const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys)
     const span = Math.max(180, maxX - minX, maxY - minY)
-    const gridSize = 10; const terrain: Point3[][] = []
-    for (let row = 0; row <= gridSize; row += 1) {
-      terrain[row] = []
-      for (let column = 0; column <= gridSize; column += 1) {
-        const x = minX - span * .35 + (span * 1.7 * column) / gridSize
-        const y = minY - span * .35 + (span * 1.7 * row) / gridSize
+    let elevations: number[][]
+    let terrain: Point3[][]
+    if (terrainGrid) {
+      elevations = terrainGrid.rows.map((row) => row.map(({ elevation }) => elevation))
+      terrain = terrainGrid.rows.map((row) => row.map(({ coordinate: [lng, lat], elevation }) => [
+        (lng - model.centerLng) * model.kmPerLongitude * model.sceneScale,
+        (lat - model.centerLat) * 111.32 * model.sceneScale,
+        ((elevation - model.elevationMin) / 1000) * model.sceneScale * model.verticalScale * model.verticalCompression,
+      ]))
+    } else {
+      const gridSize = compactModel ? 12 : 16
+      terrain = []; elevations = []
+      for (let row = 0; row <= gridSize; row += 1) {
+        terrain[row] = []; elevations[row] = []
+        for (let column = 0; column <= gridSize; column += 1) {
+          const x = minX - span * .35 + (span * 1.7 * column) / gridSize
+          const y = minY - span * .35 + (span * 1.7 * row) / gridSize
         let nearest = model.centers[0]; let nearestDistance = Infinity
         model.centers.forEach((point) => {
           const distance = Math.hypot(point[0] - x, point[1] - y)
@@ -246,15 +278,55 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
         const falloff = Math.max(0, 1 - nearestDistance / (span * .75))
         const ripple = Math.sin(x * .035 + y * .019) * 5 + Math.cos(y * .041 - x * .013) * 4
         terrain[row][column] = [x, y, Math.max(-25, nearest[2] * (.18 + falloff * .72) + ripple - 13)]
+          elevations[row][column] = model.elevationMin + terrain[row][column][2] / Math.max(.0001, model.sceneScale * model.verticalScale * model.verticalCompression) * 1000
+        }
       }
     }
-    const faces: { points: string; depth: number }[] = []
-    for (let row = 1; row <= gridSize; row += 1) for (let column = 1; column <= gridSize; column += 1) {
+    const rowCount = terrain.length - 1; const columnCount = terrain[0].length - 1
+    const terrainMin = Math.min(...elevations.flat()); const terrainMax = Math.max(...elevations.flat()); const terrainRange = Math.max(1, terrainMax - terrainMin)
+    const faces: TerrainFace[] = []
+    for (let row = 1; row <= rowCount; row += 1) for (let column = 1; column <= columnCount; column += 1) {
       const points = [terrain[row - 1][column - 1], terrain[row - 1][column], terrain[row][column], terrain[row][column - 1]]
-      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw), 0) / points.length })
+      const east = [points[1][0] - points[0][0], points[1][1] - points[0][1], points[1][2] - points[0][2]]
+      const north = [points[3][0] - points[0][0], points[3][1] - points[0][1], points[3][2] - points[0][2]]
+      const normal = [east[1] * north[2] - east[2] * north[1], east[2] * north[0] - east[0] * north[2], east[0] * north[1] - east[1] * north[0]]
+      const normalLength = Math.max(.001, Math.hypot(...normal)); const lightLength = Math.hypot(-.5, .65, 1)
+      const light = Math.max(-.2, Math.min(1, (normal[0] * -.5 + normal[1] * .65 + normal[2]) / (normalLength * lightLength)))
+      const averageElevation = elevations.slice(row - 1, row + 1).reduce((sum, values) => sum + values[column - 1] + values[column], 0) / 4
+      const elevationAmount = Math.max(0, Math.min(1, (averageElevation - terrainMin) / terrainRange))
+      const hue = 151 - elevationAmount * 58; const saturation = 24 - elevationAmount * 7; const luminance = 19 + elevationAmount * 24 + light * 12
+      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), fill: `hsl(${hue.toFixed(0)} ${saturation.toFixed(0)}% ${luminance.toFixed(0)}%)`, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw), 0) / points.length })
     }
-    return faces.sort((a, b) => a.depth - b.depth)
-  }, [effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
+    // Dark vertical skirts make the terrain read as a physical cut-away model,
+    // rather than a transparent sheet floating behind the route.
+    const edge = [...terrain[0], ...terrain.slice(1).map((row) => row.at(-1)!), ...terrain.at(-1)!.slice(0, -1).reverse(), ...terrain.slice(1, -1).reverse().map((row) => row[0])]
+    const skirtBottom = Math.min(...terrain.flat().map((point) => point[2])) - 24
+    edge.forEach((point, index) => {
+      const next = edge[(index + 1) % edge.length]
+      const points: Point3[] = [point, next, [next[0], next[1], skirtBottom], [point[0], point[1], skirtBottom]]
+      faces.push({ points: pointsText(points.map((item) => projectPoint(item, modelYaw, modelPitch, effectiveZoom, modelPan))), fill: '#0b2118', depth: (viewDepth(point, modelYaw) + viewDepth(next, modelYaw)) / 2, side: true })
+    })
+
+    const contourStep = terrainRange <= 260 ? 25 : terrainRange <= 650 ? 50 : 100
+    const contours: string[] = []
+    const firstContour = Math.ceil(terrainMin / contourStep) * contourStep
+    for (let level = firstContour; level <= terrainMax; level += contourStep) {
+      for (let row = 1; row <= rowCount; row += 1) for (let column = 1; column <= columnCount; column += 1) {
+        const cellPoints = [terrain[row - 1][column - 1], terrain[row - 1][column], terrain[row][column], terrain[row][column - 1]]
+        const cellElevations = [elevations[row - 1][column - 1], elevations[row - 1][column], elevations[row][column], elevations[row][column - 1]]
+        const intersections: Point3[] = []
+        for (let edgeIndex = 0; edgeIndex < 4; edgeIndex += 1) {
+          const nextIndex = (edgeIndex + 1) % 4; const a = cellElevations[edgeIndex]; const b = cellElevations[nextIndex]
+          if ((a < level && b < level) || (a > level && b > level) || a === b) continue
+          const amount = (level - a) / (b - a); const start = cellPoints[edgeIndex]; const end = cellPoints[nextIndex]
+          intersections.push([start[0] + (end[0] - start[0]) * amount, start[1] + (end[1] - start[1]) * amount, start[2] + (end[2] - start[2]) * amount + .8])
+        }
+        if (intersections.length >= 2) contours.push(pointsText(intersections.slice(0, 2).map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))))
+        if (intersections.length === 4) contours.push(pointsText(intersections.slice(2, 4).map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))))
+      }
+    }
+    return { faces: faces.sort((a, b) => a.depth - b.depth), contours, contourStep }
+  }, [compactModel, effectiveZoom, model, modelPan, modelPitch, modelYaw, terrainGrid])
   const modelLinePoints = useMemo(() => pointsText(model.centers.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), [effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
   const modelStart = projectPoint(model.centers[0], modelYaw, modelPitch, effectiveZoom, modelPan)
   const modelEnd = projectPoint(model.centers.at(-1)!, modelYaw, modelPitch, effectiveZoom, modelPan)
@@ -335,7 +407,10 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     map.on('load', () => {
       map.addSource('terrain-dem', { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
-      map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem', paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' } })
+      // MapLibre recommends separate raster-dem source instances for terrain
+      // displacement and hillshade rendering, even when they share tile URLs.
+      map.addSource('hillshade-dem', { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
+      map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'hillshade-dem', paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' } })
       map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 })
       map.addSource('course-contours', { type: 'geojson', data: toContourFeatureCollection(displayCourse) })
       map.addLayer({ id: 'course-contours', type: 'line', source: 'course-contours', paint: { 'line-color': '#637e70', 'line-width': 1.2, 'line-opacity': .62, 'line-dasharray': [1, 2] } })
@@ -545,13 +620,17 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
       {mode === 'model' && <section className={`route-model-panel ${repairingProfile ? 'profile-repairing' : ''}`} aria-label="3Dルート模型" aria-busy={repairingProfile}>
-        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: 1.15, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: 1.45, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: 1.25, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: 1.35, pan: [0, 0] })}>カーブ</button></div></div>
+        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: compactModel ? 1.75 : 1.35, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: compactModel ? 1.9 : 1.5, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: compactModel ? 1.8 : 1.4, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: compactModel ? 1.85 : 1.45, pan: [0, 0] })}>カーブ</button></div></div>
         {repairingProfile && <div className="model-profile-loading" role="status"><span aria-hidden="true" /><strong>標高データを再計算中</strong><small>このコースの古い異常波形を修復しています</small></div>}
+        {terrainStatus === 'loading' && <div className="model-terrain-status" role="status"><span aria-hidden="true" />周辺地形を読み込み中</div>}
+        {terrainStatus === 'fallback' && <div className="model-terrain-status fallback" role="status">地形データを取得できないため簡易地形を表示中</div>}
         {elevationRepairFailed && <p className="model-profile-warning" role="status">標高データを確認できませんでした。誤った推定値は保存していません。通信後にもう一度開いてください。</p>}
         {elevationPersistenceFailed && <p className="model-profile-warning" role="status">表示は修復しましたが、Firestoreへの保存に失敗しました。ログイン状態と通信を確認して、もう一度開いてください。</p>}
         <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で視点を回転、2本指で平行移動とピンチ拡大縮小ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
-          <defs><linearGradient id="terrain-wash" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#86c7a4" stopOpacity=".32" /><stop offset="1" stopColor="#183f2d" stopOpacity=".1" /></linearGradient><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
-          <g className="model-terrain">{terrainFaces.map((face, index) => <polygon key={index} points={face.points} fill="url(#terrain-wash)" />)}</g><g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
+          <defs><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
+          <g className="model-terrain">{terrainModel.faces.map((face, index) => <polygon className={face.side ? 'terrain-skirt' : undefined} key={index} points={face.points} fill={face.fill} />)}</g>
+          <g className="model-terrain-contours" aria-label={`${terrainModel.contourStep}m間隔の等高線`}>{terrainModel.contours.map((points, index) => <polyline key={index} points={points} />)}</g>
+          <g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
           <polyline className="model-route-line-glow" points={modelLinePoints} />
           <g className="model-grade-line">{gradeSegments.map((segment, index) => <polyline key={index} points={segment.points} stroke={segment.color} />)}</g>
           <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
@@ -561,6 +640,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
           {visibleLandmarks.map((landmark) => <g className={`model-landmark ${landmark.type ?? 'place'}`} key={`${landmark.name}-${landmark.progress}`} role="button" tabIndex={0} aria-label={`${landmark.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(landmark) }}><circle cx={landmark.x} cy={landmark.y} r="7" /><line x1={landmark.x} y1={landmark.y} x2={landmark.labelX} y2={landmark.labelY + 3} /><text x={landmark.labelX} y={landmark.labelY} textAnchor={landmark.labelOnLeft ? 'end' : 'start'}>{landmark.name}</text></g>)}
           <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><g className="model-terminal start"><circle cx={modelStart[0]} cy={modelStart[1]} r="10" /><text x={modelStart[0] - 32} y={modelStart[1] + 38}>START</text><text x={modelStart[0] - 42} y={modelStart[1] + 59}>{profile[0]}m</text></g><g className="model-terminal goal"><circle cx={modelEnd[0]} cy={modelEnd[1]} r="10" /><text x={modelEnd[0] - 26} y={modelEnd[1] - 27}>GOAL</text><text x={modelEnd[0] - 31} y={modelEnd[1] - 7}>{profile.at(-1)}m</text></g><text x="410" y="455">距離 {course.distanceKm}km</text>
         </svg>
+        <small className="model-terrain-credit">地形: {terrainStatus === 'ready' ? 'AWS Terrain Tiles（実標高）' : '簡易推定'} · 等高線 {terrainModel.contourStep}m</small>
         <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {profileMax - profileMin}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
         {activeLandmark && <aside className="landmark-card"><button onClick={() => setActiveLandmark(null)} aria-label="地点情報を閉じる">×</button><strong>{activeLandmark.name}</strong><span>{activeLandmark.type === 'ic' ? 'IC・出入口' : activeLandmark.type === 'viewpoint' ? '展望・休憩地点' : '周辺地点'} · STARTから約{(activeLandmark.progress * course.distanceKm).toFixed(1)}km</span></aside>}
       </section>}
