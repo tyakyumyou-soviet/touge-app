@@ -10,7 +10,10 @@
   --mint: #6fc29d;
   --yellow: #f2d16b;
   --paper: #f7f5ed;
+  --panel: #ffffff;
   --line: #dcd9ce;
+  --muted: #657169;
+  --accent: #6fc29d;
   --danger: #a34431;
 }
 
@@ -254,7 +257,24 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .draft-point-popup button { padding: 7px 9px; color: #1b261f; background: #f2d16b; border: 0; border-radius: 6px; font-size: 12px; font-weight: 800; cursor: pointer; }
 .draft-point-popup button:last-child { color: #405149; background: #edf2ee; }
 .route-builder-stage footer, .route-details-stage footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.text-button { padding: 0; color: var(--green); background: none; border: 0; text-decoration: underline; font-size: 11px; }
+.text-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: #1c6347;
+  background: #edf5ef;
+  border: 1px solid #b8d5c4;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.text-button:hover:not(:disabled) { background: #dfeee4; border-color: #83b79d; }
+.text-button:disabled { opacity: .45; cursor: not-allowed; }
+.text-button.danger-button { color: #9d3f31; background: #fff4f1; border-color: #e3b6ad; }
+.text-button.danger-button:hover:not(:disabled) { background: #fde5df; border-color: #d68577; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 .form-grid .wide { grid-column: 1 / -1; }
 .modal label { display: grid; gap: 5px; color: #455149; font-size: 11px; font-weight: 600; }
@@ -487,7 +507,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .community-panel > header, .community-panel .mobile-sheet-drag-region > header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
 .profile-editor { display: grid; grid-template-columns: 72px 1fr; gap: 16px; align-items: start; margin-bottom: 14px; }
 .profile-avatar { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #18231f; font-size: 28px; font-weight: 800; }
-.community-panel .button { margin-top: 8px; }
+.community-panel > .button { margin-top: 8px; }
 .join-course, .social-thread { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .join-course h3, .social-thread h3 { margin: 0 0 6px; }
 .join-course p, .muted { color: var(--muted); font-size: 13px; }
@@ -517,5 +537,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .community-panel { width: calc(100% - 16px); max-height: 92dvh; padding: 16px; }
   .profile-editor { grid-template-columns: 1fr; }
   .profile-avatar { width: 52px; height: 52px; font-size: 23px; }
+  .profile-social, .profile-showcase { margin-top: 14px; padding-top: 14px; }
   .join-options { grid-template-columns: 1fr; }
+  .social-actions { flex-wrap: wrap; }
+  .social-thread form { align-items: stretch; flex-direction: column; }
+  .social-thread form .button { width: 100%; margin-top: 0; }
 }
