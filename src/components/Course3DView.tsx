@@ -443,10 +443,11 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     // Two-finger panning felt too restrained on phones because the SVG viewBox
     // dampens physical finger travel. Amplify midpoint translation while keeping
     // the original model point anchored during pinch zoom.
-    const panGain = 1.65
+    const horizontalPanGain = 1.65
+    const verticalPanGain = 2.5
     const targetAnchor: Point2 = [
-      pinch.anchor[0] + (anchor[0] - pinch.anchor[0]) * panGain,
-      pinch.anchor[1] + (anchor[1] - pinch.anchor[1]) * panGain,
+      pinch.anchor[0] + (anchor[0] - pinch.anchor[0]) * horizontalPanGain,
+      pinch.anchor[1] + (anchor[1] - pinch.anchor[1]) * verticalPanGain,
     ]
     const visualZoom = model.autoFit * zoom
     applyModelView({ zoom, pan: [targetAnchor[0] - 500 - pinch.modelOffset[0] * visualZoom, targetAnchor[1] - 365 - pinch.modelOffset[1] * visualZoom] })
