@@ -194,7 +194,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     } finally { setBusy(false) }
   }
 
-  return <div className="modal-backdrop" role="presentation"><section className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
+  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     </div>
     {stage === 'choice' ? <section className="creation-choice" aria-label="コースの作成方法">

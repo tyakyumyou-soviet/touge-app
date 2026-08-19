@@ -6,6 +6,7 @@ import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { assignCourseColors } from '../lib/courseColors'
+import { visibleMapCameraPadding } from '../lib/mapCamera'
 
 interface MapViewProps {
   courses: Course[]
@@ -55,20 +56,6 @@ const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
   }] : [],
 })
 
-/** On phones, centre a searched place in the part of the map that remains
- * visible above the live bottom sheet, rather than behind that sheet. */
-function mobileVisibleMapOffset(container: HTMLDivElement) {
-  if (!window.matchMedia('(max-width: 760px)').matches) return [0, 0] as [number, number]
-  const sheet = document.querySelector<HTMLElement>('.course-form:not(.surface-leaving)')
-  if (!sheet) return [0, 0] as [number, number]
-  const mapRect = container.getBoundingClientRect()
-  const sheetRect = sheet.getBoundingClientRect()
-  const visibleBottom = Math.min(mapRect.bottom, Math.max(mapRect.top, sheetRect.top))
-  const visibleHeight = visibleBottom - mapRect.top
-  if (visibleHeight < 80) return [0, 0] as [number, number]
-  return [0, visibleHeight / 2 - mapRect.height / 2] as [number, number]
-}
-
 export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -115,7 +102,20 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       return
     }
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
-    map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right')
+    const geolocate = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true })
+    map.addControl(geolocate, 'top-right')
+    geolocate.on('geolocate', (event) => {
+      const container = containerRef.current
+      if (!container) return
+      const result = event as GeolocationPosition
+      map.flyTo({
+        center: [result.coords.longitude, result.coords.latitude],
+        padding: visibleMapCameraPadding(container),
+        zoom: Math.max(map.getZoom(), 14),
+        duration: 500,
+        essential: true,
+      })
+    })
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
 
     map.on('load', () => {
@@ -279,12 +279,13 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     const map = mapRef.current
     const container = containerRef.current
     if (!map || !container || !focusPoint) return
-    map.flyTo({ center: focusPoint, offset: mobileVisibleMapOffset(container), zoom: Math.max(map.getZoom(), 15), duration: 500, essential: true })
-  }, [focusPoint, drawing])
+    map.flyTo({ center: focusPoint, padding: visibleMapCameraPadding(container), zoom: Math.max(map.getZoom(), 15), duration: 500, essential: true })
+  }, [focusPoint, drawing, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.isStyleLoaded()) return
+    const container = containerRef.current
+    if (!map?.isStyleLoaded() || !container) return
     const source = map.getSource('selected-course') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected?.route ?? [] } })
     ;(map.getSource('selected-contours') as GeoJSONSource | undefined)?.setData(toContourFeatureCollection(selected))
@@ -294,8 +295,12 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
     )
-    map.fitBounds(bounds, { padding: { top: 110, bottom: 210, left: 40, right: 40 }, maxZoom: 12.5, duration: 900 })
-  }, [selected])
+    map.fitBounds(bounds, {
+      padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }),
+      maxZoom: 12.5,
+      duration: 900,
+    })
+  }, [selected, mapReady])
 
   useEffect(() => {
     const map = mapRef.current

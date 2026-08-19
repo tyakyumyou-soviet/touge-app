@@ -67,7 +67,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   }
 
   return (
-    <article className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetCollapsed ? 'collapsed' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetCollapsed ? `translateY(calc(100% - 54px + ${sheetOffset}px))` : sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
+    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${sheetExpanded ? 'expanded' : ''} ${sheetCollapsed ? 'collapsed' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetCollapsed ? `translateY(calc(100% - 54px + ${sheetOffset}px))` : sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
       <div className="detail-sheet-top" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}>
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
       </div>

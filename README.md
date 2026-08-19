@@ -34,6 +34,10 @@ npm run dev
 npm run check
 ```
 
+### 地図カメラの実装規約
+
+地点検索、コース選択、現在地、ルート全体表示など、プログラムから地図を移動する処理では `src/lib/mapCamera.ts` の `visibleMapCameraPadding()` を必ず使用します。地図に重なる新しいモバイル用シートには `data-map-occlusion="bottom-sheet"` を付けてください。これにより、シートをドラッグした現在位置を基準に、対象が実際に見えている地図領域の中央へ表示されます。
+
 ## Firebase設定
 
 Firebaseプロジェクト `touge-app` のWeb設定は [src/lib/firebase.ts](./src/lib/firebase.ts) にあります。Firebase Web APIキーはクライアント識別情報であり、秘密鍵ではありません。アクセス制御はSecurity Rules、Authentication、App Checkで行ってください。
