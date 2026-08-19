@@ -34,6 +34,7 @@ export default function App() {
   const [sort, setSort] = useState<'recommended' | 'curves' | 'elevation' | 'width'>('recommended')
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
+  const [authReady, setAuthReady] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [surfaceMotion, setSurfaceMotion] = useState<'idle' | 'leaving-list' | 'leaving-form' | 'entering-list' | 'entering-form'>('idle')
@@ -60,7 +61,7 @@ export default function App() {
   const unlimitedWaypoints = canUseUnlimitedWaypoints(user)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, setUser)
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => { setUser(nextUser); setAuthReady(true) })
     completeRedirectLogin().catch((error: unknown) => {
       const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
       setNotice(code ? `Googleログインを完了できませんでした（${code}）。Firebase Authenticationの設定を確認してください。` : 'Googleログインを完了できませんでした。もう一度お試しください。')
@@ -69,16 +70,19 @@ export default function App() {
   }, [])
   useEffect(() => { window.__tougeMarkReady?.() }, [])
   useEffect(() => {
+    if (!authReady) return
+    let cancelled = false
     loadPublicCourses(user?.uid).then((remote) => {
-      if (remote.length) {
-        const seedIds = new Set(remote.map((course) => course.id))
-        setCourses([...remote, ...sampleCourses.filter((course) => !seedIds.has(course.id))])
-      }
+      if (cancelled) return
+      const seedIds = new Set(remote.map((course) => course.id))
+      setCourses([...remote, ...sampleCourses.filter((course) => !seedIds.has(course.id))])
     }).catch((error: unknown) => {
+      if (cancelled) return
       const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
       setNotice(code === 'permission-denied' ? 'Firebaseからコースを読み込めませんでした。Firestoreルールの公開設定を確認してください。' : 'Firebaseからコースを読み込めませんでした。通信状態を確認してください。')
     })
-  }, [user?.uid])
+    return () => { cancelled = true }
+  }, [authReady, user?.uid])
   useEffect(() => {
     const courseId = new URLSearchParams(location.search).get('course')
     if (!courseId) return
@@ -371,7 +375,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={filtered} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={courses} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section className={`explore-panel open ${drawing ? 'drawing' : ''} ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={{ transform: drawing ? undefined : listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
           <div className="explore-panel-top" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
