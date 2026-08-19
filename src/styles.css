@@ -357,10 +357,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .model-terrain-surface.terrain-skirt { opacity: .94; }
 .model-terrain-contour { fill: none; stroke: #f3ecd0; stroke-width: 1.1px; stroke-linecap: round; opacity: .34; }
 .model-terrain-credit { position: absolute; z-index: 3; left: 20px; bottom: 54px; padding: 3px 6px; border-radius: 4px; background: #07100c99; color: #b9c9c0; font-size: 9px; pointer-events: none; }
-.model-ribbon-face { stroke: none; }
-.model-route-line-glow { fill: none; stroke: #07100ccc; stroke-width: 15px; stroke-linecap: butt; stroke-linejoin: round; }
 .model-route-line { fill: none; stroke: url(#model-route-line); stroke-width: 9px; stroke-linecap: round; stroke-linejoin: round; }
-.model-grade-segment > polyline:last-child { fill: none; stroke-width: 9px; stroke-linecap: butt; stroke-linejoin: round; }
+.model-grade-segment { fill: none; stroke-width: 9px; stroke-linecap: butt; stroke-linejoin: round; }
 .route-travel-dot { filter: drop-shadow(0 1px 3px #000); }
 .distance-marker circle { fill: #fff; stroke: #1e3529; stroke-width: 2px; }
 .distance-marker text, .route-highlight text { fill: #fff; stroke: #07100c; stroke-width: 5px; paint-order: stroke; font-size: 20px; font-weight: 800; }

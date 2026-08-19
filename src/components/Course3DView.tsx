@@ -182,7 +182,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     })
     // A narrower ribbon and no segment outline prevent the high-resolution mesh
     // from looking like a chain of oversized dots.
-    const width = 5.5; const thickness = 9
+    const width = 5.5
     const left: Point3[] = []; const right: Point3[] = []
     centers.forEach((point, index) => {
       const before = centers[Math.max(0, index - 1)]; const after = centers[Math.min(centers.length - 1, index + 1)]
@@ -201,7 +201,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     // Never enlarge a short route merely to fill the canvas.  The fit only prevents
     // a long / tall route from being clipped, retaining meaningful distance scaling.
     const autoFit = Math.min(1, .96 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
-    return { centers, elevations: sampled.map(({ elevation }) => elevation), left, right, thickness, autoFit, defaultYaw, sceneScale, centerLng, centerLat, kmPerLongitude, elevationMin, verticalCompression, verticalScale }
+    return { centers, elevations: sampled.map(({ elevation }) => elevation), autoFit, defaultYaw, sceneScale, centerLng, centerLat, kmPerLongitude, elevationMin, verticalCompression, verticalScale }
   }, [compactModel, course.distanceKm, course.route, exaggeration, profile, terrainGrid])
   const effectiveZoom = model.autoFit * modelZoom
 
@@ -251,34 +251,6 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   }, [compactModel, course.id, course.route])
 
   useEffect(() => () => { if (modelViewFrameRef.current) window.cancelAnimationFrame(modelViewFrameRef.current) }, [])
-  const modelFaces = useMemo(() => {
-    const faces: { points: string; color: string; depth: number }[] = []
-    const addFace = (points: Point3[], color: string) => {
-      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), color, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw, modelPitch), 0) / points.length - 5 })
-    }
-    // The coloured centre line remains full resolution. The dark underside is
-    // only a depth cue, so coarser faces are visually equivalent and remove
-    // roughly two thirds of the SVG polygons from every gesture frame.
-    const faceStride = compactModel ? 3 : 2
-    for (let i = faceStride; i < model.left.length; i += faceStride) {
-      const previous = i - faceStride
-      const leftBefore = model.left[previous]; const leftNow = model.left[i]
-      const rightBefore = model.right[previous]; const rightNow = model.right[i]
-      const leftUnder: Point3 = [leftNow[0], leftNow[1], leftNow[2] - model.thickness]
-      const leftBeforeUnder: Point3 = [leftBefore[0], leftBefore[1], leftBefore[2] - model.thickness]
-      const rightUnder: Point3 = [rightNow[0], rightNow[1], rightNow[2] - model.thickness]
-      const rightBeforeUnder: Point3 = [rightBefore[0], rightBefore[1], rightBefore[2] - model.thickness]
-      // The route's visible surface is rendered as fine dots below. Keep only
-      // a very thin closed underside so the line does not look like chunky tiles.
-      addFace([rightBefore, rightNow, rightUnder, rightBeforeUnder], '#07100c')
-      addFace([leftNow, leftBefore, leftBeforeUnder, leftUnder], '#10261b')
-      addFace([leftBeforeUnder, rightBeforeUnder, rightUnder, leftUnder], '#050a07')
-    }
-    const startLeft = model.left[0]; const startRight = model.right[0]; const endLeft = model.left.at(-1)!; const endRight = model.right.at(-1)!
-    addFace([startLeft, startRight, [startRight[0], startRight[1], startRight[2] - model.thickness], [startLeft[0], startLeft[1], startLeft[2] - model.thickness]], '#122d20')
-    addFace([endRight, endLeft, [endLeft[0], endLeft[1], endLeft[2] - model.thickness], [endRight[0], endRight[1], endRight[2] - model.thickness]], '#122d20')
-    return faces
-  }, [compactModel, effectiveZoom, model, modelPan, modelPitch, modelYaw])
   const terrainModel = useMemo(() => {
     const xs = model.centers.map(([x]) => x); const ys = model.centers.map(([, y]) => y)
     const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys)
@@ -407,9 +379,8 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   const sceneLayers = useMemo(() => [
     ...terrainModel.faces.map((face, index) => ({ kind: 'terrain' as const, key: `terrain-${index}`, ...face })),
     ...terrainModel.contours.map((contour, index) => ({ kind: 'contour' as const, key: `contour-${index}`, ...contour })),
-    ...modelFaces.map((face, index) => ({ kind: 'ribbon' as const, key: `ribbon-${index}`, ...face })),
     ...gradeSegments.map((segment, index) => ({ kind: 'route' as const, key: `route-${index}`, ...segment })),
-  ].sort((a, b) => b.depth - a.depth), [gradeSegments, modelFaces, terrainModel.contours, terrainModel.faces])
+  ].sort((a, b) => b.depth - a.depth), [gradeSegments, terrainModel.contours, terrainModel.faces])
   const highlights = useMemo(() => {
     const entries = [
       { key: 'gradient', label: '急勾配', color: '#e86a4d', progress: 0 },
@@ -669,9 +640,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
               ? <polygon className={`model-terrain-surface ${layer.side ? 'terrain-skirt' : ''}`} key={layer.key} points={layer.points} fill={layer.fill} />
               : layer.kind === 'contour'
                 ? <polyline className="model-terrain-contour" key={layer.key} points={layer.points} />
-                : layer.kind === 'ribbon'
-                  ? <polygon className="model-ribbon-face" key={layer.key} points={layer.points} fill={layer.color} />
-                  : <g className="model-grade-segment" key={layer.key}><polyline className="model-route-line-glow" points={layer.points} /><polyline points={layer.points} stroke={layer.color} /></g>)}
+                : <polyline className="model-grade-segment" key={layer.key} points={layer.points} stroke={layer.color} />)}
           </g>
           <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
           <g className="model-compass" aria-label="方位"><circle cx="932" cy="57" r="33" />{modelCompass.map((direction) => <g key={direction.label} className={direction.label === 'N' ? 'north' : ''}><line x1="932" y1="57" x2={direction.x} y2={direction.y} /><text x={direction.labelX} y={direction.labelY}>{direction.label}</text></g>)}</g>
