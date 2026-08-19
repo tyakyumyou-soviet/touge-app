@@ -1,0 +1,52 @@
+import { useState, type FormEvent } from 'react'
+import type { Course } from '../types'
+import { useMobileSheet } from '../hooks/useMobileSheet'
+
+export type EditableCourse = Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>
+
+interface Props {
+  course: Course
+  onClose: () => void
+  onSave: (courseId: string, changes: EditableCourse) => Promise<void>
+  onDelete: (courseId: string) => Promise<void>
+}
+
+export function CourseManageForm({ course, onClose, onSave, onDelete }: Props) {
+  const sheet = useMobileSheet()
+  const [draft, setDraft] = useState<EditableCourse>(() => ({
+    name: course.name, area: course.area, prefecture: course.prefecture, description: course.description,
+    tags: course.tags, cautions: course.cautions, visibility: course.visibility,
+  }))
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteArmed, setDeleteArmed] = useState(false)
+  const [notice, setNotice] = useState('')
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true); setNotice('')
+    try { await onSave(course.id, draft); setNotice('変更をFirebaseへ保存しました') }
+    catch { setNotice('保存できませんでした。通信状態とログイン状態を確認してください') }
+    finally { setSaving(false) }
+  }
+
+  async function remove() {
+    if (!deleteArmed) { setDeleteArmed(true); return }
+    setDeleting(true); setNotice('')
+    try { await onDelete(course.id); onClose() }
+    catch { setNotice('削除できませんでした。通信状態とログイン状態を確認してください') }
+    finally { setDeleting(false) }
+  }
+
+  return <div className="modal-backdrop" role="presentation"><section className={`modal course-manager ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="course-manager-title">
+    <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">MY COURSE</p><h2 id="course-manager-title">コース情報を編集</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="編集画面を閉じる">×</button></header></div>
+    <div className="course-manager-summary"><strong>{course.name}</strong><span>{course.distanceKm} km · {course.durationMin}分 · 登録済みルートは維持されます</span></div>
+    <form onSubmit={save}>
+      <section className="course-manager-section"><h3>基本情報</h3><div className="form-grid"><label>コース名<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>エリア<input required value={draft.area} onChange={(event) => setDraft({ ...draft, area: event.target.value })} /></label><label>都県<select value={draft.prefecture} onChange={(event) => setDraft({ ...draft, prefecture: event.target.value as Course['prefecture'] })}><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value as Course['visibility'] })}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label></div></section>
+      <section className="course-manager-section"><h3>紹介と走行メモ</h3><div className="form-grid"><label className="wide">説明<textarea required rows={4} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label><label className="wide">タグ<input value={draft.tags.join('、')} onChange={(event) => setDraft({ ...draft, tags: event.target.value.split(/[,、]/).map((item) => item.trim()).filter(Boolean) })} placeholder="ワイド、展望、高原" /></label><label className="wide">注意事項<textarea rows={3} value={draft.cautions.join('\n')} onChange={(event) => setDraft({ ...draft, cautions: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean) })} placeholder="1行に1件" /></label></div></section>
+      {notice && <p className="form-success" role="status">{notice}</p>}
+      <footer className="course-manager-actions"><button type="button" className="button secondary" onClick={onClose}>キャンセル</button><button className="button primary" disabled={saving}>{saving ? '保存中…' : '変更を保存'}</button></footer>
+    </form>
+    <section className={`course-manager-danger ${deleteArmed ? 'armed' : ''}`}><div><h3>コースを削除</h3><p>{deleteArmed ? 'この操作は取り消せません。関連する評価・いいね・コメントも削除されます。' : '登録したコースと関連データをFirebaseから削除します。'}</p></div><button className="button secondary" type="button" onClick={remove} disabled={deleting}>{deleting ? '削除中…' : deleteArmed ? '削除を確定' : '削除する'}</button></section>
+  </section></div>
+}

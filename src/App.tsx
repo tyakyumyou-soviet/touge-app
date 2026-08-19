@@ -9,6 +9,7 @@ import { InstallPrompt } from './components/InstallPrompt'
 import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
+import { CourseManageForm } from './components/CourseManageForm'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
@@ -52,7 +53,7 @@ export default function App() {
   const ignoreListTap = useRef(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
-  const [focusCourseEditor, setFocusCourseEditor] = useState(false)
+  const [courseManagerOpen, setCourseManagerOpen] = useState(false)
   const unlimitedWaypoints = canUseUnlimitedWaypoints(user)
 
   useEffect(() => {
@@ -342,7 +343,7 @@ export default function App() {
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
         </div>
 
-        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => { setFocusCourseEditor(false); setCommunityOpen(true) }} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => { setFocusCourseEditor(true); setCommunityOpen(true) }} />}
+        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
         {drawing && <CourseForm route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
@@ -356,7 +357,8 @@ export default function App() {
           <footer><button className="button secondary" onClick={() => { setLogoutConfirmOpen(false); logoutSheet.reset() }}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
         </section>
       </div>}
-      {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} focusCourseEditor={focusCourseEditor} onClose={() => { setCommunityOpen(false); setFocusCourseEditor(false) }} onLogout={() => { setCommunityOpen(false); setFocusCourseEditor(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} onUpdateCourse={handleCourseUpdate} onDeleteCourse={handleCourseDelete} />}
+      {courseManagerOpen && selected && user?.uid === selected.authorId && <CourseManageForm course={selected} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} />}
+      {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} />}
       <InstallPrompt />
     </div>
   )

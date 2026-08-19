@@ -143,6 +143,19 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-owner-actions h3 { margin: 0 0 4px; font-size: 14px; }
 .course-owner-actions p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .course-owner-actions .button { flex: 0 0 auto; margin: 0; }
+.course-manager { width: min(650px, 100%); }
+.course-manager-summary { display: grid; gap: 3px; margin: 2px 0 18px; padding: 12px 14px; background: #edf5ef; border: 1px solid #c9dccd; border-radius: 10px; }
+.course-manager-summary strong { font-size: 15px; }
+.course-manager-summary span { color: var(--muted); font-size: 12px; }
+.course-manager-section { margin: 16px 0; padding: 16px; background: #f7f8f3; border: 1px solid #e0e2da; border-radius: 11px; }
+.course-manager-section h3, .course-manager-danger h3 { margin: 0 0 12px; font-size: 14px; }
+.course-manager-section .form-grid { margin: 0; }
+.course-manager-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.course-manager-danger { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 24px; padding: 14px; background: #fcf1ee; border: 1px solid #e6bbb1; border-radius: 11px; }
+.course-manager-danger h3 { color: #9d3f31; }
+.course-manager-danger p { margin: 0; color: #76574f; font-size: 12px; line-height: 1.5; }
+.course-manager-danger.armed { background: #ffe5df; border-color: #d96854; }
+.course-manager-danger.armed .button { color: #fff; background: #bd4535; border-color: #bd4535; }
 .toll-box a { color: #286c51; font-size: 10px; font-weight: 700; }
 .toll-box small { color: #778079; font-size: 8px; }
 .toll-box > button { margin-top: 10px; padding: 7px 10px; color: #3e5549; background: #fff; border: 1px solid #c7cec9; border-radius: 6px; font-size: 9px; font-weight: 700; }
@@ -369,6 +382,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .mobile-sheet-handle::after { content: ''; position: absolute; top: 11px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
   .modal { max-height: 88dvh; border-radius: 18px 18px 8px 8px; }
   .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; max-height: 61dvh; }
+  .course-manager { padding: 18px; }
+  .course-manager-section { padding: 13px; }
+  .course-manager-danger { align-items: flex-start; flex-direction: column; }
+  .course-manager-danger .button { width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .wide { grid-column: auto; }
   .notice { width: calc(100% - 24px); bottom: 12px; text-align: center; }
