@@ -1,9 +1,11 @@
+import type { ReactNode } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, overallRating, userRatingCountFor } from '../lib/course'
 
-export function CourseList({ courses, selectedId, onSelect }: { courses: Course[]; selectedId?: string; onSelect: (course: Course) => void }) {
+export function CourseList({ courses, selectedId, onSelect, header }: { courses: Course[]; selectedId?: string; onSelect: (course: Course) => void; header?: ReactNode }) {
   return (
     <div className="course-list" aria-live="polite">
+      {header}
       {courses.length === 0 && <div className="empty-state"><strong>条件に合うコースがありません</strong><span>フィルターを変更してみてください。</span></div>}
       {courses.map((course) => (
         <button key={course.id} className={`course-card ${selectedId === course.id ? 'selected' : ''}`} onClick={() => onSelect(course)}>
