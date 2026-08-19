@@ -9,6 +9,7 @@ import { RatingBars } from './RatingBars'
 interface Props {
   course: Course
   onClose: () => void
+  onBack: () => void
   onRate: () => void
   onShare: () => void
   onOpen3d: () => void
@@ -18,7 +19,7 @@ interface Props {
   onManageCourse: () => void
 }
 
-export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onReportToll, onCommunity, canManageCourse, onManageCourse }: Props) {
+export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onCommunity, canManageCourse, onManageCourse }: Props) {
   const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
@@ -73,7 +74,10 @@ export function CourseDetail({ course, onClose, onRate, onShare, onOpen3d, onRep
       <div className="detail-scroll">
         <header className="detail-header">
           <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
-          <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
+          <div className="detail-header-actions">
+            <button className="icon-button back-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onBack() }} aria-label="コース一覧へ戻る">←</button>
+            <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
+          </div>
         </header>
         <div className="hero-metrics">
           <div><strong>{course.distanceKm}</strong><span>km</span></div>

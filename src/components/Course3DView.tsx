@@ -66,9 +66,26 @@ function projectPoint([x, y, z]: Point3, yaw: number, pitch: number, zoom = 1, [
   return [500 + panX + rotatedX * zoom, 365 + panY + (-depth * Math.sin(pitchRad) - z * Math.cos(pitchRad)) * zoom]
 }
 
-function viewDepth([x, y]: Point3, yaw: number): number {
+function viewDepth([x, y, z]: Point3, yaw: number, pitch: number): number {
   const yawRad = (yaw * Math.PI) / 180
-  return x * Math.sin(yawRad) + y * Math.cos(yawRad)
+  const pitchRad = (pitch * Math.PI) / 180
+  const horizontalDepth = x * Math.sin(yawRad) + y * Math.cos(yawRad)
+  return horizontalDepth * Math.cos(pitchRad) - z * Math.sin(pitchRad)
+}
+
+function terrainElevationAt(grid: TerrainGrid | null, [lng, lat]: Coordinate): number | null {
+  if (!grid?.rows.length || !grid.rows[0]?.length) return null
+  const rows = grid.rows; const rowCount = rows.length - 1; const columnCount = rows[0].length - 1
+  if (rowCount < 1 || columnCount < 1) return null
+  const minLng = rows[0][0].coordinate[0]; const maxLng = rows[0][columnCount].coordinate[0]
+  const minLat = rows[0][0].coordinate[1]; const maxLat = rows[rowCount][0].coordinate[1]
+  const columnPosition = Math.max(0, Math.min(columnCount, (lng - minLng) / Math.max(.0000001, maxLng - minLng) * columnCount))
+  const rowPosition = Math.max(0, Math.min(rowCount, (lat - minLat) / Math.max(.0000001, maxLat - minLat) * rowCount))
+  const column = Math.min(columnCount - 1, Math.floor(columnPosition)); const row = Math.min(rowCount - 1, Math.floor(rowPosition))
+  const x = columnPosition - column; const y = rowPosition - row
+  const top = rows[row][column].elevation + (rows[row][column + 1].elevation - rows[row][column].elevation) * x
+  const bottom = rows[row + 1][column].elevation + (rows[row + 1][column + 1].elevation - rows[row + 1][column].elevation) * x
+  return top + (bottom - top) * y
 }
 
 function pointsText(points: Point2[]): string { return points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ') }
@@ -152,11 +169,17 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const verticalScale = 3.2 * (exaggeration / 1.5)
     const rawVerticalRange = (elevationRange / 1000) * sceneScale * verticalScale
     const verticalCompression = rawVerticalRange > 220 ? 220 / rawVerticalRange : 1
-    const centers: Point3[] = sampled.map(({ point, elevation }) => [
-      (point[0] - centerLng) * kmPerLongitude * sceneScale,
-      (point[1] - centerLat) * 111.32 * sceneScale,
-      ((elevation - elevationMin) / 1000) * sceneScale * verticalScale * verticalCompression,
-    ])
+    const centers: Point3[] = sampled.map(({ point, elevation }) => {
+      const terrainElevation = terrainElevationAt(terrainGrid, point)
+      // Follow the road profile, but never let its surface sink into the DEM
+      // mesh. A tiny clearance also prevents painter-order flicker.
+      const visibleElevation = Math.max(elevation, terrainElevation ?? elevation) + 2
+      return [
+        (point[0] - centerLng) * kmPerLongitude * sceneScale,
+        (point[1] - centerLat) * 111.32 * sceneScale,
+        ((visibleElevation - elevationMin) / 1000) * sceneScale * verticalScale * verticalCompression,
+      ]
+    })
     // A narrower ribbon and no segment outline prevent the high-resolution mesh
     // from looking like a chain of oversized dots.
     const width = 5.5; const thickness = 9
@@ -179,7 +202,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     // a long / tall route from being clipped, retaining meaningful distance scaling.
     const autoFit = Math.min(1, .96 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
     return { centers, elevations: sampled.map(({ elevation }) => elevation), left, right, thickness, autoFit, defaultYaw, sceneScale, centerLng, centerLat, kmPerLongitude, elevationMin, verticalCompression, verticalScale }
-  }, [compactModel, course.distanceKm, course.route, exaggeration, profile])
+  }, [compactModel, course.distanceKm, course.route, exaggeration, profile, terrainGrid])
   const effectiveZoom = model.autoFit * modelZoom
 
   useEffect(() => {
@@ -212,7 +235,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const controller = new AbortController()
     setTerrainGrid(null)
     setTerrainStatus('loading')
-    const resolution = compactModel ? 16 : 24
+    const resolution = compactModel ? 20 : 28
     fetchTerrainGrid(course.route, resolution, resolution, controller.signal).then((grid) => {
       if (controller.signal.aborted) return
       setTerrainGrid(grid)
@@ -228,7 +251,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   const modelFaces = useMemo(() => {
     const faces: { points: string; color: string; depth: number }[] = []
     const addFace = (points: Point3[], color: string) => {
-      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), color, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw), 0) / points.length })
+      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), color, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw, modelPitch), 0) / points.length - 5 })
     }
     model.left.slice(1).forEach((_, index) => {
       const i = index + 1
@@ -247,7 +270,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const startLeft = model.left[0]; const startRight = model.right[0]; const endLeft = model.left.at(-1)!; const endRight = model.right.at(-1)!
     addFace([startLeft, startRight, [startRight[0], startRight[1], startRight[2] - model.thickness], [startLeft[0], startLeft[1], startLeft[2] - model.thickness]], '#122d20')
     addFace([endRight, endLeft, [endLeft[0], endLeft[1], endLeft[2] - model.thickness], [endRight[0], endRight[1], endRight[2] - model.thickness]], '#122d20')
-    return faces.sort((a, b) => a.depth - b.depth)
+    return faces
   }, [effectiveZoom, model, modelPan, modelPitch, modelYaw])
   const terrainModel = useMemo(() => {
     const xs = model.centers.map(([x]) => x); const ys = model.centers.map(([, y]) => y)
@@ -295,7 +318,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
       const averageElevation = elevations.slice(row - 1, row + 1).reduce((sum, values) => sum + values[column - 1] + values[column], 0) / 4
       const elevationAmount = Math.max(0, Math.min(1, (averageElevation - terrainMin) / terrainRange))
       const hue = 151 - elevationAmount * 58; const saturation = 24 - elevationAmount * 7; const luminance = 19 + elevationAmount * 24 + light * 12
-      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), fill: `hsl(${hue.toFixed(0)} ${saturation.toFixed(0)}% ${luminance.toFixed(0)}%)`, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw), 0) / points.length })
+      faces.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), fill: `hsl(${hue.toFixed(0)} ${saturation.toFixed(0)}% ${luminance.toFixed(0)}%)`, depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw, modelPitch), 0) / points.length })
     }
     // Dark vertical skirts make the terrain read as a physical cut-away model,
     // rather than a transparent sheet floating behind the route.
@@ -304,11 +327,11 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     edge.forEach((point, index) => {
       const next = edge[(index + 1) % edge.length]
       const points: Point3[] = [point, next, [next[0], next[1], skirtBottom], [point[0], point[1], skirtBottom]]
-      faces.push({ points: pointsText(points.map((item) => projectPoint(item, modelYaw, modelPitch, effectiveZoom, modelPan))), fill: '#0b2118', depth: (viewDepth(point, modelYaw) + viewDepth(next, modelYaw)) / 2, side: true })
+      faces.push({ points: pointsText(points.map((item) => projectPoint(item, modelYaw, modelPitch, effectiveZoom, modelPan))), fill: '#0b2118', depth: (viewDepth(point, modelYaw, modelPitch) + viewDepth(next, modelYaw, modelPitch)) / 2, side: true })
     })
 
     const contourStep = terrainRange <= 260 ? 25 : terrainRange <= 650 ? 50 : 100
-    const contours: string[] = []
+    const contours: { points: string; depth: number }[] = []
     const firstContour = Math.ceil(terrainMin / contourStep) * contourStep
     for (let level = firstContour; level <= terrainMax; level += contourStep) {
       for (let row = 1; row <= rowCount; row += 1) for (let column = 1; column <= columnCount; column += 1) {
@@ -321,11 +344,11 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
           const amount = (level - a) / (b - a); const start = cellPoints[edgeIndex]; const end = cellPoints[nextIndex]
           intersections.push([start[0] + (end[0] - start[0]) * amount, start[1] + (end[1] - start[1]) * amount, start[2] + (end[2] - start[2]) * amount + .8])
         }
-        if (intersections.length >= 2) contours.push(pointsText(intersections.slice(0, 2).map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))))
-        if (intersections.length === 4) contours.push(pointsText(intersections.slice(2, 4).map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))))
+        if (intersections.length >= 2) { const points = intersections.slice(0, 2); contours.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw, modelPitch), 0) / points.length }) }
+        if (intersections.length === 4) { const points = intersections.slice(2, 4); contours.push({ points: pointsText(points.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), depth: points.reduce((sum, point) => sum + viewDepth(point, modelYaw, modelPitch), 0) / points.length }) }
       }
     }
-    return { faces: faces.sort((a, b) => a.depth - b.depth), contours, contourStep }
+    return { faces, contours, contourStep }
   }, [compactModel, effectiveZoom, model, modelPan, modelPitch, modelYaw, terrainGrid])
   const modelLinePoints = useMemo(() => pointsText(model.centers.map((point) => projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan))), [effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
   const modelStart = projectPoint(model.centers[0], modelYaw, modelPitch, effectiveZoom, modelPan)
@@ -372,8 +395,14 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     const horizontalMetres = (Math.hypot(point[0] - before[0], point[1] - before[1]) / model.sceneScale) * 1000
     const gradientPercent = horizontalMetres > .1 ? ((model.elevations[index + 1] - model.elevations[index]) / horizontalMetres) * 100 : 0
     const color = gradientPercent > 4 ? '#e86a4d' : gradientPercent < -4 ? '#54a8f7' : '#54bd86'
-    return { points: pointsText([projectPoint(before, modelYaw, modelPitch, effectiveZoom, modelPan), projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)]), color }
+    return { points: pointsText([projectPoint(before, modelYaw, modelPitch, effectiveZoom, modelPan), projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)]), color, depth: (viewDepth(before, modelYaw, modelPitch) + viewDepth(point, modelYaw, modelPitch)) / 2 - 7 }
   }), [effectiveZoom, model.centers, model.elevations, model.sceneScale, modelPan, modelPitch, modelYaw])
+  const sceneLayers = useMemo(() => [
+    ...terrainModel.faces.map((face, index) => ({ kind: 'terrain' as const, key: `terrain-${index}`, ...face })),
+    ...terrainModel.contours.map((contour, index) => ({ kind: 'contour' as const, key: `contour-${index}`, ...contour })),
+    ...modelFaces.map((face, index) => ({ kind: 'ribbon' as const, key: `ribbon-${index}`, ...face })),
+    ...gradeSegments.map((segment, index) => ({ kind: 'route' as const, key: `route-${index}`, ...segment })),
+  ].sort((a, b) => b.depth - a.depth), [gradeSegments, modelFaces, terrainModel.contours, terrainModel.faces])
   const highlights = useMemo(() => {
     const entries = [
       { key: 'gradient', label: '急勾配', color: '#e86a4d', progress: 0 },
@@ -628,11 +657,15 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
         {elevationPersistenceFailed && <p className="model-profile-warning" role="status">表示は修復しましたが、Firestoreへの保存に失敗しました。ログイン状態と通信を確認して、もう一度開いてください。</p>}
         <svg className="route-model-canvas" viewBox="0 0 1000 480" role="img" aria-label={`${course.name}の3Dルート模型。1本指で視点を回転、2本指で平行移動とピンチ拡大縮小ができます。`} onPointerDown={startModelDrag} onPointerMove={moveModelDrag} onPointerUp={endModelDrag} onPointerCancel={endModelDrag} onTouchStart={startModelTouch} onTouchMove={moveModelTouch} onTouchEnd={endModelTouch} onTouchCancel={endModelTouch} onWheel={zoomModel}>
           <defs><linearGradient id="model-route-line" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#45ba7d" /><stop offset=".52" stopColor="#f2d16b" /><stop offset="1" stopColor="#df624a" /></linearGradient></defs>
-          <g className="model-terrain">{terrainModel.faces.map((face, index) => <polygon className={face.side ? 'terrain-skirt' : undefined} key={index} points={face.points} fill={face.fill} />)}</g>
-          <g className="model-terrain-contours" aria-label={`${terrainModel.contourStep}m間隔の等高線`}>{terrainModel.contours.map((points, index) => <polyline key={index} points={points} />)}</g>
-          <g className="model-ribbon">{modelFaces.map((face, index) => <polygon key={index} points={face.points} fill={face.color} />)}</g>
-          <polyline className="model-route-line-glow" points={modelLinePoints} />
-          <g className="model-grade-line">{gradeSegments.map((segment, index) => <polyline key={index} points={segment.points} stroke={segment.color} />)}</g>
+          <g className="model-depth-scene" aria-label={`${terrainModel.contourStep}m間隔の等高線`}>
+            {sceneLayers.map((layer) => layer.kind === 'terrain'
+              ? <polygon className={`model-terrain-surface ${layer.side ? 'terrain-skirt' : ''}`} key={layer.key} points={layer.points} fill={layer.fill} />
+              : layer.kind === 'contour'
+                ? <polyline className="model-terrain-contour" key={layer.key} points={layer.points} />
+                : layer.kind === 'ribbon'
+                  ? <polygon className="model-ribbon-face" key={layer.key} points={layer.points} fill={layer.color} />
+                  : <g className="model-grade-segment" key={layer.key}><polyline className="model-route-line-glow" points={layer.points} /><polyline points={layer.points} stroke={layer.color} /></g>)}
+          </g>
           <circle className="route-travel-dot" r="7" fill="#fff"><animateMotion dur="6s" repeatCount="indefinite" path={`M ${modelLinePoints.replaceAll(' ', ' L ')}`} /></circle>
           <g className="model-compass" aria-label="方位"><circle cx="932" cy="57" r="33" />{modelCompass.map((direction) => <g key={direction.label} className={direction.label === 'N' ? 'north' : ''}><line x1="932" y1="57" x2={direction.x} y2={direction.y} /><text x={direction.labelX} y={direction.labelY}>{direction.label}</text></g>)}</g>
           {distanceMarkers.map((marker) => <g className="distance-marker" key={marker.distance}><circle cx={marker.x} cy={marker.y} r="4" /><text x={marker.x + 8} y={marker.y - 8}>{marker.distance}km</text></g>)}
