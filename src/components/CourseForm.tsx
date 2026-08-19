@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import type { Coordinate, Course, CourseDraft, DraftPointRole } from '../types'
 import { routeDistanceKm } from '../lib/course'
+import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 
@@ -22,6 +23,16 @@ interface Props {
 }
 
 interface GeocodedPoint { coordinate: Coordinate; label: string; level?: number }
+
+interface DetailsValues {
+  name: string
+  area: string
+  prefecture: CourseDraft['prefecture']
+  description: string
+  tags: string
+  cautions: string
+  visibility: CourseDraft['visibility']
+}
 
 async function geocode(query: string): Promise<GeocodedPoint> {
   const normalized = query.trim().replace(/[－ー−]/g, '-')
@@ -75,12 +86,33 @@ export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, cou
   const [error, setError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
+  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', visibility: 'public' })
   const hasGoal = pointRoles.includes('goal')
   const courseMatches = useMemo(() => {
     const value = query.trim().toLocaleLowerCase('ja')
     if (!value) return []
     return courses.filter((course) => `${course.name}${course.area}${course.tags.join('')}`.toLocaleLowerCase('ja').includes(value)).slice(0, 3)
   }, [courses, query])
+  const recommendedTags = useMemo(() => [...courses
+    .flatMap((course) => course.tags)
+    .reduce((counts, tag) => counts.set(tag, (counts.get(tag) ?? 0) + 1), new Map<string, number>())
+    .entries()]
+    .sort(([, left], [, right]) => right - left)
+    .map(([tag]) => tag)
+    .slice(0, 8), [courses])
+
+  function openDetails() {
+    const defaults = buildCourseDraftDefaults(pointLabels, route)
+    setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', visibility: 'public' })
+    setError('')
+    setStage('details')
+  }
+
+  function addRecommendedTag(tag: string) {
+    const current = parseHashTags(details.tags)
+    if (current.includes(tag)) return
+    setDetails((previous) => ({ ...previous, tags: [...current, tag].map((item) => `#${item}`).join(', ') }))
+  }
 
   async function addSearchedPlace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setSearchNotice(''); setPendingSearchPoint(null)
@@ -93,10 +125,10 @@ export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, cou
     event.preventDefault()
     if (route.length < 2 || !hasGoal) { setError('地図上で始点とゴールを指定してください。'); setStage('route'); return }
     if (exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)) { setError(`地点は${WAYPOINT_LIMIT}個以下にしてください。不要な経由地を削除してから保存してください。`); setStage('route'); return }
-    const data = new FormData(event.currentTarget)
+    const defaults = buildCourseDraftDefaults(pointLabels, route)
     const draft: CourseDraft = {
-      name: String(data.get('name')), area: String(data.get('area')), prefecture: String(data.get('prefecture')) as CourseDraft['prefecture'], description: String(data.get('description')), route,
-      tags: String(data.get('tags')).split(/[,、]/).map((item) => item.trim()).filter(Boolean), cautions: String(data.get('cautions')).split('\n').map((item) => item.trim()).filter(Boolean), visibility: String(data.get('visibility')) as CourseDraft['visibility'],
+      name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
+      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), visibility: details.visibility,
     }
     setBusy(true); setError('')
     try { await onSave(draft) } catch (caught: unknown) {
@@ -124,13 +156,15 @@ export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, cou
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
       <p className="geocoder-credit">住所検索: <a href="https://geocode.csis.u-tokyo.ac.jp/" target="_blank" rel="noreferrer">CSISシンプルジオコーディング実験</a></p>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2 || !hasGoal || exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)} onClick={() => { setError(''); setStage('details') }}>詳細へ →</button></footer>
+      <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2 || !hasGoal || exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)} onClick={openDetails}>詳細へ →</button></footer>
     </div> : <form className="route-details-stage" onSubmit={submit}>
       <button type="button" className="text-button" onClick={() => setStage('route')}>← ルートを修正</button>
       <div className="form-grid">
-        <label>コース名<input required name="name" placeholder="例: 伊豆スカイライン縦走" /></label><label>エリア<input required name="area" placeholder="例: 熱海峠〜天城高原" /></label>
-        <label>都県<select name="prefecture"><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select name="visibility"><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
-        <label className="wide">説明<textarea required name="description" rows={3} placeholder="コースの特徴やおすすめポイント" /></label><label className="wide">タグ<input name="tags" placeholder="ワイド、高原、展望" /></label><label className="wide">注意事項<textarea name="cautions" rows={2} placeholder="1行に1件。通行規制や狭路など" /></label>
+        <label>コース名<input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="地点名から自動入力されます" /></label><label>エリア<input value={details.area} onChange={(event) => setDetails((previous) => ({ ...previous, area: event.target.value }))} placeholder="地点名から自動入力されます" /></label>
+        <label>都県<select value={details.prefecture} onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value as CourseDraft['prefecture'] }))}><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select value={details.visibility} onChange={(event) => setDetails((previous) => ({ ...previous, visibility: event.target.value as CourseDraft['visibility'] }))}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
+        <label className="wide">説明（任意）<textarea value={details.description} onChange={(event) => setDetails((previous) => ({ ...previous, description: event.target.value }))} rows={3} placeholder="コースの特徴やおすすめポイント" /></label><label className="wide">タグ（任意）<input value={details.tags} onChange={(event) => setDetails((previous) => ({ ...previous, tags: event.target.value }))} list="course-tag-suggestions" placeholder="#ワイド, #高原, #展望" /><datalist id="course-tag-suggestions">{recommendedTags.map((tag) => <option key={tag} value={`#${tag}`} />)}</datalist><small className="tag-help">#から始まる語だけを保存します。カンマまたは空白で区切れます。</small></label>
+        {recommendedTags.length > 0 && <div className="wide tag-recommendations" aria-label="おすすめのタグ"><span>おすすめ</span>{recommendedTags.map((tag) => <button key={tag} type="button" onClick={() => addRecommendedTag(tag)}>#{tag}</button>)}</div>}
+        <label className="wide">注意事項（任意）<textarea value={details.cautions} onChange={(event) => setDetails((previous) => ({ ...previous, cautions: event.target.value }))} rows={2} placeholder="1行に1件。通行規制や狭路など" /></label>
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="button secondary" onClick={onCancel}>キャンセル</button><button className="button primary" disabled={busy}>{busy ? '道路・標高を確認して保存中…' : 'コースを保存'}</button></footer>
