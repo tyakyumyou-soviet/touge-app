@@ -16,6 +16,7 @@ import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission } from './types'
 import { useMobileSheet } from './hooks/useMobileSheet'
+import { canUseUnlimitedWaypoints, exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | Course['prefecture']
@@ -51,6 +52,7 @@ export default function App() {
   const ignoreListTap = useRef(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
+  const unlimitedWaypoints = canUseUnlimitedWaypoints(user)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser)
@@ -196,6 +198,7 @@ export default function App() {
   async function handleCreate(draft: CourseDraft) {
     const activeUser = auth.currentUser
     if (!activeUser) throw new Error('Authentication required')
+    if (exceedsWaypointLimit(draft.route.length, canUseUnlimitedWaypoints(activeUser))) throw new Error(`地点は${WAYPOINT_LIMIT}個以下にしてください`)
     const quality = validateRouteQuality(draft.route)
     if (!quality.ok) throw new Error(`ルート検証: ${quality.warnings.join('、')}`)
     let routed
@@ -339,7 +342,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} />}
-        {drawing && <CourseForm route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
+        {drawing && <CourseForm route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={() => { setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setListCollapsed(false); setListExpanded(false); setListOffset(0) }} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}

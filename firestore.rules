@@ -2,6 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    // Firebase Auth token claims are server-signed. Keep the existing custom
+    // claim path while allowing the designated Google account to administer
+    // editorial data without a separate claim-provisioning step.
+    function isAdmin() {
+      return signedIn() && (request.auth.token.admin == true || (
+        request.auth.token.email == 'taizu61zx@gmail.com'
+        && request.auth.token.email_verified == true
+      ));
+    }
     function owns(resourceData) { return signedIn() && resourceData.authorId == request.auth.uid; }
     function ownsCourse(courseId) { return signedIn() && get(/databases/$(database)/documents/courses/$(courseId)).data.authorId == request.auth.uid; }
     function validVisibility(value) { return value in ['public', 'limited', 'private']; }
@@ -56,14 +65,14 @@ service cloud.firestore {
       }
       match /live/{infoId} {
         allow read: if true;
-        allow create, update: if signedIn() && request.auth.token.admin == true;
-        allow delete: if (signedIn() && request.auth.token.admin == true) || ownsCourse(courseId);
+        allow create, update: if isAdmin();
+        allow delete: if isAdmin() || ownsCourse(courseId);
       }
     }
 
     match /reports/{reportId} {
       allow read: if signedIn()
-        && (resource.data.authorId == request.auth.uid || request.auth.token.admin == true);
+        && (resource.data.authorId == request.auth.uid || isAdmin());
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.type in ['toll-info', 'road-condition', 'discovery', 'quality', 'road']
@@ -79,9 +88,9 @@ service cloud.firestore {
     }
 
     match /adminQueue/{itemId} {
-      allow read, update: if signedIn() && request.auth.token.admin == true;
+      allow read, update: if isAdmin();
       allow create: if signedIn();
-      allow delete: if signedIn() && request.auth.token.admin == true;
+      allow delete: if isAdmin();
     }
   }
 }
