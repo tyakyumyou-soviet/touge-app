@@ -192,6 +192,31 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 @keyframes surfaceRiseIn { from { opacity: 0; transform: translateY(84px); } to { opacity: 1; transform: translateY(0); } }
 .route-status { padding: 9px 12px; color: #225f48; background: #e2f0e7; border-radius: 7px; font-size: 11px; }
 .route-builder-stage, .route-details-stage { display: grid; gap: 10px; }
+.creation-choice, .join-builder { display: grid; gap: 12px; }
+.creation-choice > h3, .join-builder h3, .route-details-stage h3 { margin: 0; font-size: 20px; }
+.creation-choice > p:not(.eyebrow), .join-builder > p { margin: -4px 0 4px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.creation-choice-card { display: grid; grid-template-columns: 38px 1fr auto; gap: 11px; align-items: center; padding: 15px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 12px; text-align: left; cursor: pointer; }
+.creation-choice-card:hover { border-color: #7eb399; background: #f2f8f4; }
+.creation-choice-card > span { display: grid; place-items: center; width: 38px; height: 38px; color: #1f6f50; background: #e2f0e7; border-radius: 10px; font-size: 22px; font-weight: 800; }
+.creation-choice-card div { display: grid; gap: 4px; }
+.creation-choice-card strong { font-size: 15px; }
+.creation-choice-card small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.creation-choice-card > b { color: #a37d13; font-size: 20px; }
+.join-sequence { display: grid; gap: 6px; min-height: 56px; max-height: 180px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.join-sequence li { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: center; padding: 8px; background: #edf5ef; border: 1px solid #c7dccd; border-radius: 9px; }
+.join-sequence li.empty { display: block; color: var(--muted); background: #f6f7f4; border-style: dashed; font-size: 12px; line-height: 1.5; }
+.join-sequence li > span { display: grid; place-items: center; width: 25px; height: 25px; color: #fff; background: var(--green); border-radius: 50%; font-size: 11px; font-weight: 800; }
+.join-sequence strong { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.join-sequence div { display: flex; gap: 3px; }
+.join-sequence button { width: 25px; height: 25px; padding: 0; color: #395147; background: #fff; border: 1px solid #bed0c3; border-radius: 6px; font-size: 13px; font-weight: 800; }
+.join-course-picker { display: grid; gap: 6px; max-height: 250px; overflow: auto; }
+.join-course-picker button { display: grid; grid-template-columns: 28px 1fr; gap: 9px; align-items: center; padding: 9px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 9px; text-align: left; cursor: pointer; }
+.join-course-picker button.selected { color: #174e39; background: #e5f2e9; border-color: #55a27d; }
+.join-course-picker button > span { display: grid; place-items: center; width: 25px; height: 25px; color: #587267; background: #eef2ee; border-radius: 50%; font-size: 13px; font-weight: 800; }
+.join-course-picker button.selected > span { color: #fff; background: var(--green); }
+.join-course-picker div { display: grid; gap: 2px; }
+.join-course-picker strong { font-size: 13px; }
+.join-course-picker small { color: var(--muted); font-size: 10px; }
 .route-search { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
 .route-search button { padding: 0 14px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 8px; font-weight: 800; }
 .route-search-results { display: grid; gap: 5px; }

@@ -4,14 +4,13 @@ import { addCourseComment, deleteCourseComment, loadUserProfile, saveUserProfile
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 
-interface Props { user: User | null; course?: Course | null; courses: Course[]; onClose: () => void; onLogout?: () => void; onCreateJoined: (courses: Course[]) => Promise<void> }
+interface Props { user: User | null; course?: Course | null; onClose: () => void; onLogout?: () => void }
 
-export function CommunityPanel({ user, course, courses, onClose, onLogout, onCreateJoined }: Props) {
+export function CommunityPanel({ user, course, onClose, onLogout }: Props) {
   const sheet = useMobileSheet()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [comments, setComments] = useState<CourseComment[]>([])
   const [body, setBody] = useState('')
-  const [joined, setJoined] = useState<string[]>(course ? [course.id] : [])
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [likeState, setLikeState] = useState({ count: 0, liked: false })
@@ -36,7 +35,6 @@ export function CommunityPanel({ user, course, courses, onClose, onLogout, onCre
       <section className="profile-editor"><div className="profile-avatar">{(profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label className="wide">マップへの表示<select value={profile?.mapVisibility ?? 'friends'} onChange={(e) => patchProfile({ mapVisibility: e.target.value as UserProfile['mapVisibility'] })}><option value="all">全体に表示</option><option value="friends">フォロー相手のみ</option><option value="none">表示しない</option></select></label></div></section>
       <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : 'プロフィールを保存'}</button>
       {onLogout && <button className="text-button" onClick={onLogout}>ログアウト</button>}
-      <section className="join-course"><h3>コースを連結してオリジナル作成</h3><p>選んだ順に道順をつなぎ、限定公開・フレンド共有のコースとして保存できます。</p><div className="join-options">{courses.map((item) => <label key={item.id}><input type="checkbox" checked={joined.includes(item.id)} onChange={(e) => setJoined((ids) => e.target.checked ? [...ids, item.id] : ids.filter((id) => id !== item.id))} />{item.name}</label>)}</div><button className="button secondary" disabled={joined.length < 2} onClick={() => onCreateJoined(joined.map((id) => courses.find((item) => item.id === id)).filter((item): item is Course => Boolean(item)))}>連結コースを保存</button></section>
       {course && <section className="social-thread"><div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>＋ 作成者をフォロー</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
     </>}
     {notice && <p className="form-success" role="status">{notice}</p>}

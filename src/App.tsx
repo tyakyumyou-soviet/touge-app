@@ -270,23 +270,36 @@ export default function App() {
     setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setNotice(`Firebaseへコースを保存しました（ID: ${id.slice(0, 8)}）`)
   }
 
-  async function handleCreateJoined(joinedCourses: Course[]) {
+  function joinedWaypoints(joinedCourses: Course[]) {
+    const samplesPerCourse = Math.max(2, Math.floor(24 / Math.max(1, joinedCourses.length)))
+    return joinedCourses.flatMap((item, courseIndex) => Array.from({ length: samplesPerCourse }, (_, index) => item.route[Math.round((index / Math.max(1, samplesPerCourse - 1)) * (item.route.length - 1))]).filter((_, index) => courseIndex === 0 || index > 0))
+  }
+
+  function previewJoinedCourses(joinedCourses: Course[]) {
+    const waypoints = joinedWaypoints(joinedCourses)
+    setDraftRoute(waypoints)
+    setDraftPointLabels([])
+    setDraftPointRoles([])
+    setDraftViaInsertAfter(null)
+    setDraftFocus(waypoints[0] ?? null)
+  }
+
+  async function handleCreateJoined(joinedCourses: Course[], values: { name: string; visibility: Course['visibility'] }) {
     const activeUser = auth.currentUser
     if (!activeUser || joinedCourses.length < 2) throw new Error('Authentication required')
-    const samplesPerCourse = Math.max(2, Math.floor(24 / joinedCourses.length))
-    const waypoints = joinedCourses.flatMap((item, courseIndex) => Array.from({ length: samplesPerCourse }, (_, index) => item.route[Math.round((index / Math.max(1, samplesPerCourse - 1)) * (item.route.length - 1))]).filter((_, index) => courseIndex === 0 || index > 0))
+    const waypoints = joinedWaypoints(joinedCourses)
     const routed = await routeAlongRoads(waypoints)
     const route = routed.route
     const elevationResult = await fetchElevationProfile(route)
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(route, elevation, [...new Set(joinedCourses.flatMap((item) => item.tags))])
     const data: Omit<Course, 'id'> = {
-      name: `${joinedCourses.map((item) => item.name).join(' ＋ ')}（連結）`, area: joinedCourses.map((item) => item.area).join(' → '), prefecture: joinedCourses[0].prefecture,
-      description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], visibility: 'limited', authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
+      name: values.name, area: joinedCourses.map((item) => item.area).join(' → '), prefecture: joinedCourses[0].prefecture,
+      description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], visibility: values.visibility, authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
       distanceKm: routed.distanceKm, durationMin: routed.durationMin, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, elevationSource: elevationResult.source, ratings: systemRatings, systemRatings, ratingCount: 0,
       systemRatingSource: [`連結元コースの道路形状`, `標高・高低差（${elevationResult.source}）`, '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10), updatedAt: new Date().toISOString().slice(0, 10), isSeed: false,
     }
-    const id = await createCourse(data); const created = { id, ...data }; setCourses((items) => [created, ...items]); setSelected(created); setCommunityOpen(false); setNotice('オリジナル連結コースを保存しました（限定公開）')
+    const id = await createCourse(data); const created = { id, ...data }; setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setNotice('オリジナル連結コースを保存しました')
   }
 
   const handleElevationRepair = useCallback(async (course: Course, elevation: number[], source: ElevationResult['source']) => {
@@ -377,7 +390,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onFocusPoint={setDraftFocus} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={openCourseList} onSave={handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null) }} onFocusPoint={setDraftFocus} onPreviewJoined={previewJoinedCourses} onCreateJoined={handleCreateJoined} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
@@ -391,7 +404,7 @@ export default function App() {
         </section>
       </div>}
       {courseManagerOpen && selected && user?.uid === selected.authorId && <CourseManageForm course={selected} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} />}
-      {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} />}
+      {communityOpen && <CommunityPanel user={user} course={selected} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} />}
       <InstallPrompt />
     </div>
   )

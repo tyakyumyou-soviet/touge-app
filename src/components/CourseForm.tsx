@@ -16,6 +16,8 @@ interface Props {
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onAddCourse: (course: Course) => void
   onFocusPoint: (point: Coordinate) => void
+  onPreviewJoined: (courses: Course[]) => void
+  onCreateJoined: (courses: Course[], values: { name: string; visibility: Course['visibility'] }) => Promise<void>
   onRemovePoint: (index: number) => void
   onChooseViaInsertion: (index: number | null) => void
   onUndo: () => void
@@ -80,15 +82,18 @@ async function geocode(query: string): Promise<GeocodedPoint> {
   throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onPreviewJoined, onCreateJoined, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
-  const [stage, setStage] = useState<'route' | 'details'>('route')
+  const [stage, setStage] = useState<'choice' | 'route' | 'details' | 'join' | 'join-details'>('choice')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
   const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', visibility: 'public' })
+  const [joinedIds, setJoinedIds] = useState<string[]>([])
+  const [joinedName, setJoinedName] = useState('')
+  const [joinedVisibility, setJoinedVisibility] = useState<Course['visibility']>('limited')
   const hasGoal = pointRoles.includes('goal')
   const courseMatches = useMemo(() => {
     const value = query.trim().toLocaleLowerCase('ja')
@@ -102,6 +107,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     .sort(([, left], [, right]) => right - left)
     .map(([tag]) => tag)
     .slice(0, 8), [courses])
+  const joinedCourses = useMemo(() => joinedIds.map((id) => courses.find((course) => course.id === id)).filter((course): course is Course => Boolean(course)), [courses, joinedIds])
 
   function openDetails() {
     const defaults = buildCourseDraftDefaults(pointLabels, route)
@@ -114,6 +120,42 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     const current = parseHashTags(details.tags)
     if (current.includes(tag)) return
     setDetails((previous) => ({ ...previous, tags: [...current, tag].map((item) => `#${item}`).join(', ') }))
+  }
+
+  function chooseJoinedCourse(course: Course) {
+    const nextIds = joinedIds.includes(course.id) ? joinedIds.filter((id) => id !== course.id) : [...joinedIds, course.id]
+    setJoinedIds(nextIds)
+    onPreviewJoined(nextIds.map((id) => courses.find((item) => item.id === id)).filter((item): item is Course => Boolean(item)))
+  }
+
+  function moveJoinedCourse(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= joinedIds.length) return
+    const nextIds = [...joinedIds]
+    ;[nextIds[index], nextIds[target]] = [nextIds[target], nextIds[index]]
+    setJoinedIds(nextIds)
+    onPreviewJoined(nextIds.map((id) => courses.find((item) => item.id === id)).filter((item): item is Course => Boolean(item)))
+  }
+
+  function leaveJoinBuilder() {
+    setJoinedIds([])
+    onPreviewJoined([])
+    setStage('choice')
+  }
+
+  function openJoinedDetails() {
+    if (joinedCourses.length < 2) return
+    setJoinedName(`${joinedCourses.map((course) => course.name).join(' ＋ ')}（連結）`)
+    setStage('join-details')
+  }
+
+  async function saveJoinedCourse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (joinedCourses.length < 2) return
+    setBusy(true); setError('')
+    try { await onCreateJoined(joinedCourses, { name: joinedName.trim() || `${joinedCourses.map((course) => course.name).join(' ＋ ')}（連結）`, visibility: joinedVisibility }) }
+    catch (caught) { setError(caught instanceof Error ? caught.message : '連結コースを保存できませんでした') }
+    finally { setBusy(false) }
   }
 
   async function addSearchedPlace(event: FormEvent<HTMLFormElement>) {
@@ -151,8 +193,25 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
 
   return <div className="modal-backdrop" role="presentation"><section className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
-    <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div></div>
-    {stage === 'route' ? <div className="route-builder-stage">
+    <div className="course-form-steps"><span className={stage === 'choice' ? 'active' : 'done'}>1 作成方法</span><b>→</b><span className={stage === 'details' || stage === 'join-details' ? 'active' : stage === 'choice' ? '' : 'done'}>2 ルート</span><b>→</b><span className={stage === 'details' || stage === 'join-details' ? 'active' : ''}>3 詳細・公開</span></div></div>
+    {stage === 'choice' ? <section className="creation-choice" aria-label="コースの作成方法">
+      <p className="eyebrow">CREATE A COURSE</p><h3>作り方を選ぶ</h3><p>地点を指定して作るか、既存コースを好きな順番でつなげるかを選べます。</p>
+      <button type="button" className="creation-choice-card" onClick={() => { onPreviewJoined([]); setStage('route') }}><span aria-hidden="true">⌖</span><div><strong>地点から作る</strong><small>地名・住所・地図タップで、自由に経由地を組み立てる</small></div><b>→</b></button>
+      <button type="button" className="creation-choice-card" onClick={() => { setJoinedIds([]); onPreviewJoined([]); setStage('join') }}><span aria-hidden="true">⇄</span><div><strong>既存コースを連結</strong><small>選んだコースを並べて、ひとつのオリジナルコースにする</small></div><b>→</b></button>
+    </section> : stage === 'join' ? <section className="join-builder" aria-label="既存コースを連結">
+      <button type="button" className="text-button" onClick={leaveJoinBuilder}>← 作成方法を選び直す</button>
+      <h3>コースをつなぐ</h3><p>地図には、下の順番で選んだ区間だけを表示します。走る順番に追加してください。</p>
+      <ol className="join-sequence">{joinedCourses.length ? joinedCourses.map((course, index) => <li key={course.id}><span>{index + 1}</span><strong>{course.name}</strong><div><button type="button" onClick={() => moveJoinedCourse(index, -1)} disabled={index === 0} aria-label={`${course.name}を前へ`}>↑</button><button type="button" onClick={() => moveJoinedCourse(index, 1)} disabled={index === joinedCourses.length - 1} aria-label={`${course.name}を後へ`}>↓</button><button type="button" onClick={() => chooseJoinedCourse(course)} aria-label={`${course.name}を外す`}>×</button></div></li>) : <li className="empty">下の候補から、最初のコースを選んでください。</li>}</ol>
+      <div className="join-course-picker">{courses.map((course) => <button key={course.id} type="button" className={joinedIds.includes(course.id) ? 'selected' : ''} onClick={() => chooseJoinedCourse(course)}><span>{joinedIds.includes(course.id) ? `${joinedIds.indexOf(course.id) + 1}` : '+'}</span><div><strong>{course.name}</strong><small>{course.area} · {course.distanceKm.toFixed(1)} km</small></div></button>)}</div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <footer><button type="button" className="button secondary" onClick={leaveJoinBuilder}>戻る</button><button type="button" className="button primary" disabled={joinedCourses.length < 2} onClick={openJoinedDetails}>ルートを確認 →</button></footer>
+    </section> : stage === 'join-details' ? <form className="route-details-stage" onSubmit={saveJoinedCourse}>
+      <button type="button" className="text-button" onClick={() => setStage('join')}>← 連結順を修正</button>
+      <h3>連結コースの詳細</h3><p className="route-builder-help">{joinedCourses.map((course) => course.name).join(' → ')}</p>
+      <div className="form-grid"><label className="wide">コース名<input value={joinedName} onChange={(event) => setJoinedName(event.target.value)} /></label><label className="wide">公開範囲<select value={joinedVisibility} onChange={(event) => setJoinedVisibility(event.target.value as Course['visibility'])}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label></div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <footer><button type="button" className="button secondary" onClick={() => setStage('join')}>戻る</button><button className="button primary" disabled={busy}>{busy ? '道路・標高を確認して保存中…' : '連結コースを保存'}</button></footer>
+    </form> : stage === 'route' ? <div className="route-builder-stage">
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の位置を確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via', viaInsertAfter); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null) }}>ゴールとして追加</button>}</div></section>}
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} onClick={() => { onAddCourse(course); setQuery('') }}><strong>{course.name}</strong><small>{course.area} · コース全体を追加</small></button>)}</div>}
