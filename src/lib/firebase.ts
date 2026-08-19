@@ -260,7 +260,7 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
   return snapshot.exists() ? ({ id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...snapshot.data() } as UserProfile) : null
 }
 
-export async function saveUserProfileSettings(user: User, values: Pick<UserProfile, 'displayName' | 'bio' | 'homeArea' | 'mapVisibility'>): Promise<void> {
+export async function saveUserProfileSettings(user: User, values: Pick<UserProfile, 'displayName' | 'bio' | 'homeArea' | 'mapVisibility' | 'vehicleName' | 'vehicleDetails' | 'socialLinks' | 'showcasePostUrls'>): Promise<void> {
   await setDoc(doc(db, 'users', user.uid), { ...values, displayName: values.displayName || user.displayName || 'ドライバー', updatedAt: serverTimestamp() }, { merge: true })
 }
 

@@ -86,6 +86,11 @@ export interface UserProfile {
   mapVisibility: 'all' | 'friends' | 'none'
   followingIds: string[]
   followerCount: number
+  /** Optional car information and social profile/showcase links. */
+  vehicleName?: string
+  vehicleDetails?: string
+  socialLinks?: Partial<Record<'x' | 'instagram' | 'youtube' | 'tiktok', string>>
+  showcasePostUrls?: string[]
   updatedAt?: string
 }
 
