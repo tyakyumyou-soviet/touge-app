@@ -144,6 +144,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .toll-title span { padding: 4px 7px; color: #70550a; background: #f2d16b77; border-radius: 4px; font-size: 9px; font-weight: 700; }
 .toll-box p { margin: 5px 0; color: #4c564f; font-size: 10px; line-height: 1.55; }
 .toll-box footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 9px; }
+.toll-box footer a { min-width: 0; overflow-wrap: anywhere; }
 .course-owner-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; padding: 13px; background: #eef5ef; border: 1px solid #9ac6aa; border-radius: 10px; }
 .course-owner-actions h3 { margin: 0 0 4px; font-size: 14px; }
 .course-owner-actions p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -185,7 +186,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .logout-dialog { width: min(420px, 100%); }
 .logout-dialog h2 { margin: 0 0 9px; font-size: 20px; }
 .logout-dialog p { margin: 0; color: #657169; font-size: 12px; line-height: 1.7; }
-.course-form { position: absolute; left: 390px; top: 90px; width: 430px; }
+.course-form { position: absolute; left: 390px; top: 90px; width: min(430px, calc(100vw - 420px)); }
 .course-form + * { pointer-events: auto; }
 .modal-backdrop:has(.course-form) { pointer-events: none; place-items: start; background: transparent; backdrop-filter: none; }
 .course-form { pointer-events: auto; box-shadow: 0 20px 70px #10221955; }
@@ -324,7 +325,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-model-panel { inset: 110px 20px 85px; padding: 18px; isolation: isolate; }
 /* The route may become much larger than the drawing area while zooming. Keep
    it inside its canvas and below every HTML label/control in this panel. */
-.model-title { position: relative; z-index: 3; display: flex; align-items: baseline; gap: 13px; }
+.model-title { position: relative; z-index: 3; display: flex; align-items: baseline; gap: 13px; min-width: 0; }
 .model-title strong { color: var(--yellow); font-size: 16px; }
 .model-title span { color: #bdc9c2; font-size: 12px; }
 .model-title button { margin-left: auto; padding: 7px 10px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 6px; font-size: 12px; font-weight: 700; }
@@ -393,6 +394,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .brand { min-width: auto; }
   .brand small, .user-button span { display: none; }
   .detail-panel { width: 380px; }
+  .course-form { left: 380px; width: min(430px, calc(100vw - 395px)); }
 }
 
 @media (max-width: 760px) {
@@ -442,6 +444,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .detail-header { padding: 12px 0 8px; }
   .detail-header h2 { font-size: 21px; }
   .detail-scroll { padding: 0 16px 17px; }
+  .detail-header > div { min-width: 0; }
+  .detail-header h2 { overflow-wrap: anywhere; }
   .hero-metrics strong { font-size: 15px; }
   .nav-actions { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
   .modal-backdrop { padding: 7px; place-items: end center; }
@@ -457,8 +461,12 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .modal { max-height: 88dvh; border-radius: 18px 18px 8px 8px; }
   .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; max-height: 61dvh; }
   .course-form.mobile-sheet.expanded { max-height: calc(100dvh - 14px); }
+  .modal footer, .route-builder-stage footer, .route-details-stage footer { flex-wrap: wrap; }
+  .modal footer > .button, .route-builder-stage footer > .button, .route-details-stage footer > .button { flex: 1 1 150px; }
   .course-manager { padding: 18px; }
   .course-manager-section { padding: 13px; }
+  .course-owner-actions { align-items: stretch; flex-direction: column; gap: 10px; }
+  .course-owner-actions .button { width: 100%; }
   .course-manager-danger { align-items: flex-start; flex-direction: column; }
   .course-manager-danger .button { width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
@@ -473,7 +481,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .preview-panel div { min-width: 0; }
   .preview-panel input { grid-column: 1 / -1; grid-row: 2; width: 100%; }
   .route-model-panel { inset: 125px 8px 82px; padding: 11px; }
-  .model-title { gap: 7px; }
+  .model-title { align-items: center; flex-wrap: wrap; gap: 7px; }
+  .model-title strong { min-width: 0; overflow-wrap: anywhere; }
+  .model-title > span { flex: 1 1 100%; order: 3; }
   .model-title strong { font-size: 14px; }
   .model-title span { font-size: 11px; }
   .model-title .model-zoom-buttons { gap: 2px; }
@@ -485,7 +495,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .model-tools { align-items: flex-start; }
   .model-preset-buttons { flex-wrap: wrap; }.model-tools button { padding: 5px 6px; font-size: 10px; }
   .model-bottom-panels { right: 8px; bottom: 6px; left: 8px; gap: 5px; }.compare-panel { padding: 7px 9px; }.compare-panel label, .compare-panel select { font-size: 12px; }.compare-panel p { font-size: 11px; }.landmark-card { right: 12px; bottom: 112px; max-width: 220px; }
-  .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; }
+  .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; gap: 8px; }
   .three-d-controls input { width: 80px; }
   .three-d-legend { right: 8px; top: 92px; bottom: auto; }
   .three-d-legend span { display: none; }
