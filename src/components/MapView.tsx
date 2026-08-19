@@ -218,6 +218,10 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     const source = map.getSource('draft') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
     ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels, draftRoles))
+    // A route edit means the search candidate has either been confirmed or the
+    // user chose a different point. Clear the map source directly as a second
+    // guard; this avoids a stale temporary pin if React updates are batched.
+    if (draftRoute.length > 0) (map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(null, ''))
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
     if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
   }, [drawing, draftRoute, draftLabels, draftRoles, mapReady])
