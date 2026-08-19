@@ -58,7 +58,9 @@ function projectPoint([x, y, z]: Point3, yaw: number, pitch: number, zoom = 1, [
   const pitchRad = (pitch * Math.PI) / 180
   const rotatedX = x * Math.cos(yawRad) - y * Math.sin(yawRad)
   const depth = x * Math.sin(yawRad) + y * Math.cos(yawRad)
-  return [500 + panX + rotatedX * zoom, 365 + panY + (depth * Math.sin(pitchRad) - z * Math.cos(pitchRad)) * zoom]
+  // Model coordinates use +Y for north. SVG Y grows downward, so the north
+  // component is inverted here to keep north at the top in the default view.
+  return [500 + panX + rotatedX * zoom, 365 + panY + (-depth * Math.sin(pitchRad) - z * Math.cos(pitchRad)) * zoom]
 }
 
 function viewDepth([x, y]: Point3, yaw: number): number {
@@ -151,10 +153,10 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
       left.push([point[0] + offsetX, point[1] + offsetY, point[2]])
       right.push([point[0] - offsetX, point[1] - offsetY, point[2]])
     })
-    // Start is deliberately placed at the lower-left and the goal at the upper-right
-    // on first view, independent of the geographic direction of the road.
-    const routeHeading = Math.atan2(centers.at(-1)![1] - centers[0][1], centers.at(-1)![0] - centers[0][0]) * 180 / Math.PI
-    const defaultYaw = wrapDegrees(-routeHeading - 35)
+    // Keep geographic north at the top on first view. Previous versions rotated
+    // each route toward a lower-left → upper-right composition, which made the
+    // same START → GOAL route appear left/right reversed between courses.
+    const defaultYaw = 0
     const defaultProjection = [...left, ...right].map((point) => projectPoint(point, defaultYaw, 49))
     const xExtent = Math.max(...defaultProjection.map(([x]) => x)) - Math.min(...defaultProjection.map(([x]) => x))
     const yExtent = Math.max(...defaultProjection.map(([, y]) => y)) - Math.min(...defaultProjection.map(([, y]) => y))
