@@ -440,8 +440,16 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   function applyPinch(pinch: PinchState, first: { x: number; y: number }, second: { x: number; y: number }, rect: DOMRect) {
     const zoom = pinch.zoom * (Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)) / pinch.distance)
     const anchor = svgPoint((first.x + second.x) / 2, (first.y + second.y) / 2, rect)
+    // Two-finger panning felt too restrained on phones because the SVG viewBox
+    // dampens physical finger travel. Amplify midpoint translation while keeping
+    // the original model point anchored during pinch zoom.
+    const panGain = 1.65
+    const targetAnchor: Point2 = [
+      pinch.anchor[0] + (anchor[0] - pinch.anchor[0]) * panGain,
+      pinch.anchor[1] + (anchor[1] - pinch.anchor[1]) * panGain,
+    ]
     const visualZoom = model.autoFit * zoom
-    applyModelView({ zoom, pan: [anchor[0] - 500 - pinch.modelOffset[0] * visualZoom, anchor[1] - 365 - pinch.modelOffset[1] * visualZoom] })
+    applyModelView({ zoom, pan: [targetAnchor[0] - 500 - pinch.modelOffset[0] * visualZoom, targetAnchor[1] - 365 - pinch.modelOffset[1] * visualZoom] })
   }
 
   function startModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
