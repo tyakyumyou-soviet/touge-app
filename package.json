@@ -1,7 +1,7 @@
 {
   "name": "touge-app",
   "private": true,
-  "version": "2.7.22",
+  "version": "2.7.23",
   "type": "module",
   "scripts": {
     "dev": "vite",
