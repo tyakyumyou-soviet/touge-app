@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import type { Course, CourseComment, UserProfile } from '../types'
 import { addCourseComment, deleteCourseComment, loadUserProfile, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
+import { useMobileSheet } from '../hooks/useMobileSheet'
 
 type EditableCourse = Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>
 interface Props { user: User | null; course?: Course | null; courses: Course[]; onClose: () => void; onLogout?: () => void; onCreateJoined: (courses: Course[]) => Promise<void>; onUpdateCourse: (courseId: string, changes: EditableCourse) => Promise<void>; onDeleteCourse: (courseId: string) => Promise<void> }
 
 export function CommunityPanel({ user, course, courses, onClose, onLogout, onCreateJoined, onUpdateCourse, onDeleteCourse }: Props) {
+  const sheet = useMobileSheet()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [comments, setComments] = useState<CourseComment[]>([])
   const [body, setBody] = useState('')
@@ -38,8 +40,8 @@ export function CommunityPanel({ user, course, courses, onClose, onLogout, onCre
   async function saveCourse() { if (!course || !courseDraft) return; setCourseSaving(true); try { await onUpdateCourse(course.id, courseDraft); setNotice('コース情報をFirebaseへ保存しました') } catch { setNotice('コース情報を保存できませんでした') } finally { setCourseSaving(false) } }
   async function removeCourse() { if (!course) return; if (!deleteArmed) { setDeleteArmed(true); setNotice('もう一度「削除を確定」を押すとFirebaseから削除します'); return } try { await onDeleteCourse(course.id); onClose() } catch { setNotice('コースを削除できませんでした') } }
   function patchProfile(values: Partial<UserProfile>) { if (!user) return; setProfile((p) => ({ id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...p, ...values })) }
-  return <div className="modal-backdrop" role="presentation"><section className="modal community-panel" role="dialog" aria-modal="true" aria-labelledby="community-title">
-    <header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">プロフィールと共有</h2></div><button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></header>
+  return <div className="modal-backdrop" role="presentation"><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
+    <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">プロフィールと共有</h2></div><button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></header></div>
     {!user ? <div className="empty-state"><p>ログインするとプロフィール編集、フォロー、コメント、いいねが使えます。</p></div> : <>
       <section className="profile-editor"><div className="profile-avatar">{(profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label className="wide">マップへの表示<select value={profile?.mapVisibility ?? 'friends'} onChange={(e) => patchProfile({ mapVisibility: e.target.value as UserProfile['mapVisibility'] })}><option value="all">全体に表示</option><option value="friends">フォロー相手のみ</option><option value="none">表示しない</option></select></label></div></section>
       <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : 'プロフィールを保存'}</button>

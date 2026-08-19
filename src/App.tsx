@@ -15,11 +15,13 @@ import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
 import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission } from './types'
+import { useMobileSheet } from './hooks/useMobileSheet'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | Course['prefecture']
 
 export default function App() {
+  const logoutSheet = useMobileSheet()
   const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
   const [courses, setCourses] = useState<Course[]>(sampleCourses)
   // A course is selected only after the driver chooses one (or opens a shared link).
@@ -174,6 +176,7 @@ export default function App() {
     try {
       await logout()
       setLogoutConfirmOpen(false)
+      logoutSheet.reset()
       setNotice('ログアウトしました')
     } catch {
       setNotice('ログアウトできませんでした。もう一度お試しください。')
@@ -343,10 +346,10 @@ export default function App() {
       </main>
       {notice && <div className="notice" role="status">{notice}</div>}
       {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation">
-        <section className="modal logout-dialog" role="dialog" aria-modal="true" aria-labelledby="logout-title">
-          <h2 id="logout-title">ログアウトしますか？</h2>
-          <p>ログアウトすると、コース登録や評価投稿には再度ログインが必要です。</p>
-          <footer><button className="button secondary" onClick={() => setLogoutConfirmOpen(false)}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
+        <section className={`modal logout-dialog ${logoutSheet.className}`} style={logoutSheet.style} role="dialog" aria-modal="true" aria-labelledby="logout-title">
+          <div className="mobile-sheet-drag-region" {...logoutSheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><h2 id="logout-title">ログアウトしますか？</h2>
+          <p>ログアウトすると、コース登録や評価投稿には再度ログインが必要です。</p></div>
+          <footer><button className="button secondary" onClick={() => { setLogoutConfirmOpen(false); logoutSheet.reset() }}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
         </section>
       </div>}
       {communityOpen && <CommunityPanel user={user} course={selected} courses={courses} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onCreateJoined={handleCreateJoined} onUpdateCourse={handleCourseUpdate} onDeleteCourse={handleCourseDelete} />}

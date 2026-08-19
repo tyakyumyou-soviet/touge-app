@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useMobileSheet } from '../hooks/useMobileSheet'
 
 export interface TollReport {
   fee: string
@@ -9,6 +10,7 @@ export interface TollReport {
 }
 
 export function TollReportForm({ courseName, onCancel, onSave }: { courseName: string; onCancel: () => void; onSave: (report: TollReport) => Promise<void> }) {
+  const sheet = useMobileSheet()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -19,9 +21,9 @@ export function TollReportForm({ courseName, onCancel, onSave }: { courseName: s
       onCancel()
     } catch { setError('送信できませんでした。ログインと通信状態を確認してください。') } finally { setBusy(false) }
   }
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit} aria-labelledby="toll-report-title">
-    <header><div><p className="eyebrow">TOLL INFORMATION</p><h2 id="toll-report-title">{courseName}の料金情報を報告</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
-    <p className="description">無料開放、時間帯、キャンペーン、料金変更などを情報源と一緒に投稿してください。確認後に公開情報へ反映します。</p>
+  return <div className="modal-backdrop"><form className={`modal ${sheet.className}`} style={sheet.style} onSubmit={submit} aria-labelledby="toll-report-title">
+    <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">TOLL INFORMATION</p><h2 id="toll-report-title">{courseName}の料金情報を報告</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
+    <p className="description">無料開放、時間帯、キャンペーン、料金変更などを情報源と一緒に投稿してください。確認後に公開情報へ反映します。</p></div>
     <div className="form-grid">
       <label>確認日<input required type="date" name="observedAt" defaultValue={new Date().toISOString().slice(0, 10)} /></label>
       <label>確認した料金<input name="fee" placeholder="例: 普通車 900円" /></label>
