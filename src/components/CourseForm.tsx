@@ -6,6 +6,7 @@ import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 
 interface Props {
+  transitionState?: 'idle' | 'entering' | 'leaving'
   route: Coordinate[]
   canUseUnlimitedWaypoints: boolean
   pointLabels: string[]
@@ -79,7 +80,7 @@ async function geocode(query: string): Promise<GeocodedPoint> {
   throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
 }
 
-export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
@@ -148,7 +149,7 @@ export function CourseForm({ route, pointLabels, pointRoles, viaInsertAfter, cou
     } finally { setBusy(false) }
   }
 
-  return <div className="modal-backdrop" role="presentation"><section className={`modal course-form ${sheet.className}`} style={sheet.style} aria-label="ルートビルダー">
+  return <div className="modal-backdrop" role="presentation"><section className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     <div className="course-form-steps"><span className={stage === 'route' ? 'active' : 'done'}>1 ルート</span><b>→</b><span className={stage === 'details' ? 'active' : ''}>2 詳細・公開</span></div></div>
     {stage === 'route' ? <div className="route-builder-stage">

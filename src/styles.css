@@ -55,6 +55,8 @@ main { position: relative; height: calc(100% - 72px); }
 
 .explore-panel { position: absolute; z-index: 10; inset: 0 auto 0 0; width: 365px; display: flex; flex-direction: column; padding: 26px 18px 0; background: rgba(247, 245, 237, .97); box-shadow: 10px 0 40px #18241e18; border-right: 1px solid var(--line); }
 .explore-panel.drawing { display: none; }
+.explore-panel.surface-leaving { pointer-events: none; animation: surfaceDropOut .22s ease-in both; }
+.explore-panel.surface-entering { animation: surfaceRiseIn .28s cubic-bezier(.2, .8, .25, 1) both; }
 .explore-panel-top { touch-action: none; cursor: grab; }
 .explore-panel-top:active { cursor: grabbing; }
 .explore-panel-top .filter-row { touch-action: auto; cursor: default; }
@@ -184,6 +186,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-form + * { pointer-events: auto; }
 .modal-backdrop:has(.course-form) { pointer-events: none; place-items: start; background: transparent; backdrop-filter: none; }
 .course-form { pointer-events: auto; box-shadow: 0 20px 70px #10221955; }
+.course-form.surface-leaving { pointer-events: none; animation: surfaceDropOut .22s ease-in both; }
+.course-form.surface-entering { animation: surfaceRiseIn .28s cubic-bezier(.2, .8, .25, 1) both; }
+@keyframes surfaceDropOut { to { opacity: 0; transform: translateY(84px); } }
+@keyframes surfaceRiseIn { from { opacity: 0; transform: translateY(84px); } to { opacity: 1; transform: translateY(0); } }
 .route-status { padding: 9px 12px; color: #225f48; background: #e2f0e7; border-radius: 7px; font-size: 11px; }
 .route-builder-stage, .route-details-stage { display: grid; gap: 10px; }
 .route-search { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
