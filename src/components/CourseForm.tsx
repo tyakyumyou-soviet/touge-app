@@ -193,9 +193,8 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
 
   return <div className="modal-backdrop" role="presentation"><section className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
-    <div className="course-form-steps"><span className={stage === 'choice' ? 'active' : 'done'}>1 作成方法</span><b>→</b><span className={stage === 'details' || stage === 'join-details' ? 'active' : stage === 'choice' ? '' : 'done'}>2 ルート</span><b>→</b><span className={stage === 'details' || stage === 'join-details' ? 'active' : ''}>3 詳細・公開</span></div></div>
+    </div>
     {stage === 'choice' ? <section className="creation-choice" aria-label="コースの作成方法">
-      <p className="eyebrow">CREATE A COURSE</p><h3>作り方を選ぶ</h3><p>地点を指定して作るか、既存コースを好きな順番でつなげるかを選べます。</p>
       <button type="button" className="creation-choice-card" onClick={() => { onPreviewJoined([]); setStage('route') }}><span aria-hidden="true">⌖</span><div><strong>地点から作る</strong><small>地名・住所・地図タップで、自由に経由地を組み立てる</small></div><b>→</b></button>
       <button type="button" className="creation-choice-card" onClick={() => { setJoinedIds([]); onPreviewJoined([]); setStage('join') }}><span aria-hidden="true">⇄</span><div><strong>既存コースを連結</strong><small>選んだコースを並べて、ひとつのオリジナルコースにする</small></div><b>→</b></button>
     </section> : stage === 'join' ? <section className="join-builder" aria-label="既存コースを連結">

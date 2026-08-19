@@ -193,7 +193,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-status { padding: 9px 12px; color: #225f48; background: #e2f0e7; border-radius: 7px; font-size: 11px; }
 .route-builder-stage, .route-details-stage { display: grid; gap: 10px; }
 .creation-choice, .join-builder { display: grid; gap: 12px; }
-.creation-choice > h3, .join-builder h3, .route-details-stage h3 { margin: 0; font-size: 20px; }
+.join-builder h3, .route-details-stage h3 { margin: 0; font-size: 20px; }
 .creation-choice > p:not(.eyebrow), .join-builder > p { margin: -4px 0 4px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .creation-choice-card { display: grid; grid-template-columns: 38px 1fr auto; gap: 11px; align-items: center; padding: 15px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 12px; text-align: left; cursor: pointer; }
 .creation-choice-card:hover { border-color: #7eb399; background: #f2f8f4; }
@@ -417,6 +417,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .mobile-sheet-handle::after { content: ''; position: absolute; top: 11px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
   .modal { max-height: 88dvh; border-radius: 18px 18px 8px 8px; }
   .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; max-height: 61dvh; }
+  .course-form.mobile-sheet.expanded { max-height: calc(100dvh - 14px); }
   .course-manager { padding: 18px; }
   .course-manager-section { padding: 13px; }
   .course-manager-danger { align-items: flex-start; flex-direction: column; }
