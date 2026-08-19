@@ -16,6 +16,8 @@ interface MapViewProps {
   draftRoles: DraftPointRole[]
   viaInsertAfter: number | null
   focusPoint: Coordinate | null
+  pendingSearchPoint: Coordinate | null
+  pendingSearchLabel: string
   onSelect: (course: Course) => void
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onMovePoint: (index: number, point: Coordinate) => void
@@ -43,7 +45,16 @@ const toDraftPointCollection = (route: Coordinate[], labels: string[] = [], role
   })),
 })
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
+  type: 'FeatureCollection' as const,
+  features: point ? [{
+    type: 'Feature' as const,
+    properties: { label },
+    geometry: { type: 'Point' as const, coordinates: point },
+  }] : [],
+})
+
+export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -128,6 +139,11 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
       map.addLayer({ id: 'draft-points', type: 'circle', source: 'draft-points', paint: { 'circle-radius': 13, 'circle-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
       map.addLayer({ id: 'draft-point-labels', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true, 'text-ignore-placement': true }, paint: { 'text-color': '#142018' } })
       map.addLayer({ id: 'draft-point-names', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['concat', ['get', 'label'], '  ', ['get', 'name']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
+      map.addSource('pending-search-point', { type: 'geojson', data: toPendingSearchPoint(null, '') })
+      map.addLayer({ id: 'pending-search-pulse', type: 'circle', source: 'pending-search-point', paint: { 'circle-radius': 21, 'circle-color': '#e76f51', 'circle-opacity': .2, 'circle-stroke-color': '#d7503d', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': .75 } })
+      map.addLayer({ id: 'pending-search-pin-tip', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': '▼', 'text-size': 23, 'text-offset': [0, .74], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#e76f51' } })
+      map.addLayer({ id: 'pending-search-pin', type: 'circle', source: 'pending-search-point', paint: { 'circle-radius': 15, 'circle-color': '#e76f51', 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'pending-search-label', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': ['concat', '仮  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.35], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#7f2f27', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
       map.addLayer({ id: 'selected-contour-labels', type: 'symbol', source: 'selected-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
       map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
@@ -205,6 +221,12 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     map.getCanvas().style.cursor = drawing ? 'crosshair' : ''
     if (!drawing) { draftPopupRef.current?.remove(); draftPopupRef.current = null }
   }, [drawing, draftRoute, draftLabels, draftRoles, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    ;(map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(pendingSearchPoint, pendingSearchLabel))
+  }, [mapReady, pendingSearchPoint, pendingSearchLabel])
 
   useEffect(() => {
     const map = mapRef.current
