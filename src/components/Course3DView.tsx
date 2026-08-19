@@ -51,6 +51,7 @@ function normaliseElevationProfile(raw: unknown, minElevation: number, maxElevat
 type Point3 = [number, number, number]
 type Point2 = [number, number]
 type ModelView = { yaw: number; pitch: number; zoom: number; pan: Point2 }
+type PinchState = { distance: number; zoom: number; pan: Point2; anchor: Point2; modelOffset: Point2 }
 
 function projectPoint([x, y, z]: Point3, yaw: number, pitch: number, zoom = 1, [panX, panY]: Point2 = [0, 0]): Point2 {
   const yawRad = (yaw * Math.PI) / 180
@@ -67,14 +68,17 @@ function viewDepth([x, y]: Point3, yaw: number): number {
 
 function pointsText(points: Point2[]): string { return points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ') }
 function wrapDegrees(value: number): number { return ((value + 180) % 360 + 360) % 360 - 180 }
+function svgPoint(clientX: number, clientY: number, rect: DOMRect): Point2 {
+  return [(clientX - rect.left) * 1000 / Math.max(1, rect.width), (clientY - rect.top) * 480 / Math.max(1, rect.height)]
+}
 export function Course3DView({ course, courses, onClose, onElevationRepaired }: { course: Course; courses: Course[]; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
   const modelDragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null)
   const modelPointersRef = useRef(new Map<number, { x: number; y: number }>())
-  const pinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
-  const touchPinchRef = useRef<{ distance: number; zoom: number; x: number; y: number; pan: Point2; scale: number } | null>(null)
+  const pinchRef = useRef<PinchState | null>(null)
+  const touchPinchRef = useRef<PinchState | null>(null)
   // Gestures can emit far more events than a phone can paint. Keep one canonical
   // view state and commit only the most recent input once per animation frame.
   // This also prevents a queued zoom from overwriting a later reset/preset.
@@ -410,6 +414,24 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     })
   }
 
+  function beginPinch(first: { x: number; y: number }, second: { x: number; y: number }, rect: DOMRect): PinchState {
+    const anchor = svgPoint((first.x + second.x) / 2, (first.y + second.y) / 2, rect)
+    const view = modelViewRef.current
+    // Store the model-space vector beneath the two fingers. At each zoom level
+    // we solve pan from that same vector, so content does not snap to canvas centre.
+    return {
+      distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), zoom: view.zoom, pan: view.pan, anchor,
+      modelOffset: [(anchor[0] - 500 - view.pan[0]) / effectiveZoom, (anchor[1] - 365 - view.pan[1]) / effectiveZoom],
+    }
+  }
+
+  function applyPinch(pinch: PinchState, first: { x: number; y: number }, second: { x: number; y: number }, rect: DOMRect) {
+    const zoom = pinch.zoom * (Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)) / pinch.distance)
+    const anchor = svgPoint((first.x + second.x) / 2, (first.y + second.y) / 2, rect)
+    const visualZoom = model.autoFit * zoom
+    applyModelView({ zoom, pan: [anchor[0] - 500 - pinch.modelOffset[0] * visualZoom, anchor[1] - 365 - pinch.modelOffset[1] * visualZoom] })
+  }
+
   function startModelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic pointer events may not be capturable. */ }
     modelPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
@@ -423,7 +445,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     if (modelPointersRef.current.size === 2) {
       const [first, second] = [...modelPointersRef.current.values()]
       const rect = event.currentTarget.getBoundingClientRect()
-      pinchRef.current = { distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
+      pinchRef.current = beginPinch(first, second, rect)
       modelDragRef.current = null
     }
   }
@@ -433,12 +455,7 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     modelPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (modelPointersRef.current.size >= 2 && pinchRef.current) {
       const [first, second] = [...modelPointersRef.current.values()]
-      const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y))
-      scheduleModelZoom(pinchRef.current.zoom * (distance / pinchRef.current.distance))
-      const centerX = (first.x + second.x) / 2
-      const centerY = (first.y + second.y) / 2
-      // Two fingers translate the viewpoint across the horizontal model plane.
-      applyModelView({ pan: [pinchRef.current.pan[0] + (centerX - pinchRef.current.x) * pinchRef.current.scale, pinchRef.current.pan[1] + (centerY - pinchRef.current.y) * pinchRef.current.scale] })
+      applyPinch(pinchRef.current, first, second, event.currentTarget.getBoundingClientRect())
       return
     }
     const drag = modelDragRef.current
@@ -459,11 +476,6 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     }
   }
 
-  function touchDistance(touches: { length: number; [index: number]: { clientX: number; clientY: number } }): number {
-    if (touches.length < 2) return 0
-    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
-  }
-
   // Some installed-web-app WebViews do not reliably forward a second PointerEvent
   // to SVG. Keep a native touch fallback so pinch remains available there too.
   function startModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
@@ -473,15 +485,13 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     if (modelPointersRef.current.size) return
     const first = { x: event.touches[0].clientX, y: event.touches[0].clientY }; const second = { x: event.touches[1].clientX, y: event.touches[1].clientY }
     const rect = event.currentTarget.getBoundingClientRect()
-    touchPinchRef.current = { distance: Math.max(1, touchDistance(event.touches)), zoom: modelViewRef.current.zoom, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, pan: modelViewRef.current.pan, scale: 1000 / Math.max(1, rect.width) }
+    touchPinchRef.current = beginPinch(first, second, rect)
   }
 
   function moveModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
     if (event.touches.length !== 2 || !touchPinchRef.current || modelPointersRef.current.size) return
-    scheduleModelZoom(touchPinchRef.current.zoom * (touchDistance(event.touches) / touchPinchRef.current.distance))
     const first = { x: event.touches[0].clientX, y: event.touches[0].clientY }; const second = { x: event.touches[1].clientX, y: event.touches[1].clientY }
-    const centerX = (first.x + second.x) / 2; const centerY = (first.y + second.y) / 2
-    applyModelView({ pan: [touchPinchRef.current.pan[0] + (centerX - touchPinchRef.current.x) * touchPinchRef.current.scale, touchPinchRef.current.pan[1] + (centerY - touchPinchRef.current.y) * touchPinchRef.current.scale] })
+    applyPinch(touchPinchRef.current, first, second, event.currentTarget.getBoundingClientRect())
   }
 
   function endModelTouch(event: ReactTouchEvent<SVGSVGElement>) {
