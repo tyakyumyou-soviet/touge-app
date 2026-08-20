@@ -6,6 +6,9 @@
   NODE_VERSION = "22"
   NPM_FLAGS = "--no-audit"
 
+[functions]
+  directory = "netlify/functions"
+
 [[redirects]]
   from = "/api/road-discovery"
   to = "/.netlify/functions/road-discovery"

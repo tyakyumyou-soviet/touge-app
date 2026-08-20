@@ -15,7 +15,7 @@ interface OverpassResult { elements?: OverpassWay[] }
 // Requesting a 25km circle at once makes public Overpass instances time out
 // regularly in populated regions.  A 15km search is still useful for a
 // driving-area suggestion and keeps the road scan responsive.
-const MAX_DISCOVERY_RADIUS_KM = 15
+const MAX_DISCOVERY_RADIUS_KM = 12
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
@@ -29,7 +29,7 @@ export function buildRoadDiscoveryQuery(center: Coordinate, radiusKm: number): s
   // router's potentially unrelated shortcut.
   return `[out:json][timeout:45];
 way(around:${radius},${lat.toFixed(6)},${lng.toFixed(6)})
-  ["highway"~"^(primary|secondary|tertiary|unclassified|residential)$"]
+  ["highway"~"^(primary|secondary|tertiary|unclassified)$"]
   ["motor_vehicle"!~"^(no|private)$"]
   ["access"!~"^(no|private)$"]
   ["service"!~"^(parking|driveway)$"]
@@ -115,18 +115,20 @@ function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) 
 
 async function fetchOverpass(query: string): Promise<OverpassResult> {
   let lastError: unknown
+  const data = encodeURIComponent(query)
   const requests: Array<{ endpoint: string; init: RequestInit }> = [
     // Netlify serves this same-origin relay in production.  It avoids browser
     // CORS/rate-limit failures while retaining the same public OSM data source.
-    { endpoint: '/api/road-discovery', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) } },
-    ...OVERPASS_ENDPOINTS.map((endpoint) => ({ endpoint, init: { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: new URLSearchParams({ data: query }) } })),
+    { endpoint: `/api/road-discovery?data=${data}`, init: { method: 'GET' } },
+    ...OVERPASS_ENDPOINTS.map((endpoint) => ({ endpoint: `${endpoint}?data=${data}`, init: { method: 'GET' } })),
   ]
   for (const { endpoint, init } of requests) {
     const controller = new AbortController()
     const timer = window.setTimeout(() => controller.abort(), 50_000)
     try {
-      const response = await fetch(endpoint, { ...init, signal: controller.signal })
+      const response = await fetch(endpoint, { ...init, signal: controller.signal, cache: 'no-store' })
       if (!response.ok) throw new Error(`道路データ取得エラー (${response.status})`)
+      if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('道路データの応答形式が不正です')
       const result = await response.json() as OverpassResult
       if (!Array.isArray(result.elements)) throw new Error('道路データの応答形式が不正です')
       return result

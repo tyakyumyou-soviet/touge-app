@@ -595,6 +595,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .proposal-via-tags span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 999px; color: #175e45; background: #e3f1e9; font-size: 12px; font-weight: 700; }
 .proposal-via-tags button { padding: 0; border: 0; color: inherit; background: transparent; font-size: 15px; cursor: pointer; }
 .proposal-generate { width: 100%; }
+.proposal-loading { display: flex; align-items: center; gap: 11px; padding: 12px; border: 1px solid #a8cdb4; border-radius: 11px; color: #175e45; background: #edf7f0; }
+.proposal-loading > span { width: 22px; height: 22px; flex: 0 0 auto; border: 3px solid #78b58c; border-top-color: #176b4c; border-radius: 50%; animation: proposal-spin .8s linear infinite; }
+.proposal-loading strong, .proposal-loading small { display: block; }
+.proposal-loading small { margin-top: 2px; color: #4a6758; font-size: 12px; }
+@keyframes proposal-spin { to { transform: rotate(360deg); } }
 .proposal-results { display: grid; gap: 8px; }
 .proposal-results article { padding: 13px; border: 1px solid #cdd7cf; border-radius: 12px; background: #f8faf6; }
 .proposal-results article > span { color: #277756; font-size: 11px; font-weight: 800; letter-spacing: .08em; }

@@ -4,7 +4,8 @@ import { buildRoadDiscoveryQuery, validateDiscoveredRoad } from './externalDisco
 describe('external road discovery', () => {
   it('uses a bounded Overpass around query and excludes private road classes', () => {
     const query = buildRoadDiscoveryQuery([139.03, 35.22], 100)
-    expect(query).toContain('around:15000,35.220000,139.030000')
+    expect(query).toContain('around:12000,35.220000,139.030000')
+    expect(query).not.toContain('residential')
     expect(query).toContain('access')
     expect(query).toContain('out tags geom')
   })

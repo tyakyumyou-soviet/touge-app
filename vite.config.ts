@@ -4,6 +4,17 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/',
+  server: {
+    // Netlify production uses the function with the same path. In local Vite
+    // development, proxy it to Overpass so range proposals are fully usable.
+    proxy: {
+      '/api/road-discovery': {
+        target: 'https://overpass-api.de',
+        changeOrigin: true,
+        rewrite: (path) => path.replace('/api/road-discovery', '/api/interpreter'),
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {
