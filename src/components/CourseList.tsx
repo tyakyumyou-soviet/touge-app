@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, overallRating, userRatingCountFor } from '../lib/course'
+import { courseTollStatus, tollStatusLabels } from '../lib/toll'
 
 export function CourseList({ courses, selectedId, onSelect, header }: { courses: Course[]; selectedId?: string; onSelect: (course: Course) => void; header?: ReactNode }) {
   return (
@@ -13,7 +14,7 @@ export function CourseList({ courses, selectedId, onSelect, header }: { courses:
           <h3>{course.name}</h3>
           <div className="mini-metrics"><span>{course.distanceKm} km</span><span>{course.durationMin}分</span><span>高低差 {course.maxElevation - course.minElevation}m</span></div>
           <small className="user-rating-count">ユーザー評価 {userRatingCountFor(course)}件</small>
-          <div className="tag-row">{course.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div>
+          <div className="tag-row"><span className={`toll-chip ${courseTollStatus(course)}`}>{tollStatusLabels[courseTollStatus(course)]}</span>{course.tags.slice(0, 2).map((tag) => <span key={tag}>{tag}</span>)}</div>
         </button>
       ))}
     </div>

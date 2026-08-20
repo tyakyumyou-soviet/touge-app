@@ -31,7 +31,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type UserProfile } from '../types'
+import { ratingLabels, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
 import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -94,6 +94,10 @@ function ratings(value: unknown): Ratings {
   return Object.fromEntries(Object.keys(fallback).map((key) => [key, typeof (value as Record<string, unknown>)[key] === 'number' ? (value as Record<string, number>)[key] : fallback[key as RatingKey]])) as Ratings
 }
 
+function tollStatus(value: unknown): TollStatus | undefined {
+  return value === 'free' || value === 'toll' || value === 'conditional' || value === 'mixed' || value === 'unknown' ? value : undefined
+}
+
 function courseFromFirestore(id: string, value: Record<string, unknown>): Course {
   const route = routeFromFirestore(value.route)
   const elevationProfile = Array.isArray(value.elevationProfile) ? value.elevationProfile.filter((item): item is number => typeof item === 'number' && Number.isFinite(item)) : []
@@ -119,6 +123,7 @@ function courseFromFirestore(id: string, value: Record<string, unknown>): Course
     maxElevation: typeof value.maxElevation === 'number' && Number.isFinite(value.maxElevation) ? value.maxElevation : profileMax,
     tags: strings(value.tags),
     cautions: strings(value.cautions),
+    tollStatus: tollStatus(value.tollStatus) ?? tollStatus((value.tollInfo as { type?: unknown } | undefined)?.type),
     ratings: rawRatings,
     systemRatings: rawSystemRatings,
     userRatings: rawUserRatings,
@@ -206,7 +211,7 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
   return result.id
 }
 
-export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>): Promise<void> {
+export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility'>): Promise<void> {
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 

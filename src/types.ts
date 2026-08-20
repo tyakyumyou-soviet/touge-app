@@ -21,8 +21,11 @@ export type RatingKey =
 
 export type Ratings = Record<RatingKey, number>
 
+/** A route may include paid, free, conditionally free, or unknown segments. */
+export type TollStatus = 'free' | 'toll' | 'conditional' | 'mixed' | 'unknown'
+
 export interface TollInfo {
-  type: 'toll' | 'free'
+  type: TollStatus
   standardFee?: string
   hours?: string
   freePassConditions: string[]
@@ -58,6 +61,8 @@ export interface Course {
   systemRatingUpdatedAt?: string
   tags: string[]
   cautions: string[]
+  /** Course-level summary used by search, recommendations, and map/list badges. */
+  tollStatus?: TollStatus
   tollInfo?: TollInfo
   visibility: 'public' | 'limited' | 'private'
   authorId: string
@@ -74,6 +79,7 @@ export interface CourseDraft {
   route: Coordinate[]
   tags: string[]
   cautions: string[]
+  tollStatus: TollStatus
   visibility: Course['visibility']
 }
 

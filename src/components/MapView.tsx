@@ -20,6 +20,8 @@ interface MapViewProps {
   focusPoint: Coordinate | null
   pendingSearchPoint: Coordinate | null
   pendingSearchLabel: string
+  searchCenter?: Coordinate | null
+  searchRadiusKm?: number
   onSelect: (course: Course) => void
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onMovePoint: (index: number, point: Coordinate) => void
@@ -56,7 +58,25 @@ const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
   }] : [],
 })
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+/** A lightweight geodesic approximation used only for the visible search radius. */
+const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number | undefined) => ({
+  type: 'FeatureCollection' as const,
+  features: !center || !radiusKm ? [] : [{
+    type: 'Feature' as const,
+    properties: { radiusKm },
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [Array.from({ length: 65 }, (_, index) => {
+        const angle = (index / 64) * Math.PI * 2
+        const latitude = center[1] + (radiusKm / 110.574) * Math.sin(angle)
+        const longitude = center[0] + (radiusKm / (111.32 * Math.cos(center[1] * Math.PI / 180))) * Math.cos(angle)
+        return [longitude, latitude] as Coordinate
+      })],
+    },
+  }],
+})
+
+export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, searchCenter, searchRadiusKm, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -139,6 +159,11 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
         id: 'courses-line', type: 'line', source: 'courses',
         paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': .96 },
       })
+      // The reactive effect below immediately supplies the current filter.
+      // Starting empty keeps map construction independent from parent state.
+      map.addSource('search-radius', { type: 'geojson', data: toSearchRadius(null, undefined) })
+      map.addLayer({ id: 'search-radius-fill', type: 'fill', source: 'search-radius', paint: { 'fill-color': '#27795c', 'fill-opacity': .10 } })
+      map.addLayer({ id: 'search-radius-line', type: 'line', source: 'search-radius', paint: { 'line-color': '#27795c', 'line-width': 2, 'line-opacity': .78, 'line-dasharray': [2, 2] } })
       map.addSource('selected-course', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
       map.addSource('selected-contours', { type: 'geojson', data: toContourFeatureCollection(null) })
       map.addLayer({ id: 'selected-contours', type: 'line', source: 'selected-contours', paint: { 'line-color': '#637e70', 'line-width': 1.2, 'line-opacity': .62, 'line-dasharray': [1, 2] } })
@@ -227,6 +252,12 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     if (!mapReady || !map?.isStyleLoaded()) return
     ;(map.getSource('courses') as GeoJSONSource | undefined)?.setData(toFeatureCollection(courses, courseColors))
   }, [courseColors, courses, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    ;(map.getSource('search-radius') as GeoJSONSource | undefined)?.setData(toSearchRadius(searchCenter, searchRadiusKm))
+  }, [mapReady, searchCenter, searchRadiusKm])
 
   useEffect(() => {
     const map = mapRef.current

@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import type { Course } from '../types'
+import type { Course, TollStatus } from '../types'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 
-export type EditableCourse = Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>
+export type EditableCourse = Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility'>
 
 interface Props {
   course: Course
@@ -15,7 +15,7 @@ export function CourseManageForm({ course, onClose, onSave, onDelete }: Props) {
   const sheet = useMobileSheet()
   const [draft, setDraft] = useState<EditableCourse>(() => ({
     name: course.name, area: course.area, prefecture: course.prefecture, description: course.description,
-    tags: course.tags, cautions: course.cautions, visibility: course.visibility,
+    tags: course.tags, cautions: course.cautions, tollStatus: course.tollStatus ?? course.tollInfo?.type ?? 'unknown', visibility: course.visibility,
   }))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -43,7 +43,7 @@ export function CourseManageForm({ course, onClose, onSave, onDelete }: Props) {
     <div className="course-manager-summary"><strong>{course.name}</strong><span>{course.distanceKm} km · {course.durationMin}分 · 登録済みルートは維持されます</span></div>
     <form onSubmit={save}>
       <section className="course-manager-section"><h3>基本情報</h3><div className="form-grid"><label>コース名<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>エリア<input required value={draft.area} onChange={(event) => setDraft({ ...draft, area: event.target.value })} /></label><label>都県<select value={draft.prefecture} onChange={(event) => setDraft({ ...draft, prefecture: event.target.value as Course['prefecture'] })}><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value as Course['visibility'] })}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label></div></section>
-      <section className="course-manager-section"><h3>紹介と走行メモ</h3><div className="form-grid"><label className="wide">説明<textarea required rows={4} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label><label className="wide">タグ<input value={draft.tags.join('、')} onChange={(event) => setDraft({ ...draft, tags: event.target.value.split(/[,、]/).map((item) => item.trim()).filter(Boolean) })} placeholder="ワイド、展望、高原" /></label><label className="wide">注意事項<textarea rows={3} value={draft.cautions.join('\n')} onChange={(event) => setDraft({ ...draft, cautions: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean) })} placeholder="1行に1件" /></label></div></section>
+      <section className="course-manager-section"><h3>紹介と走行メモ</h3><div className="form-grid"><label className="wide">説明<textarea required rows={4} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label><label>料金区分<select value={draft.tollStatus} onChange={(event) => setDraft({ ...draft, tollStatus: event.target.value as TollStatus })}><option value="unknown">料金情報未確認</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label><label className="wide">タグ<input value={draft.tags.join('、')} onChange={(event) => setDraft({ ...draft, tags: event.target.value.split(/[,、]/).map((item) => item.trim()).filter(Boolean) })} placeholder="ワイド、展望、高原" /></label><label className="wide">注意事項<textarea rows={3} value={draft.cautions.join('\n')} onChange={(event) => setDraft({ ...draft, cautions: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean) })} placeholder="1行に1件" /></label></div></section>
       {notice && <p className="form-success" role="status">{notice}</p>}
       <footer className="course-manager-actions"><button type="button" className="button secondary" onClick={onClose}>キャンセル</button><button className="button primary" disabled={saving}>{saving ? '保存中…' : '変更を保存'}</button></footer>
     </form>

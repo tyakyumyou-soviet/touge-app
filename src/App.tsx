@@ -15,9 +15,13 @@ import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQua
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
 import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
-import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission } from './types'
+import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, TollStatus } from './types'
 import { useMobileSheet } from './hooks/useMobileSheet'
 import { canUseUnlimitedWaypoints, exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
+import { courseMatchesSearch } from './lib/courseSearch'
+import { geocodeJapanesePlace } from './lib/location'
+import { mergeTollStatuses } from './lib/toll'
+import type { DriveProposal } from './lib/recommendations'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | Course['prefecture']
@@ -31,6 +35,12 @@ export default function App() {
   const [selected, setSelected] = useState<Course | null>(null)
   const [search, setSearch] = useState('')
   const [prefecture, setPrefecture] = useState<PrefectureFilter>('すべて')
+  const [tollFilter, setTollFilter] = useState<'all' | TollStatus>('all')
+  const [nearbyCenter, setNearbyCenter] = useState<{ point: Coordinate; label: string } | null>(null)
+  const [nearbyQuery, setNearbyQuery] = useState('')
+  const [nearbyRadiusKm, setNearbyRadiusKm] = useState(25)
+  const [nearbyBusy, setNearbyBusy] = useState(false)
+  const [nearbyError, setNearbyError] = useState('')
   const [sort, setSort] = useState<'recommended' | 'curves' | 'elevation' | 'width'>('recommended')
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
@@ -103,15 +113,13 @@ export default function App() {
   }, [])
 
   const filtered = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('ja')
     return courses
-      .filter((course) => prefecture === 'すべて' || course.prefecture === prefecture)
-      .filter((course) => !query || `${course.name}${course.area}${course.description}${course.tags.join('')}`.toLocaleLowerCase('ja').includes(query))
+      .filter((course) => courseMatchesSearch(course, { text: search, prefecture, toll: tollFilter, center: nearbyCenter?.point, radiusKm: nearbyCenter ? nearbyRadiusKm : undefined }))
       .sort((a, b) => {
         if (sort === 'recommended') return (b.ratings.curves + b.ratings.elevation + b.ratings.width) - (a.ratings.curves + a.ratings.elevation + a.ratings.width)
         return b.ratings[sort] - a.ratings[sort]
       })
-  }, [courses, prefecture, search, sort])
+  }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter])
 
   const selectCourse = useCallback((course: Course) => { setSelected(course); setListCollapsed(true) }, [])
   const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
@@ -195,6 +203,38 @@ export default function App() {
     setListCollapsed(false)
     setListExpanded(false)
     setListOffset(0)
+  }
+
+  async function findNearbyCourses(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!nearbyQuery.trim()) return
+    setNearbyBusy(true); setNearbyError('')
+    try {
+      const result = await geocodeJapanesePlace(nearbyQuery)
+      setNearbyCenter({ point: result.coordinate, label: result.label })
+      setDraftFocus(result.coordinate)
+      setNearbyQuery('')
+    } catch (caught) { setNearbyError(caught instanceof Error ? caught.message : '場所を検索できませんでした') }
+    finally { setNearbyBusy(false) }
+  }
+
+  function useCurrentLocationForSearch() {
+    if (!navigator.geolocation) { setNearbyError('この端末では現在地を取得できません'); return }
+    setNearbyBusy(true); setNearbyError('')
+    navigator.geolocation.getCurrentPosition((position) => {
+      const point: Coordinate = [position.coords.longitude, position.coords.latitude]
+      setNearbyCenter({ point, label: '現在地' }); setDraftFocus(point); setNearbyBusy(false)
+    }, () => { setNearbyError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setNearbyBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
+  }
+
+  function useProposal(proposal: DriveProposal) {
+    const route = proposal.route
+    setDraftRoute(route)
+    setDraftPointLabels(route.map((_, index) => proposal.labels[index] ?? (index === 0 ? `${proposal.name} 始点` : index === route.length - 1 ? `${proposal.name} 終点` : `${proposal.name} 経由地`)))
+    setDraftPointRoles(route.map((_, index) => index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'))
+    setDraftViaInsertAfter(null)
+    setDraftFocus(route[0] ?? null)
+    setDraftPendingSearch(null)
   }
 
   async function handleLogin() {
@@ -300,7 +340,7 @@ export default function App() {
     const systemRatings = estimateSystemRatings(route, elevation, [...new Set(joinedCourses.flatMap((item) => item.tags))])
     const data: Omit<Course, 'id'> = {
       name: values.name, area: joinedCourses.map((item) => item.area).join(' → '), prefecture: joinedCourses[0].prefecture,
-      description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], visibility: values.visibility, authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
+      description: `${joinedCourses.map((item) => item.name).join('、')}を順番に走るオリジナル連結コースです。`, route, tags: ['オリジナル', '連結コース'], cautions: ['各区間の通行規制・料金情報を個別に確認してください。'], tollStatus: mergeTollStatuses(joinedCourses.map((item) => item.tollStatus ?? item.tollInfo?.type ?? 'unknown')), visibility: values.visibility, authorId: activeUser.uid, authorName: activeUser.displayName ?? 'ドライバー',
       distanceKm: routed.distanceKm, durationMin: routed.durationMin, minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, elevationSource: elevationResult.source, ratings: systemRatings, systemRatings, ratingCount: 0,
       systemRatingSource: [`連結元コースの道路形状`, `標高・高低差（${elevationResult.source}）`, '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10), updatedAt: new Date().toISOString().slice(0, 10), isSeed: false,
     }
@@ -336,7 +376,7 @@ export default function App() {
     setNotice('評価を投稿しました。集計への反映には時間がかかる場合があります。')
   }
 
-  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'visibility'>) {
+  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility'>) {
     const current = courses.find((course) => course.id === courseId)
     if (!current || current.authorId !== auth.currentUser?.uid) throw new Error('Not authorized')
     await updateCourse(courseId, changes)
@@ -367,7 +407,7 @@ export default function App() {
         <button className="brand" onClick={() => { openCourseList(); setSelected(null) }} aria-label="峠 ホーム">
           <img src={asset('icons/icon.svg')} alt="" /><span><b>峠</b><small>TOUGE EXPLORER</small></span>
         </button>
-        <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="峠・エリア・特徴で検索" aria-label="コースを検索" /></div>
+        <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="コース名・地名・タグ・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
           <button className="new-route" onClick={openCreateFlow}><span>＋</span>コース登録</button>
           {user ? <button className="user-button" onClick={() => setCommunityOpen(true)} title="プロフィールとコミュニティ" aria-label="プロフィールとコミュニティ">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
@@ -375,7 +415,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={courses} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={courses} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${drawing ? 'drawing' : ''} ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={{ transform: drawing ? undefined : listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
           <div className="explore-panel-top" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
@@ -386,6 +426,13 @@ export default function App() {
               <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
               <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
             </div>
+            <div className="filter-row course-extra-filters">
+              <select value={tollFilter} onChange={(event) => setTollFilter(event.target.value as 'all' | TollStatus)} aria-label="料金区分"><option value="all">料金すべて</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option><option value="unknown">料金情報未確認</option></select>
+              <select value={nearbyRadiusKm} onChange={(event) => setNearbyRadiusKm(Number(event.target.value))} disabled={!nearbyCenter} aria-label="検索半径"><option value={5}>半径5km</option><option value={10}>半径10km</option><option value={25}>半径25km</option><option value={50}>半径50km</option><option value={100}>半径100km</option></select>
+            </div>
+            <form className="nearby-course-search" onSubmit={findNearbyCourses}><input value={nearbyQuery} onChange={(event) => setNearbyQuery(event.target.value)} placeholder="地名・住所から近くのコースを探す" aria-label="近くのコースを探す場所" /><button type="submit" disabled={nearbyBusy}>{nearbyBusy ? '検索中…' : '近くを探す'}</button><button type="button" onClick={useCurrentLocationForSearch} disabled={nearbyBusy}>現在地</button></form>
+            {nearbyCenter && <div className="active-nearby-filter"><span>{nearbyCenter.label}から{nearbyRadiusKm}km以内</span><button type="button" onClick={() => setNearbyCenter(null)} aria-label="位置条件を解除">×</button></div>}
+            {nearbyError && <p className="filter-error" role="alert">{nearbyError}</p>}
             <div className="result-count"><span>{filtered.length} ROUTES</span><small>東京・神奈川・静岡</small></div>
           </>} />
         </section>
@@ -395,7 +442,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null); setDraftPendingSearch(null) }} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onPreviewJoined={previewJoinedCourses} onCreateJoined={handleCreateJoined} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null); setDraftPendingSearch(null) }} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onPreviewJoined={previewJoinedCourses} onUseProposal={useProposal} onCreateJoined={handleCreateJoined} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}

@@ -4,6 +4,10 @@ import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
+import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
+import { generateDriveProposals, type DriveProposal, type DriveStyle } from '../lib/recommendations'
+import { tollStatusLabels } from '../lib/toll'
+import type { TollStatus } from '../types'
 
 interface Props {
   transitionState?: 'idle' | 'entering' | 'leaving'
@@ -18,6 +22,7 @@ interface Props {
   onFocusPoint: (point: Coordinate) => void
   onPendingPointChange: (point: Coordinate | null, label?: string) => void
   onPreviewJoined: (courses: Course[]) => void
+  onUseProposal: (proposal: DriveProposal) => void
   onCreateJoined: (courses: Course[], values: { name: string; visibility: Course['visibility'] }) => Promise<void>
   onRemovePoint: (index: number) => void
   onChooseViaInsertion: (index: number | null) => void
@@ -27,8 +32,6 @@ interface Props {
   onSave: (draft: CourseDraft) => Promise<void>
 }
 
-interface GeocodedPoint { coordinate: Coordinate; label: string; level?: number }
-
 interface DetailsValues {
   name: string
   area: string
@@ -36,54 +39,11 @@ interface DetailsValues {
   description: string
   tags: string
   cautions: string
+  tollStatus: TollStatus
   visibility: CourseDraft['visibility']
 }
 
-async function geocode(query: string): Promise<GeocodedPoint> {
-  const normalized = query.trim().replace(/[－ー−]/g, '-')
-  const candidates = [...new Set([
-    normalized,
-    normalized.replace(/([0-9０-９]+)\s*-\s*([0-9０-９]+)/g, '$1番$2号'),
-  ].filter(Boolean))]
-  // CSIS provides Japanese residence-address-level results. Do not silently
-  // degrade an address to a town-centre result: exactness matters for homes.
-  const looksLikeAddress = /[0-9０-９]/.test(normalized)
-  if (looksLikeAddress) {
-    try {
-      for (const candidate of candidates) {
-        const response = await fetch(`https://geocode.csis.u-tokyo.ac.jp/cgi-bin/simple_geocode.cgi?charset=UTF8&series=ADDRESS&addr=${encodeURIComponent(candidate)}`)
-        if (!response.ok) continue
-        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml')
-        const result = xml.querySelector('candidate')
-        const longitude = Number(result?.querySelector('longitude')?.textContent)
-        const latitude = Number(result?.querySelector('latitude')?.textContent)
-        const level = Number(result?.querySelector('iLvl')?.textContent)
-        if (Number.isFinite(longitude) && Number.isFinite(latitude) && level >= 6) return { coordinate: [longitude, latitude], label: result?.querySelector('address')?.textContent?.replaceAll('/', '') || candidate, level }
-      }
-    } catch { /* Continue with exact-match sources below. */ }
-    throw new Error(`「${query}」の番地レベルの位置を確認できませんでした。概算位置は追加していません。地図上で正確な場所を指定してください`)
-  }
-  // GSI and Nominatim remain useful for named locations such as ICs and peaks.
-  try {
-    for (const candidate of candidates) {
-      const addressResponse = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(candidate)}`)
-      if (!addressResponse.ok) continue
-      const result = await addressResponse.json() as { features?: Array<{ geometry?: { coordinates?: [number, number] } }> }
-      const coordinates = result.features?.[0]?.geometry?.coordinates
-      if (coordinates && coordinates.every(Number.isFinite)) return { coordinate: coordinates, label: candidate }
-    }
-  } catch { /* Continue with the named-place search below. */ }
-  for (const candidate of candidates) {
-    const placeQuery = /日本|東京都|神奈川県|静岡県/.test(candidate) ? candidate : `${candidate}, 日本`
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=jp&q=${encodeURIComponent(placeQuery)}`)
-    if (!response.ok) continue
-    const items = await response.json() as Array<{ lon: string; lat: string }>
-    if (items[0]) return { coordinate: [Number(items[0].lon), Number(items[0].lat)], label: candidate }
-  }
-  throw new Error(`「${query}」が見つかりませんでした。地図上で正確な場所を指定してください`)
-}
-
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onPendingPointChange, onPreviewJoined, onCreateJoined, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onAddCourse, onFocusPoint, onPendingPointChange, onPreviewJoined, onUseProposal, onCreateJoined, onRemovePoint, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'choice' | 'route' | 'details' | 'join' | 'join-details'>('choice')
   const [query, setQuery] = useState('')
@@ -92,7 +52,18 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [searchError, setSearchError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
-  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', visibility: 'public' })
+  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public' })
+  const [routeMode, setRouteMode] = useState<'manual' | 'suggest'>('manual')
+  const [proposalQuery, setProposalQuery] = useState('')
+  const [proposalCenter, setProposalCenter] = useState<GeocodedPoint | null>(null)
+  const [proposalRadiusKm, setProposalRadiusKm] = useState(25)
+  const [proposalMaxDistanceKm, setProposalMaxDistanceKm] = useState(60)
+  const [proposalStyle, setProposalStyle] = useState<DriveStyle>('balanced')
+  const [proposalToll, setProposalToll] = useState<'all' | TollStatus>('all')
+  const [proposalViaQuery, setProposalViaQuery] = useState('')
+  const [proposalVias, setProposalVias] = useState<GeocodedPoint[]>([])
+  const [proposals, setProposals] = useState<DriveProposal[]>([])
+  const [proposalError, setProposalError] = useState('')
   const [joinedIds, setJoinedIds] = useState<string[]>([])
   const [joinedName, setJoinedName] = useState('')
   const [joinedVisibility, setJoinedVisibility] = useState<Course['visibility']>('limited')
@@ -113,7 +84,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
 
   function openDetails() {
     const defaults = buildCourseDraftDefaults(pointLabels, route)
-    setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', visibility: 'public' })
+    setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public' })
     setError('')
     setStage('details')
   }
@@ -165,12 +136,65 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     if (!query.trim()) return
     setBusy(true)
     try {
-      const result = await geocode(query.trim())
+      const result = await geocodeJapanesePlace(query.trim())
       setPendingSearchPoint(result)
       onFocusPoint(result.coordinate)
       onPendingPointChange(result.coordinate, result.label)
       setQuery('')
     } catch (caught) { setSearchError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
+  }
+
+  async function findProposalArea(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!proposalQuery.trim()) return
+    setBusy(true); setProposalError(''); setProposals([])
+    try {
+      const result = await geocodeJapanesePlace(proposalQuery)
+      setProposalCenter(result)
+      onFocusPoint(result.coordinate)
+      onPendingPointChange(result.coordinate, result.label)
+    } catch (caught) { setProposalError(caught instanceof Error ? caught.message : '探索エリアを検索できませんでした') }
+    finally { setBusy(false) }
+  }
+
+  function useCurrentLocationForProposal() {
+    if (!navigator.geolocation) { setProposalError('この端末では現在地を取得できません'); return }
+    setBusy(true); setProposalError('')
+    navigator.geolocation.getCurrentPosition((position) => {
+      const result = { coordinate: [position.coords.longitude, position.coords.latitude] as Coordinate, label: '現在地' }
+      setProposalCenter(result); onFocusPoint(result.coordinate); onPendingPointChange(result.coordinate, result.label); setBusy(false)
+    }, () => { setProposalError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
+  }
+
+  async function addProposalVia() {
+    if (!proposalViaQuery.trim()) return
+    setBusy(true); setProposalError('')
+    try {
+      const result = await geocodeJapanesePlace(proposalViaQuery)
+      setProposalVias((items) => items.some((item) => item.label === result.label) ? items : [...items, result])
+      setProposalViaQuery('')
+      onFocusPoint(result.coordinate)
+      onPendingPointChange(result.coordinate, result.label)
+    } catch (caught) { setProposalError(caught instanceof Error ? caught.message : '経由地を検索できませんでした') }
+    finally { setBusy(false) }
+  }
+
+  function generateProposals() {
+    if (!proposalCenter) { setProposalError('まず探索するエリアを指定してください'); return }
+    const next = generateDriveProposals(courses, {
+      center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
+      toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias,
+    })
+    if (!next.length) { setProposalError('条件に合う提案が見つかりませんでした。半径・距離・料金条件を緩めてください。'); return }
+    setProposalError(''); setProposals(next)
+  }
+
+  function chooseProposal(proposal: DriveProposal) {
+    onUseProposal(proposal)
+    setRouteMode('manual')
+    setProposals([])
+    setPendingSearchPoint(null); onPendingPointChange(null)
+    setSearchNotice(`「${proposal.name}」を提案ルートとして読み込みました。地点を追加・削除して仕上げられます。`)
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -180,7 +204,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     const defaults = buildCourseDraftDefaults(pointLabels, route)
     const draft: CourseDraft = {
       name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
-      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), visibility: details.visibility,
+      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility,
     }
     setBusy(true); setError('')
     try { await onSave(draft) } catch (caught: unknown) {
@@ -214,6 +238,26 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="button secondary" onClick={() => setStage('join')}>戻る</button><button className="button primary" disabled={busy}>{busy ? '道路・標高を確認して保存中…' : '連結コースを保存'}</button></footer>
     </form> : stage === 'route' ? <div className="route-builder-stage">
+      <div className="route-mode-switch" role="tablist" aria-label="地点から作る方法">
+        <button type="button" role="tab" aria-selected={routeMode === 'manual'} className={routeMode === 'manual' ? 'active' : ''} onClick={() => setRouteMode('manual')}>地点を指定</button>
+        <button type="button" role="tab" aria-selected={routeMode === 'suggest'} className={routeMode === 'suggest' ? 'active' : ''} onClick={() => { setRouteMode('suggest'); setSearchError('') }}>範囲から提案</button>
+      </div>
+      {routeMode === 'suggest' ? <section className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
+        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>範囲から峠道を提案</h3><p>エリア、走り方、料金、通りたい地点を指定すると、登録済みの道路形状・評価情報から候補を比較できます。選んだ後は通常どおり地点を編集できます。</p></div>
+        <form className="route-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="探索エリア（地名・住所・IC）" aria-label="探索エリアを検索" /><button disabled={busy}>{busy ? '検索中…' : 'エリアを指定'}</button></form>
+        <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を探索中心にする</button>{proposalCenter && <strong>中心: {proposalCenter.label}</strong>}</div>
+        <div className="proposal-grid">
+          <label>探索半径<select value={proposalRadiusKm} onChange={(event) => setProposalRadiusKm(Number(event.target.value))}><option value={5}>5km</option><option value={10}>10km</option><option value={25}>25km</option><option value={50}>50km</option><option value={100}>100km</option></select></label>
+          <label>最大距離<select value={proposalMaxDistanceKm} onChange={(event) => setProposalMaxDistanceKm(Number(event.target.value))}><option value={20}>20km</option><option value={40}>40km</option><option value={60}>60km</option><option value={100}>100km</option><option value={200}>200km</option></select></label>
+          <label>走り方<select value={proposalStyle} onChange={(event) => setProposalStyle(event.target.value as DriveStyle)}><option value="winding">ワインディング重視</option><option value="balanced">バランス</option><option value="easy">走りやすさ重視</option></select></label>
+          <label>料金<select value={proposalToll} onChange={(event) => setProposalToll(event.target.value as 'all' | TollStatus)}><option value="all">指定なし</option><option value="free">無料のみ</option><option value="toll">有料道路</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label>
+        </div>
+        <div className="proposal-via"><label>必ず通りたい地点<input value={proposalViaQuery} onChange={(event) => setProposalViaQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addProposalVia() } }} placeholder="例: 大観山、三国峠" /></label><button type="button" className="button secondary" onClick={() => void addProposalVia()} disabled={busy}>追加</button></div>
+        {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
+        {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
+        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>条件から3案を提案</button>
+        {proposals.length > 0 && <div className="proposal-results" aria-live="polite">{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><button type="button" className="button secondary" onClick={() => chooseProposal(proposal)}>この候補を編集する →</button></article>)}</div>}
+      </section> : <>
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {searchError && <section className="search-not-found" role="alert"><strong>場所が見つかりませんでした</strong><p>{searchError}</p><small>地点は追加されていません。地名の一部・施設名・IC名で検索し直すか、地図をタップして正確な位置を指定してください。</small></section>}
       {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の赤い仮ピンを確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via', viaInsertAfter); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>ゴールとして追加</button>}<button type="button" className="text-button" onClick={() => { setPendingSearchPoint(null); onPendingPointChange(null) }}>追加しない</button></div></section>}
@@ -226,11 +270,13 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       <p className="geocoder-credit">住所検索: <a href="https://geocode.csis.u-tokyo.ac.jp/" target="_blank" rel="noreferrer">CSISシンプルジオコーディング実験</a></p>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2 || !hasGoal || exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)} onClick={openDetails}>詳細へ →</button></footer>
+      </>}
     </div> : <form className="route-details-stage" onSubmit={submit}>
       <button type="button" className="text-button" onClick={() => setStage('route')}>← ルートを修正</button>
       <div className="form-grid">
         <label>コース名<input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="地点名から自動入力されます" /></label><label>エリア<input value={details.area} onChange={(event) => setDetails((previous) => ({ ...previous, area: event.target.value }))} placeholder="地点名から自動入力されます" /></label>
         <label>都県<select value={details.prefecture} onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value as CourseDraft['prefecture'] }))}><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select value={details.visibility} onChange={(event) => setDetails((previous) => ({ ...previous, visibility: event.target.value as CourseDraft['visibility'] }))}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
+        <label className="wide">料金区分<select value={details.tollStatus} onChange={(event) => setDetails((previous) => ({ ...previous, tollStatus: event.target.value as TollStatus }))}><option value="unknown">料金情報未確認</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select><small className="tag-help">不明な場合は「料金情報未確認」のまま保存します。無料と推測して登録しません。</small></label>
         <label className="wide">説明（任意）<textarea value={details.description} onChange={(event) => setDetails((previous) => ({ ...previous, description: event.target.value }))} rows={3} placeholder="コースの特徴やおすすめポイント" /></label><label className="wide">タグ（任意）<input value={details.tags} onChange={(event) => setDetails((previous) => ({ ...previous, tags: event.target.value }))} list="course-tag-suggestions" placeholder="#ワイド, #高原, #展望" /><datalist id="course-tag-suggestions">{recommendedTags.map((tag) => <option key={tag} value={`#${tag}`} />)}</datalist><small className="tag-help">#から始まる語だけを保存します。カンマまたは空白で区切れます。</small></label>
         {recommendedTags.length > 0 && <div className="wide tag-recommendations" aria-label="おすすめのタグ"><span>おすすめ</span>{recommendedTags.map((tag) => <button key={tag} type="button" onClick={() => addRecommendedTag(tag)}>#{tag}</button>)}</div>}
         <label className="wide">注意事項（任意）<textarea value={details.cautions} onChange={(event) => setDetails((previous) => ({ ...previous, cautions: event.target.value }))} rows={2} placeholder="1行に1件。通行規制や狭路など" /></label>
