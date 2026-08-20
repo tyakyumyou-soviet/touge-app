@@ -454,7 +454,6 @@ export default function App() {
               {nearbyCenter && <div className="active-nearby-filter"><span>{nearbyCenter.label}から{nearbyRadiusKm}km以内</span><button type="button" onClick={() => setNearbyCenter(null)} aria-label="位置条件を解除">×</button></div>}
               {nearbyError && <p className="filter-error" role="alert">{nearbyError}</p>}
             </div></div>
-            <div className="result-count"><span>{filtered.length} ROUTES</span><small>東京・神奈川・静岡</small></div>
           </div>} />
         </section>
 
