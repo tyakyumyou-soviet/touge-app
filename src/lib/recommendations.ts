@@ -20,7 +20,10 @@ export interface DriveProposal {
   source: 'catalog' | 'openstreetmap'
   name: string
   area: string
+  /** Complete road geometry used by map and 3D previews. */
   route: Coordinate[]
+  /** Sparse editable stops used only when the proposal enters the route builder. */
+  waypoints?: Coordinate[]
   labels: string[]
   tollStatus: TollStatus
   distanceKm: number
@@ -69,7 +72,8 @@ export function generateDriveProposals(courses: Course[], request: DriveProposal
         source: 'catalog' as const,
         name: course.name,
         area: course.area,
-        route: sampledRoute(course),
+        route: course.route,
+        waypoints: sampledRoute(course),
         labels: [course.area.split('〜')[0] || course.name, ...(course.landmarks?.slice(0, 3).map((item) => item.name) ?? []), course.area.split('〜').at(-1) || course.name],
         tollStatus: courseTollStatus(course),
         distanceKm: course.distanceKm,

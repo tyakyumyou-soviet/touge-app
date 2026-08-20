@@ -12,4 +12,12 @@ describe('drive proposals', () => {
     const results = generateDriveProposals([base('wide', 'free', 3), base('curvy', 'free', 5), base('paid', 'toll', 5)], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, toll: 'free', style: 'winding', requiredPoints: [] })
     expect(results.map((item) => item.sourceCourseId)).toEqual(['curvy', 'wide'])
   })
+
+  it('keeps the full road geometry while exposing a compact editable waypoint list', () => {
+    const route = Array.from({ length: 80 }, (_, index) => [139 + index * .0001, 35 + Math.sin(index / 8) * .001] as [number, number])
+    const course = { ...base('dense', 'free', 5), route }
+    const [proposal] = generateDriveProposals([course], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, toll: 'free', style: 'winding', requiredPoints: [] })
+    expect(proposal.route).toEqual(route)
+    expect(proposal.waypoints?.length).toBeLessThan(route.length)
+  })
 })

@@ -293,7 +293,9 @@ export default function App() {
       roles: draftPointRoles,
       viaInsertAfter: draftViaInsertAfter,
     })
-    const route = proposal.route
+    // Preview geometry and editable stops have different jobs. Rendering uses
+    // every road vertex; the builder exposes only a compact set of anchors.
+    const route = proposal.waypoints ?? proposal.route
     setDraftRoute(route)
     setDraftPointLabels(route.map((_, index) => proposal.labels[index] ?? (index === 0 ? `${proposal.name} 始点` : index === route.length - 1 ? `${proposal.name} 終点` : `${proposal.name} 経由地`)))
     setDraftPointRoles(route.map((_, index) => index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'))

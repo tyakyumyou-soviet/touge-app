@@ -95,7 +95,7 @@ function sampled(route: Coordinate[], max = 14): Coordinate[] {
  * anchors to retain the intended road section: dense stop lists make an
  * automatically proposed route impossible to inspect or edit.
  */
-function proposalWaypoints(route: Coordinate[]): Coordinate[] {
+export function proposalWaypoints(route: Coordinate[]): Coordinate[] {
   const length = routeDistanceKm(route)
   const count = Math.min(6, Math.max(2, Math.ceil(length / 8) + 1))
   return sampled(route, count)
@@ -168,7 +168,10 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       source: 'openstreetmap' as const,
       name,
       area: item.tags.ref ? `${item.tags.ref} · OpenStreetMap道路候補` : 'OpenStreetMap道路候補',
-      route: proposalWaypoints(item.route),
+      // Keep the complete OSM geometry for preview rendering. The compact
+      // waypoint list is only for the editor and must never replace the line.
+      route: item.route,
+      waypoints: proposalWaypoints(item.route),
       labels: [name, `${item.validation.roadLengthKm}km区間`],
       tollStatus,
       distanceKm: item.validation.roadLengthKm,

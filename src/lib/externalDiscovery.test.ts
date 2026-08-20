@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRoadDiscoveryQuery, validateDiscoveredRoad } from './externalDiscovery'
+import { buildRoadDiscoveryQuery, proposalWaypoints, validateDiscoveredRoad } from './externalDiscovery'
 
 describe('external road discovery', () => {
   it('uses a bounded Overpass around query and excludes private road classes', () => {
@@ -13,5 +13,14 @@ describe('external road discovery', () => {
   it('rejects geometries with a large discontinuity', () => {
     const result = validateDiscoveredRoad([[139, 35], [139.005, 35.005], [139.2, 35.2]])
     expect(result.warnings).toContain('道路形状に大きな欠落があります')
+  })
+
+  it('reduces editor stops without mutating the complete road geometry', () => {
+    const route = Array.from({ length: 120 }, (_, index) => [139 + index * .0001, 35 + Math.sin(index / 7) * .001] as [number, number])
+    const waypoints = proposalWaypoints(route)
+    expect(waypoints.length).toBeLessThanOrEqual(6)
+    expect(route).toHaveLength(120)
+    expect(waypoints[0]).toEqual(route[0])
+    expect(waypoints.at(-1)).toEqual(route.at(-1))
   })
 })

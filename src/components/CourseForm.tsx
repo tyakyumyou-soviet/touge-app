@@ -240,7 +240,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
         <button type="button" role="tab" aria-selected={routeMode === 'suggest'} className={routeMode === 'suggest' ? 'active' : ''} onClick={() => { setRouteMode('suggest'); setSearchError('') }}>範囲から提案</button>
       </div>
       {routeMode === 'suggest' ? <section className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
-        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>範囲から峠道を提案</h3><p>指定範囲のOpenStreetMap道路データから走れる道だけを抽出し、カーブ・道幅・高低差を検証します。選んだ後は通常どおり地点を編集できます。</p></div>
+        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>範囲から峠道を提案</h3></div>
         <form className="route-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="探索エリア（地名・住所・IC）" aria-label="探索エリアを検索" /><button disabled={busy}>{busy ? '検索中…' : 'エリアを指定'}</button></form>
         <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を探索中心にする</button>{proposalCenter && <strong>中心: {proposalCenter.label}</strong>}</div>
         <div className="proposal-grid">
