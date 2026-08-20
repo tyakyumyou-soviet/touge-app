@@ -69,6 +69,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [proposalToll, setProposalToll] = useState<'all' | TollStatus>('all')
   const [proposalViaQuery, setProposalViaQuery] = useState('')
   const [proposalVias, setProposalVias] = useState<GeocodedPoint[]>([])
+  const [proposalSettingsOpen, setProposalSettingsOpen] = useState(false)
   const [proposals, setProposals] = useState<DriveProposal[]>([])
   const [proposalError, setProposalError] = useState('')
   const [proposalProgress, setProposalProgress] = useState('')
@@ -236,24 +237,27 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     </div>
     {stage === 'route' ? <div className="route-builder-stage">
-      <div className="route-mode-switch" role="tablist" aria-label="地点から作る方法">
-        <button type="button" role="tab" aria-selected={routeMode === 'manual'} className={routeMode === 'manual' ? 'active' : ''} onClick={() => setRouteMode('manual')}>地点を指定</button>
-        <button type="button" role="tab" aria-selected={routeMode === 'suggest'} className={routeMode === 'suggest' ? 'active' : ''} onClick={() => { setRouteMode('suggest'); setSearchError('') }}>範囲から提案</button>
+      <div className="route-mode-switch" role="tablist" aria-label="コースの作り方">
+        <button type="button" role="tab" aria-selected={routeMode === 'manual'} className={routeMode === 'manual' ? 'active' : ''} onClick={() => setRouteMode('manual')}>自分で作る</button>
+        <button type="button" role="tab" aria-selected={routeMode === 'suggest'} className={routeMode === 'suggest' ? 'active' : ''} onClick={() => { setRouteMode('suggest'); setSearchError('') }}>おまかせ提案</button>
       </div>
       {routeMode === 'suggest' ? <section className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
-        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>範囲から峠道を提案</h3></div>
-        <form className="route-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="探索エリア（地名・住所・IC）" aria-label="探索エリアを検索" /><button disabled={busy}>{busy ? '検索中…' : 'エリアを指定'}</button></form>
-        <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を探索中心にする</button>{proposalCenter && <strong>中心: {proposalCenter.label}</strong>}</div>
-        <div className="proposal-grid">
-          <label>探索半径<select value={proposalRadiusKm} onChange={(event) => setProposalRadiusKm(Number(event.target.value))}><option value={5}>5km</option><option value={10}>10km</option><option value={25}>25km</option><option value={50}>50km</option><option value={100}>100km</option></select></label>
-          <label>最大距離<select value={proposalMaxDistanceKm} onChange={(event) => setProposalMaxDistanceKm(Number(event.target.value))}><option value={20}>20km</option><option value={40}>40km</option><option value={60}>60km</option><option value={100}>100km</option><option value={200}>200km</option></select></label>
-          <label>走り方<select value={proposalStyle} onChange={(event) => setProposalStyle(event.target.value as DriveStyle)}><option value="winding">ワインディング重視</option><option value="balanced">バランス</option><option value="easy">走りやすさ重視</option></select></label>
-          <label>料金<select value={proposalToll} onChange={(event) => setProposalToll(event.target.value as 'all' | TollStatus)}><option value="all">指定なし</option><option value="free">無料のみ</option><option value="toll">有料道路</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label>
-        </div>
-        <div className="proposal-via"><label>必ず通りたい地点<input value={proposalViaQuery} onChange={(event) => setProposalViaQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addProposalVia() } }} placeholder="例: 大観山、三国峠" /></label><button type="button" className="button secondary" onClick={() => void addProposalVia()} disabled={busy}>追加</button></div>
-        {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
+        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>どこを走りたい？</h3></div>
+        <form className="route-search proposal-area-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="地名・住所・IC・峠を入力" aria-label="走りたい場所を検索" /><button disabled={busy}>{busy ? '検索中…' : 'この場所にする'}</button></form>
+        <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を使う</button>{proposalCenter && <strong>探索地点: {proposalCenter.label}</strong>}</div>
+        <button type="button" className={`proposal-settings-toggle ${proposalSettingsOpen ? 'open' : ''}`} onClick={() => setProposalSettingsOpen((value) => !value)} aria-expanded={proposalSettingsOpen} aria-controls="proposal-settings">詳細条件 <span aria-hidden="true">{proposalSettingsOpen ? '−' : '+'}</span></button>
+        <div id="proposal-settings" className={`proposal-settings ${proposalSettingsOpen ? 'open' : ''}`} aria-hidden={!proposalSettingsOpen}><div className="proposal-settings-inner">
+          <div className="proposal-grid">
+            <label>探索半径<select value={proposalRadiusKm} onChange={(event) => setProposalRadiusKm(Number(event.target.value))}><option value={5}>5km</option><option value={10}>10km</option><option value={25}>25km</option><option value={50}>50km</option><option value={100}>100km</option></select></label>
+            <label>最大距離<select value={proposalMaxDistanceKm} onChange={(event) => setProposalMaxDistanceKm(Number(event.target.value))}><option value={20}>20km</option><option value={40}>40km</option><option value={60}>60km</option><option value={100}>100km</option><option value={200}>200km</option></select></label>
+            <label>走り方<select value={proposalStyle} onChange={(event) => setProposalStyle(event.target.value as DriveStyle)}><option value="winding">ワインディング重視</option><option value="balanced">バランス</option><option value="easy">走りやすさ重視</option></select></label>
+            <label>料金<select value={proposalToll} onChange={(event) => setProposalToll(event.target.value as 'all' | TollStatus)}><option value="all">指定なし</option><option value="free">無料のみ</option><option value="toll">有料道路</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label>
+          </div>
+          <div className="proposal-via"><label>必ず通りたい地点<input value={proposalViaQuery} onChange={(event) => setProposalViaQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addProposalVia() } }} placeholder="例: 大観山、三国峠" /></label><button type="button" className="button secondary" onClick={() => void addProposalVia()} disabled={busy}>追加</button></div>
+          {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
+        </div></div>
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
-        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '道路を探索中…' : '条件から3案を提案'}</button>
+        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '道路を探索中…' : 'この条件で3案を見る'}</button>
         {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>道路を探索しています</strong><small>{proposalProgress}</small></div></div>}
         {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">3案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => onOpenProposalPreview(proposal.id)}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>この候補を編集する →</button></div></article>)}</div>}
       </section> : <>
