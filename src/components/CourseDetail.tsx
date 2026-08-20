@@ -22,9 +22,10 @@ interface Props {
   onManageCourse: () => void
   isPreview?: boolean
   onEditPreview?: () => void
+  previewNavigation?: { index: number; total: number; onPrevious: () => void; onNext: () => void; onReturn: () => void }
 }
 
-export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, isPreview = false, onEditPreview }: Props) {
+export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, isPreview = false, onEditPreview, previewNavigation }: Props) {
   const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
@@ -93,7 +94,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
             <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
           </div>
         </header>
-        {isPreview && <section className="course-preview-banner"><strong>保存前の提案プレビュー</strong><span>評価・地形・走行レビューを確認できます。保存するにはルート編集へ進んでください。</span>{onEditPreview && <button type="button" onClick={onEditPreview}>この候補を編集する</button>}</section>}
+        {isPreview && <section className="course-preview-banner"><strong>保存前の提案プレビュー {previewNavigation ? `${previewNavigation.index + 1} / ${previewNavigation.total}` : ''}</strong><span>評価・地形・走行レビューを確認できます。保存するにはルート編集へ進んでください。</span>{previewNavigation && <div className="preview-navigation"><button type="button" onClick={previewNavigation.onPrevious} disabled={previewNavigation.index === 0}>← 前の候補</button><button type="button" onClick={previewNavigation.onReturn}>候補一覧へ</button><button type="button" onClick={previewNavigation.onNext} disabled={previewNavigation.index === previewNavigation.total - 1}>次の候補 →</button></div>}{onEditPreview && <button type="button" onClick={onEditPreview}>この候補を編集する</button>}</section>}
         <div className="hero-metrics">
           <div><strong>{course.distanceKm}</strong><span>km</span></div>
           <div><strong>{course.durationMin}</strong><span>分</span></div>

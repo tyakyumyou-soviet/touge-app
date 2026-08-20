@@ -90,6 +90,17 @@ function sampled(route: Coordinate[], max = 14): Coordinate[] {
   return Array.from({ length: max }, (_, index) => route[Math.round(index * (route.length - 1) / (max - 1))])
 }
 
+/**
+ * The routing engine fills in the road between these points. Keep only enough
+ * anchors to retain the intended road section: dense stop lists make an
+ * automatically proposed route impossible to inspect or edit.
+ */
+function proposalWaypoints(route: Coordinate[]): Coordinate[] {
+  const length = routeDistanceKm(route)
+  const count = Math.min(6, Math.max(2, Math.ceil(length / 8) + 1))
+  return sampled(route, count)
+}
+
 function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) {
   return ways.map((way) => {
     const tags = way.tags ?? {}
@@ -157,7 +168,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       source: 'openstreetmap' as const,
       name,
       area: item.tags.ref ? `${item.tags.ref} · OpenStreetMap道路候補` : 'OpenStreetMap道路候補',
-      route: sampled(item.route),
+      route: proposalWaypoints(item.route),
       labels: [name, `${item.validation.roadLengthKm}km区間`],
       tollStatus,
       distanceKm: item.validation.roadLengthKm,

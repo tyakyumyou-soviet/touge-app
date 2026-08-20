@@ -608,6 +608,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-preview-banner strong { font-size: 13px; }
 .course-preview-banner span { font-size: 12px; line-height: 1.45; }
 .course-preview-banner button { justify-self: start; margin-top: 3px; padding: 6px 9px; color: #34280a; border: 1px solid #c9a63b; border-radius: 7px; background: #f2d16b; font-weight: 800; cursor: pointer; }
+.course-preview-banner .preview-navigation { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 3px; }
+.course-preview-banner .preview-navigation button { width: 100%; margin: 0; padding: 7px 4px; font-size: 11px; }
+.course-preview-banner .preview-navigation button:disabled { opacity: .45; cursor: default; }
 .proposal-results article { padding: 13px; border: 1px solid #cdd7cf; border-radius: 12px; background: #f8faf6; }
 .proposal-results article > span { color: #277756; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
 .proposal-results h4 { margin: 3px 0; font-size: 17px; }.proposal-results p { margin: 0; color: var(--muted); font-size: 12px; }.proposal-results ul { margin: 9px 0; padding-left: 18px; color: #425149; font-size: 12px; }.proposal-results .button { width: 100%; }
