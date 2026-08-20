@@ -99,8 +99,8 @@ export function addUserRating(course: Course, rating: Ratings): Course {
   return { ...next, ratings: combinedRatings(next) }
 }
 
-export function googleMapsUrl(course: Course, includeCurrentLocation: boolean): string {
-  const route = course.route
+export function googleMapsUrl(course: Course, includeCurrentLocation: boolean, reverse = false): string {
+  const route = reverse ? [...course.route].reverse() : course.route
   const params = new URLSearchParams({ api: '1', travelmode: 'driving' })
   const format = ([lng, lat]: Coordinate) => `${lat},${lng}`
   if (!includeCurrentLocation) params.set('origin', format(route[0]))

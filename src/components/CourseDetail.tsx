@@ -31,6 +31,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   const [sheetDragging, setSheetDragging] = useState(false)
   const [sheetExpanded, setSheetExpanded] = useState(false)
   const [sheetCollapsed, setSheetCollapsed] = useState(false)
+  const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
   const systemRatings = systemRatingsFor(course)
@@ -38,6 +39,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   const userCount = userRatingCountFor(course)
   const tollStatus = courseTollStatus(course)
   useEffect(() => isPreview ? undefined : subscribeLiveRoadInfo(course.id, setLiveInfo), [course.id, isPreview])
+  useEffect(() => { setNavigationReversed(false) }, [course.id])
   useEffect(() => {
     let cancelled = false
     const midpoint = course.route[Math.floor(course.route.length / 2)] ?? course.route[0]
@@ -138,8 +140,8 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         </div>}
       </div>
       <footer className="nav-actions">
-        <a className="button secondary" href={googleMapsUrl(course, false)} target="_blank" rel="noreferrer">コースだけ開く</a>
-        <a className="button primary" href={googleMapsUrl(course, true)} target="_blank" rel="noreferrer">現在地から案内</a>
+        <div className="navigation-direction"><span>{navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => setNavigationReversed((value) => !value)}>⇄ 始点とゴールを入れ替える</button></div>
+        <div className="navigation-links"><a className="button secondary" href={googleMapsUrl(course, false, navigationReversed)} target="_blank" rel="noreferrer">コースだけ開く</a><a className="button primary" href={googleMapsUrl(course, true, navigationReversed)} target="_blank" rel="noreferrer">現在地から案内</a></div>
       </footer>
       <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}><span>{course.name}</span></div>
     </article>
