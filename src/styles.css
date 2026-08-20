@@ -557,6 +557,16 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .proposal-results article { padding: 13px; border: 1px solid #cdd7cf; border-radius: 12px; background: #f8faf6; }
 .proposal-results article > span { color: #277756; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
 .proposal-results h4 { margin: 3px 0; font-size: 17px; }.proposal-results p { margin: 0; color: var(--muted); font-size: 12px; }.proposal-results ul { margin: 9px 0; padding-left: 18px; color: #425149; font-size: 12px; }.proposal-results .button { width: 100%; }
+.proposal-validation { display: block; margin: -3px 0 11px; color: #1a6b4d; font-size: 11px; line-height: 1.45; }
+.admin-panel { width: min(720px, calc(100% - 24px)); max-height: min(88dvh, 820px); overflow: auto; }
+.admin-panel > .mobile-sheet-drag-region > p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.admin-report-list { display: grid; gap: 10px; margin-top: 16px; }
+.admin-report-list article { display: grid; gap: 6px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf6; }
+.admin-report-list article > span { color: var(--muted); font-size: 12px; }
+.admin-report-list article p { margin: 0; white-space: pre-wrap; }
+.admin-report-list article a { width: max-content; color: var(--green); font-size: 13px; font-weight: 700; }
+.admin-report-list footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.admin-report-list footer .button { min-height: 34px; padding: 7px 11px; }
 .community-panel > header, .community-panel .mobile-sheet-drag-region > header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
 .profile-editor { display: grid; grid-template-columns: 72px 1fr; gap: 16px; align-items: start; margin-bottom: 14px; }
 .profile-avatar { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #18231f; font-size: 28px; font-weight: 800; }

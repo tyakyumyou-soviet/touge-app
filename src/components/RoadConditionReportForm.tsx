@@ -1,0 +1,10 @@
+import { useState, type FormEvent } from 'react'
+import { useMobileSheet } from '../hooks/useMobileSheet'
+
+export interface RoadConditionReport { condition: string; sourceUrl: string; observedAt: string }
+
+export function RoadConditionReportForm({ courseName, onCancel, onSave }: { courseName: string; onCancel: () => void; onSave: (report: RoadConditionReport) => Promise<void> }) {
+  const sheet = useMobileSheet(); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setBusy(true); setError(''); const data = new FormData(event.currentTarget); try { await onSave({ condition: String(data.get('condition')), sourceUrl: String(data.get('sourceUrl')), observedAt: String(data.get('observedAt')) }); onCancel() } catch { setError('送信できませんでした。ログインと通信状態を確認してください。') } finally { setBusy(false) } }
+  return <div className="modal-backdrop"><form className={`modal ${sheet.className}`} style={sheet.style} onSubmit={submit} aria-labelledby="road-report-title"><div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROAD CONDITION</p><h2 id="road-report-title">{courseName}の道路状況を報告</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header><p className="description">通行止め、片側交互通行、落石、工事、渋滞などを、道路管理者・自治体・警察などの情報源と一緒に送信してください。管理者確認後に反映します。</p></div><div className="form-grid"><label>確認日<input required type="date" name="observedAt" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label className="wide">状況<textarea required name="condition" rows={3} placeholder="例: ○○付近で片側交互通行。通過に約10分" /></label><label className="wide">情報源URL<input required type="url" name="sourceUrl" placeholder="道路管理者・自治体・警察等の案内URL" /></label></div>{error && <p className="form-error" role="alert">{error}</p>}<footer><button type="button" className="button secondary" onClick={onCancel}>キャンセル</button><button className="button primary" disabled={busy}>{busy ? '送信中…' : '状況を送信'}</button></footer></form></div>
+}

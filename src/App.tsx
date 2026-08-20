@@ -8,16 +8,18 @@ import { RatingForm } from './components/RatingForm'
 import { InstallPrompt } from './components/InstallPrompt'
 import { Course3DView } from './components/Course3DView'
 import { TollReportForm, type TollReport } from './components/TollReportForm'
+import { RoadConditionReportForm, type RoadConditionReport } from './components/RoadConditionReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
+import { AdminPanel } from './components/AdminPanel'
 import { CourseManageForm } from './components/CourseManageForm'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
+import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, TollStatus } from './types'
 import { useMobileSheet } from './hooks/useMobileSheet'
-import { canUseUnlimitedWaypoints, exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
+import { canUseUnlimitedWaypoints, exceedsWaypointLimit, isAdministrator, WAYPOINT_LIMIT } from './lib/access'
 import { courseMatchesSearch } from './lib/courseSearch'
 import { geocodeJapanesePlace } from './lib/location'
 import { mergeTollStatuses } from './lib/toll'
@@ -57,6 +59,8 @@ export default function App() {
   const [ratingOpen, setRatingOpen] = useState(false)
   const [course3dOpen, setCourse3dOpen] = useState(false)
   const [tollReportOpen, setTollReportOpen] = useState(false)
+  const [roadReportOpen, setRoadReportOpen] = useState(false)
+  const [adminOpen, setAdminOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [listCollapsed, setListCollapsed] = useState(false)
   const [listExpanded, setListExpanded] = useState(false)
@@ -368,6 +372,13 @@ export default function App() {
     setNotice('料金情報を受け付けました。確認後に反映します。')
   }
 
+  async function handleRoadConditionReport(report: RoadConditionReport) {
+    if (!selected) return
+    if (!user) { await handleLogin(); if (!auth.currentUser) throw new Error('Login required') }
+    await submitRoadConditionReport(selected.id, report, auth.currentUser!)
+    setNotice('道路状況を受け付けました。確認後に反映します。')
+  }
+
   async function handleRating(rating: RatingSubmission) {
     if (!user) { await handleLogin(); throw new Error('Login required') }
     await saveRating(rating, user)
@@ -441,11 +452,12 @@ export default function App() {
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
         </div>
 
-        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
+        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
         {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onAddCourse={(course) => { const count = Math.min(8, course.route.length); const sampled = Array.from({ length: count }, (_, index) => course.route[Math.round((index / Math.max(1, count - 1)) * (course.route.length - 1))]); sampled.forEach((point) => addPoint(point, course.name, 'via')); setDraftFocus(sampled.at(-1) ?? null); setDraftPendingSearch(null) }} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onPreviewJoined={previewJoinedCourses} onUseProposal={useProposal} onCreateJoined={handleCreateJoined} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
+        {roadReportOpen && selected && <RoadConditionReportForm courseName={selected.name} onCancel={() => setRoadReportOpen(false)} onSave={handleRoadConditionReport} />}
       </main>
       {notice && <div className="notice" role="status">{notice}</div>}
       {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation">
@@ -456,7 +468,8 @@ export default function App() {
         </section>
       </div>}
       {courseManagerOpen && selected && user?.uid === selected.authorId && <CourseManageForm course={selected} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} />}
-      {communityOpen && <CommunityPanel user={user} course={selected} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} />}
+      {communityOpen && <CommunityPanel user={user} course={selected} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onAdminOpen={isAdministrator(user) ? () => { setCommunityOpen(false); setAdminOpen(true) } : undefined} />}
+      {adminOpen && user && isAdministrator(user) && <AdminPanel user={user} courses={courses} onClose={() => setAdminOpen(false)} />}
       <InstallPrompt />
     </div>
   )

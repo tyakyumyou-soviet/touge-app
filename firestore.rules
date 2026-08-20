@@ -80,10 +80,10 @@ service cloud.firestore {
         && request.resource.data.sourceUrl is string
         && request.resource.data.sourceUrl.size() <= 1000
         && request.resource.data.status == 'pending';
-      allow update: if signedIn()
+      allow update: if isAdmin() || (signedIn()
         && resource.data.authorId == request.auth.uid
         && request.resource.data.authorId == resource.data.authorId
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending');
       allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
     }
 

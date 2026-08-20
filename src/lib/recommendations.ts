@@ -15,7 +15,9 @@ export interface DriveProposalRequest {
 
 export interface DriveProposal {
   id: string
-  sourceCourseId: string
+  /** Existing catalog item when this is a catalogue recommendation. */
+  sourceCourseId?: string
+  source: 'catalog' | 'openstreetmap'
   name: string
   area: string
   route: Coordinate[]
@@ -24,6 +26,15 @@ export interface DriveProposal {
   distanceKm: number
   score: number
   reasons: string[]
+  validation?: {
+    checked: boolean
+    roadLengthKm: number
+    curveDensity: number
+    maxGapKm: number
+    elevationRangeM?: number
+    elevationSource?: string
+    warnings: string[]
+  }
 }
 
 const priorities: Record<DriveStyle, Array<keyof Course['ratings']>> = {
@@ -55,6 +66,7 @@ export function generateDriveProposals(courses: Course[], request: DriveProposal
       return {
         id: `${request.style}-${course.id}`,
         sourceCourseId: course.id,
+        source: 'catalog' as const,
         name: course.name,
         area: course.area,
         route: sampledRoute(course),

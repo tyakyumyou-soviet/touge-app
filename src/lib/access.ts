@@ -10,6 +10,10 @@ export function canUseUnlimitedWaypoints(user: Pick<User, 'email' | 'emailVerifi
   return user?.emailVerified === true && user.email?.trim().toLocaleLowerCase() === ADMIN_EMAIL
 }
 
+export function isAdministrator(user: Pick<User, 'email' | 'emailVerified'> | null | undefined): boolean {
+  return canUseUnlimitedWaypoints(user)
+}
+
 export function exceedsWaypointLimit(pointCount: number, canUseUnlimited: boolean): boolean {
   return !canUseUnlimited && pointCount > WAYPOINT_LIMIT
 }

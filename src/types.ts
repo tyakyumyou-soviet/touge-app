@@ -121,6 +121,19 @@ export interface LiveRoadInfo {
   status: 'good' | 'caution' | 'closed'
 }
 
+export interface AdminReport {
+  id: string
+  courseId: string
+  type: 'toll-info' | 'road-condition' | 'discovery' | 'quality' | 'road'
+  status: 'pending' | 'approved' | 'rejected'
+  authorId: string
+  authorName?: string
+  sourceUrl: string
+  observedAt?: string
+  comment?: string
+  createdAt?: string
+}
+
 export interface RatingSubmission extends Ratings {
   courseId: string
   comment?: string

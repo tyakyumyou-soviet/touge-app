@@ -3,6 +3,7 @@ import type { Course } from '../types'
 import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
 import { courseTollStatus, tollStatusLabels } from '../lib/toll'
 import { subscribeLiveRoadInfo } from '../lib/firebase'
+import { fetchCurrentWeather, type CurrentWeather } from '../lib/liveWeather'
 import type { LiveRoadInfo } from '../types'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
@@ -15,23 +16,32 @@ interface Props {
   onShare: () => void
   onOpen3d: () => void
   onReportToll: () => void
+  onReportRoad: () => void
   onCommunity: () => void
   canManageCourse: boolean
   onManageCourse: () => void
 }
 
-export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onCommunity, canManageCourse, onManageCourse }: Props) {
+export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse }: Props) {
   const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
   const [sheetExpanded, setSheetExpanded] = useState(false)
   const [sheetCollapsed, setSheetCollapsed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
+  const [weather, setWeather] = useState<CurrentWeather | null>(null)
   const systemRatings = systemRatingsFor(course)
   const mergedRatings = combinedRatings(course)
   const userCount = userRatingCountFor(course)
   const tollStatus = courseTollStatus(course)
   useEffect(() => subscribeLiveRoadInfo(course.id, setLiveInfo), [course.id])
+  useEffect(() => {
+    let cancelled = false
+    const midpoint = course.route[Math.floor(course.route.length / 2)] ?? course.route[0]
+    if (!midpoint) return
+    fetchCurrentWeather(midpoint).then((value) => { if (!cancelled) setWeather(value) }).catch(() => { if (!cancelled) setWeather(null) })
+    return () => { cancelled = true }
+  }, [course.id, course.route])
 
   function startSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -93,8 +103,8 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         <ElevationChart values={course.elevationProfile} />
         <section className={`live-road-info ${liveInfo?.status ?? 'caution'}`} aria-label="リアルタイム道路情報">
           <div className="live-road-head"><h3>走行前のライブ情報</h3><span>{liveInfo ? '同期済み' : '未同期'}</span></div>
-          {liveInfo ? <div className="live-road-grid"><div><b>天候</b><span>{liveInfo.weather}{liveInfo.temperature ? ` · ${liveInfo.temperature}` : ''}</span></div><div><b>通行規制</b><span>{liveInfo.restriction}</span></div><div><b>交通量</b><span>{liveInfo.traffic}</span></div></div> : <p>天候・通行規制・交通量は管理者が公的情報から同期すると表示されます。現地標識を優先してください。</p>}
-          <small>{liveInfo ? `${liveInfo.sourceName} · 更新 ${liveInfo.updatedAt}` : '外部APIのキーをクライアントに置かず、Firebase Functions等から取り込む設計です。'}</small>
+          <div className="live-road-grid"><div><b>天候</b><span>{liveInfo?.weather ?? weather?.summary ?? '取得できませんでした'}{liveInfo?.temperature ? ` · ${liveInfo.temperature}` : weather ? ` · ${weather.temperature}` : ''}</span></div><div><b>通行規制</b><span>{liveInfo?.restriction ?? '公式情報の同期待ち'}</span></div><div><b>交通量</b><span>{liveInfo?.traffic ?? '公式情報の同期待ち'}</span></div></div>
+          <small>{liveInfo ? `${liveInfo.sourceName} · 更新 ${liveInfo.updatedAt}` : weather ? `${weather.sourceName} · 更新 ${weather.updatedAt}。規制・交通量は公的情報の同期後に表示します。` : '天候を取得できませんでした。通行規制・交通量は現地標識・道路管理者の公式情報を確認してください。'}</small>
         </section>
         <section className="rating-summary" aria-label="評価の内訳">
           <div className="rating-summary-head"><strong>総合評価 {overallRating(mergedRatings)}</strong><span>システム評価を基準にユーザー評価を反映</span></div>
@@ -120,6 +130,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
           <button onClick={onRate}>項目別に評価</button>
           <button onClick={onShare}>コースを共有</button>
           <button onClick={onCommunity}>コメント・いいね</button>
+          <button onClick={onReportRoad}>道路状況を報告</button>
         </div>
       </div>
       <footer className="nav-actions">

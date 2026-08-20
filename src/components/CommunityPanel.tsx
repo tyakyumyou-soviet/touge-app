@@ -5,7 +5,7 @@ import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { postEmbedUrl, postUrlsFromText } from '../lib/profile'
 
-interface Props { user: User | null; course?: Course | null; onClose: () => void; onLogout?: () => void }
+interface Props { user: User | null; course?: Course | null; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void }
 
 const socialNames = { x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok' } as const
 
@@ -25,7 +25,7 @@ function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: str
   </section>
 }
 
-export function CommunityPanel({ user, course, onClose, onLogout }: Props) {
+export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen }: Props) {
   const sheet = useMobileSheet()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [authorProfile, setAuthorProfile] = useState<UserProfile | null>(null)
@@ -61,6 +61,7 @@ export function CommunityPanel({ user, course, onClose, onLogout }: Props) {
       <section className="profile-social"><h3>SNS・愛車紹介（任意）</h3><p>アカウントを共有したり、愛車の写真・動画を紹介する投稿をプロフィールに掲載できます。</p><div className="form-grid"><label>X<input value={profile?.socialLinks?.x ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, x: e.target.value } })} placeholder="https://x.com/username" /></label><label>Instagram<input value={profile?.socialLinks?.instagram ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/username" /></label><label>YouTube<input value={profile?.socialLinks?.youtube ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@channel" /></label><label>TikTok<input value={profile?.socialLinks?.tiktok ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@username" /></label><label className="wide">愛車紹介の投稿URL（任意）<textarea rows={3} value={(profile?.showcasePostUrls ?? []).join('\n')} onChange={(e) => patchProfile({ showcasePostUrls: postUrlsFromText(e.target.value) })} placeholder="愛車の写真・動画が載ったX・Instagram・YouTube・TikTokの投稿URLを1行ずつ（最大3件）" /><small>愛車紹介用の投稿として掲載します。対応投稿は埋め込み表示、その他はリンクとして表示します。</small></label></div></section>
       {profile && <ProfileShowcase profile={profile} />}
       <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : 'プロフィールを保存'}</button>
+      {onAdminOpen && <button type="button" className="button secondary" onClick={onAdminOpen}>情報承認・編集</button>}
       {onLogout && <button type="button" className="text-button danger-button" onClick={onLogout}>ログアウト</button>}
       {course && <section className="social-thread">{authorProfile && <ProfileShowcase profile={authorProfile} title={`${course.authorName ?? authorProfile.displayName}のプロフィール`} />}<div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>＋ 作成者をフォロー</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button danger-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
     </>}

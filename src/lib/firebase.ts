@@ -31,7 +31,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
+import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
 import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -258,6 +258,19 @@ export async function submitTollReport(courseId: string, report: { fee: string; 
     status: 'pending',
     createdAt: serverTimestamp(),
   })
+}
+
+export async function submitRoadConditionReport(courseId: string, report: { condition: string; sourceUrl: string; observedAt: string }, user: User): Promise<void> {
+  await addDoc(collection(db, 'reports'), { type: 'road-condition', courseId, comment: report.condition, sourceUrl: report.sourceUrl, observedAt: report.observedAt, authorId: user.uid, authorName: user.displayName ?? 'ドライバー', status: 'pending', createdAt: serverTimestamp() })
+}
+
+export async function loadPendingAdminReports(): Promise<AdminReport[]> {
+  const snapshot = await getDocs(query(collection(db, 'reports'), where('status', '==', 'pending')))
+  return snapshot.docs.map((item) => ({ id: item.id, createdAt: firestoreDate(item.data().createdAt), ...item.data() } as AdminReport))
+}
+
+export async function reviewAdminReport(reportId: string, status: 'approved' | 'rejected', reviewer: User): Promise<void> {
+  await updateDoc(doc(db, 'reports', reportId), { status, reviewedAt: serverTimestamp(), reviewerId: reviewer.uid, reviewerName: reviewer.displayName ?? '管理者' })
 }
 
 export async function loadUserProfile(userId: string): Promise<UserProfile | null> {

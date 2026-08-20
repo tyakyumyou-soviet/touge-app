@@ -6,6 +6,7 @@ import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
 import { generateDriveProposals, type DriveProposal, type DriveStyle } from '../lib/recommendations'
+import { discoverExternalDriveProposals } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
 
@@ -179,14 +180,24 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     finally { setBusy(false) }
   }
 
-  function generateProposals() {
+  async function generateProposals() {
     if (!proposalCenter) { setProposalError('まず探索するエリアを指定してください'); return }
-    const next = generateDriveProposals(courses, {
+    setBusy(true); setProposalError(''); setProposals([])
+    const request = {
       center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
       toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias,
-    })
-    if (!next.length) { setProposalError('条件に合う提案が見つかりませんでした。半径・距離・料金条件を緩めてください。'); return }
-    setProposalError(''); setProposals(next)
+    } as const
+    try {
+      const external = await discoverExternalDriveProposals(request)
+      const catalogue = generateDriveProposals(courses, request)
+      const next = [...external, ...catalogue].sort((left, right) => right.score - left.score).slice(0, 3)
+      if (!next.length) { setProposalError('条件に合う道路候補が見つかりませんでした。半径・距離・料金条件を緩めてください。'); return }
+      setProposals(next)
+    } catch (caught) {
+      const fallback = generateDriveProposals(courses, request)
+      if (fallback.length) { setProposals(fallback); setProposalError('外部道路データへ接続できなかったため、登録済み・検証済みコースから候補を表示しています。') }
+      else setProposalError(caught instanceof Error ? `外部道路データを取得できませんでした: ${caught.message}` : '外部道路データを取得できませんでした。時間を置いて再試行してください。')
+    } finally { setBusy(false) }
   }
 
   function chooseProposal(proposal: DriveProposal) {
@@ -243,7 +254,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
         <button type="button" role="tab" aria-selected={routeMode === 'suggest'} className={routeMode === 'suggest' ? 'active' : ''} onClick={() => { setRouteMode('suggest'); setSearchError('') }}>範囲から提案</button>
       </div>
       {routeMode === 'suggest' ? <section className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
-        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>範囲から峠道を提案</h3><p>エリア、走り方、料金、通りたい地点を指定すると、登録済みの道路形状・評価情報から候補を比較できます。選んだ後は通常どおり地点を編集できます。</p></div>
+        <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>範囲から峠道を提案</h3><p>指定範囲のOpenStreetMap道路データから走れる道だけを抽出し、カーブ・道幅・高低差を検証します。選んだ後は通常どおり地点を編集できます。</p></div>
         <form className="route-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="探索エリア（地名・住所・IC）" aria-label="探索エリアを検索" /><button disabled={busy}>{busy ? '検索中…' : 'エリアを指定'}</button></form>
         <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を探索中心にする</button>{proposalCenter && <strong>中心: {proposalCenter.label}</strong>}</div>
         <div className="proposal-grid">
@@ -256,7 +267,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
         {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
         <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>条件から3案を提案</button>
-        {proposals.length > 0 && <div className="proposal-results" aria-live="polite">{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><button type="button" className="button secondary" onClick={() => chooseProposal(proposal)}>この候補を編集する →</button></article>)}</div>}
+        {proposals.length > 0 && <div className="proposal-results" aria-live="polite">{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<button type="button" className="button secondary" onClick={() => chooseProposal(proposal)}>この候補を編集する →</button></article>)}</div>}
       </section> : <>
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {searchError && <section className="search-not-found" role="alert"><strong>場所が見つかりませんでした</strong><p>{searchError}</p><small>地点は追加されていません。地名の一部・施設名・IC名で検索し直すか、地図をタップして正確な位置を指定してください。</small></section>}
