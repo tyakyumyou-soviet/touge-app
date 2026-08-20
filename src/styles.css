@@ -105,6 +105,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .mobile-list, .mobile-close, .explore-drag-handle { display: none; }
 
 .detail-panel { position: absolute; z-index: 12; top: 18px; right: 18px; bottom: 18px; width: min(405px, calc(100% - 420px)); display: flex; flex-direction: column; overflow: hidden; background: var(--paper); border: 1px solid #d6d5ca; border-radius: 17px; box-shadow: 0 20px 70px #13211938; animation: detailIn .25s ease-out; }
+.detail-panel.proposal-preview-detail { z-index: 60; }
 .detail-sheet-top { touch-action: none; cursor: grab; }
 .detail-sheet-top:active { cursor: grabbing; }
 @keyframes detailIn { from { opacity: 0; transform: translateX(14px); } }
@@ -604,6 +605,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .proposal-map-hint { margin: 0; padding: 9px 10px; border-radius: 9px; color: #175e45 !important; background: #e6f3ea; font-size: 12px !important; line-height: 1.45; }
 .proposal-actions { display: grid; grid-template-columns: .85fr 1.4fr; gap: 7px; margin-top: 10px; }
 .proposal-actions .button { width: 100%; }
+.proposal-edit-back { width: 100%; margin: 0 0 12px; padding: 10px 12px; color: #175e45; border: 1px solid #83b99b; border-radius: 9px; background: #edf7f0; font-weight: 800; cursor: pointer; }
+.proposal-edit-back:hover { background: #dff1e5; }
 .course-preview-banner { display: grid; gap: 5px; margin: 0 0 13px; padding: 11px; border: 1px solid #d5b34a; border-radius: 10px; background: #fff5cf; color: #5f4810; }
 .course-preview-banner strong { font-size: 13px; }
 .course-preview-banner span { font-size: 12px; line-height: 1.45; }

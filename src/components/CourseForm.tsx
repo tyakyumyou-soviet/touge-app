@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react'
 import type { Coordinate, Course, CourseDraft, DraftPointRole } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
@@ -19,10 +19,13 @@ interface Props {
   viaInsertAfter: number | null
   courses: Course[]
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
+  hasProposalEditSnapshot: boolean
+  proposalEditRevision: number
   onIncorporateCourse: (course: Course) => void
   onFocusPoint: (point: Coordinate) => void
   onPendingPointChange: (point: Coordinate | null, label?: string) => void
   onUseProposal: (proposal: DriveProposal) => void
+  onUndoProposalEdit: () => void
   onSetProposalPreviews: (proposals: DriveProposal[]) => void
   onOpenProposalPreview: (proposalId: string) => void
   onRemovePoint: (index: number) => void
@@ -46,7 +49,7 @@ interface DetailsValues {
   visibility: CourseDraft['visibility']
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, proposalEditRevision, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
@@ -68,6 +71,10 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [proposals, setProposals] = useState<DriveProposal[]>([])
   const [proposalError, setProposalError] = useState('')
   const [proposalProgress, setProposalProgress] = useState('')
+
+  useEffect(() => {
+    if (proposalEditRevision > 0) setRouteMode('manual')
+  }, [proposalEditRevision])
   const [courseLibraryOpen, setCourseLibraryOpen] = useState(false)
   const [courseLibraryQuery, setCourseLibraryQuery] = useState('')
   const [draggedBlockStart, setDraggedBlockStart] = useState<number | null>(null)
@@ -198,9 +205,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
 
   function chooseProposal(proposal: DriveProposal) {
     onUseProposal(proposal)
-    onSetProposalPreviews([])
     setRouteMode('manual')
-    setProposals([])
     setPendingSearchPoint(null); onPendingPointChange(null)
     setSearchNotice(`「${proposal.name}」を提案ルートとして読み込みました。地点を追加・削除して仕上げられます。`)
   }
@@ -251,6 +256,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
         {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>道路を探索しています</strong><small>{proposalProgress}</small></div></div>}
         {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">3案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => onOpenProposalPreview(proposal.id)}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>この候補を編集する →</button></div></article>)}</div>}
       </section> : <>
+      {hasProposalEditSnapshot && proposals.length > 0 && <button type="button" className="proposal-edit-back" onClick={() => { onUndoProposalEdit(); setRouteMode('suggest'); setSearchNotice('候補を編集前の状態に戻しました。別の候補を選べます。') }}>← 編集を取り消して候補へ戻る</button>}
       <section className="existing-route-insert" aria-label="既存コースをルートへ組み込む">
         <button type="button" className="existing-route-toggle" onClick={() => setCourseLibraryOpen((value) => !value)} aria-expanded={courseLibraryOpen}>
           <span aria-hidden="true">⇄</span><strong>既存コースを組み込む</strong><small>今のゴールの後ろへ、選んだコースの道順を追加</small><b aria-hidden="true">{courseLibraryOpen ? '−' : '+'}</b>
