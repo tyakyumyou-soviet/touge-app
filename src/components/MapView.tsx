@@ -11,6 +11,7 @@ import { visibleMapCameraPadding } from '../lib/mapCamera'
 interface MapViewProps {
   courses: Course[]
   selected: Course | null
+  previewCourseIds: string[]
   is3d: boolean
   drawing: boolean
   draftRoute: Coordinate[]
@@ -76,7 +77,7 @@ const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number 
   }],
 })
 
-export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, searchCenter, searchRadiusKm, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, previewCourseIds, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, searchCenter, searchRadiusKm, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -84,6 +85,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   const onAddPointRef = useRef(onAddPoint)
   const onMovePointRef = useRef(onMovePoint)
   const onSelectRef = useRef(onSelect)
+  const previewCourseIdsRef = useRef(new Set(previewCourseIds))
   const draftPopupRef = useRef<maplibregl.Popup | null>(null)
   const draftRouteRef = useRef(draftRoute)
   const draftLabelsRef = useRef(draftLabels)
@@ -98,6 +100,7 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
   useEffect(() => { onAddPointRef.current = onAddPoint }, [onAddPoint])
   useEffect(() => { onMovePointRef.current = onMovePoint }, [onMovePoint])
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
+  useEffect(() => { previewCourseIdsRef.current = new Set(previewCourseIds) }, [previewCourseIds])
   useEffect(() => { draftRouteRef.current = draftRoute }, [draftRoute])
   useEffect(() => { draftLabelsRef.current = draftLabels }, [draftLabels])
   useEffect(() => { draftRolesRef.current = draftRoles }, [draftRoles])
@@ -197,10 +200,10 @@ export function MapView({ courses, selected, is3d, drawing, draftRoute, draftLab
     map.on('mouseenter', 'courses-line', () => { map.getCanvas().style.cursor = 'pointer' })
     map.on('mouseleave', 'courses-line', () => { map.getCanvas().style.cursor = drawingRef.current ? 'crosshair' : '' })
     map.on('click', 'courses-line', (event) => {
-      if (drawingRef.current) return
       const id = event.features?.[0]?.properties?.id as string | undefined
+      if (!id || (drawingRef.current && !previewCourseIdsRef.current.has(id))) return
       const course = coursesRef.current.find((item) => item.id === id)
-      if (course) onSelectRef.current(course)
+      if (course) { suppressNextMapClick = true; onSelectRef.current(course) }
     })
     let movingPointIndex: number | null = null
     let touchPressTimer: number | undefined

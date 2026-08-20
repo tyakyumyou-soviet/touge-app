@@ -27,6 +27,24 @@ import './styles.css'
 
 type PrefectureFilter = 'すべて' | Course['prefecture']
 
+function previewCourseFromProposal(proposal: DriveProposal): Course {
+  const range = Math.max(40, proposal.validation?.elevationRangeM ?? 160)
+  const elevationProfile = proposal.route.map((_, index) => Math.round(300 + Math.sin((index / Math.max(1, proposal.route.length - 1)) * Math.PI) * range))
+  const tags = ['提案プレビュー', proposal.source === 'openstreetmap' ? '外部道路' : '既存候補']
+  const systemRatings = estimateSystemRatings(proposal.route, elevationProfile, tags)
+  const lat = proposal.route[0]?.[1] ?? 35.2
+  const prefecture: Course['prefecture'] = lat > 35.62 ? '東京都' : lat > 35.28 ? '神奈川県' : '静岡県'
+  return {
+    id: `proposal-preview-${proposal.id}`, name: proposal.name, area: proposal.area, prefecture,
+    description: `保存前の自動提案コースです。${proposal.reasons.join('・')}。ルートと評価を確認してから「この候補を編集する」を選んでください。`, route: proposal.route,
+    landmarks: proposal.labels.slice(1, -1).map((name, index, items) => ({ name, progress: (index + 1) / Math.max(2, items.length + 1), type: 'place' })),
+    distanceKm: proposal.distanceKm, durationMin: Math.max(5, Math.round(proposal.distanceKm * 1.7)), minElevation: Math.min(...elevationProfile), maxElevation: Math.max(...elevationProfile), elevationProfile,
+    elevationSource: '地形傾向による推定', ratings: systemRatings, systemRatings, ratingCount: 0,
+    systemRatingSource: ['OpenStreetMap道路形状', '提案用標高プロファイル', '自動ルート品質検証'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
+    tags, cautions: ['保存前の提案です。通行規制・料金・現地状況は走行前に確認してください。'], tollStatus: proposal.tollStatus, visibility: 'private', authorId: '__proposal_preview__', authorName: '峠 自動提案', updatedAt: new Date().toISOString().slice(0, 10),
+  }
+}
+
 export default function App() {
   const logoutSheet = useMobileSheet()
   const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
@@ -56,6 +74,8 @@ export default function App() {
   const [draftViaInsertAfter, setDraftViaInsertAfter] = useState<number | null>(null)
   const [draftFocus, setDraftFocus] = useState<Coordinate | null>(null)
   const [draftPendingSearch, setDraftPendingSearch] = useState<{ point: Coordinate; label: string } | null>(null)
+  const [proposalPreviews, setProposalPreviews] = useState<Course[]>([])
+  const [proposalDefinitions, setProposalDefinitions] = useState<DriveProposal[]>([])
   const [ratingOpen, setRatingOpen] = useState(false)
   const [course3dOpen, setCourse3dOpen] = useState(false)
   const [tollReportOpen, setTollReportOpen] = useState(false)
@@ -124,6 +144,7 @@ export default function App() {
         return b.ratings[sort] - a.ratings[sort]
       })
   }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter])
+  const mapCourses = useMemo(() => [...courses, ...proposalPreviews], [courses, proposalPreviews])
 
   const selectCourse = useCallback((course: Course) => { setSelected(course); setListCollapsed(true) }, [])
   const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
@@ -196,7 +217,7 @@ export default function App() {
   function openCourseList() {
     if (!drawing) { resetListSheet(); return }
     setSurfaceMotion('leaving-form')
-    setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
+    setProposalPreviews([]); setProposalDefinitions([]); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
     resetListSheet()
     finishSurfaceMotion('list')
   }
@@ -263,7 +284,7 @@ export default function App() {
     }, () => { setNearbyError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setNearbyBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
   }
 
-  function useProposal(proposal: DriveProposal) {
+  function handleUseProposal(proposal: DriveProposal) {
     const route = proposal.route
     setDraftRoute(route)
     setDraftPointLabels(route.map((_, index) => proposal.labels[index] ?? (index === 0 ? `${proposal.name} 始点` : index === route.length - 1 ? `${proposal.name} 終点` : `${proposal.name} 経由地`)))
@@ -301,7 +322,7 @@ export default function App() {
     setSurfaceMotion('leaving-list')
     return new Promise<void>((resolve) => {
       finishSurfaceMotion('form', resolve)
-      setSelected(null); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
+      setSelected(null); setProposalPreviews([]); setProposalDefinitions([]); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
     })
   }
 
@@ -426,7 +447,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={courses} selected={selected} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${drawing ? 'drawing' : ''} ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={{ transform: drawing ? undefined : listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す">
           <div className="explore-panel-top" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
@@ -457,8 +478,8 @@ export default function App() {
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
         </div>
 
-        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={useProposal} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
+        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} isPreview={selected.authorId === '__proposal_preview__'} onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) { handleUseProposal(proposal); setProposalPreviews([]); setProposalDefinitions([]); setSelected(null) } }} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={handleUseProposal} onSetProposalPreviews={(proposals) => { setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const preview = proposalPreviews.find((course) => course.id === `proposal-preview-${proposalId}`); if (preview) setSelected(preview) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
