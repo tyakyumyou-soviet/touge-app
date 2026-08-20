@@ -261,6 +261,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .existing-route-results strong, .existing-route-results small { display: block; }
 .existing-route-results small { margin-top: 2px; color: var(--muted); }
 .set-goal-button { width: 100%; margin-top: 8px; padding: 10px 12px; color: var(--green); background: #eef7f1; border: 1px solid #a9cdb6; border-radius: 9px; font-weight: 800; cursor: pointer; }
+.reverse-route-button { width: 100%; margin-top: 8px; padding: 10px 12px; color: #5d4811; background: #fff4cf; border: 1px solid #d7b854; border-radius: 9px; font-weight: 800; cursor: pointer; }
+.reverse-route-button:hover { background: #ffe9a4; }
 .route-order-editor { margin: 10px 0; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: #f7faf7; }
 .route-order-editor > div { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .route-order-editor > div small { color: var(--muted); }

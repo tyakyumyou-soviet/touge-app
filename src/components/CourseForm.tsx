@@ -30,6 +30,7 @@ interface Props {
   onOpenProposalPreview: (proposalId: string) => void
   onRemovePoint: (index: number) => void
   onSetFinalPointAsGoal: () => void
+  onReverseRoute: () => void
   onMoveRouteBlock: (from: number, count: number, to: number) => void
   onChooseViaInsertion: (index: number | null) => void
   onUndo: () => void
@@ -49,7 +50,7 @@ interface DetailsValues {
   visibility: CourseDraft['visibility']
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, proposalEditRevision, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, proposalEditRevision, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
@@ -277,6 +278,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       {routeBlocks.length > 1 && <section className="route-order-editor" aria-label="ルートの順番を変更"><div><strong>ルートの順番</strong><small>ドラッグ＆ドロップで入れ替え</small></div><ol>{routeBlocks.map((block, index) => <li key={`${block.start}-${block.title}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedBlockStart(block.start) }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleBlockDrop(event, block)} onDragEnd={() => setDraggedBlockStart(null)} className={draggedBlockStart === block.start ? 'dragging' : ''}><span aria-hidden="true">⠿</span><div><strong>{block.title}</strong><small>{block.subtitle}{block.count > 1 ? ` · ${block.count}地点` : ''}</small></div><button type="button" onClick={() => { const target = routeBlocks[index - 1]; if (target) onMoveRouteBlock(block.start, block.count, target.start) }} disabled={index === 0} aria-label={`${block.title}を前へ`}>↑</button><button type="button" onClick={() => { const target = routeBlocks[index + 1]; if (target) onMoveRouteBlock(block.start, block.count, target.start + target.count) }} disabled={index === routeBlocks.length - 1} aria-label={`${block.title}を後へ`}>↓</button></li>)}</ol></section>}
       <div className="route-stop-list">{route.length ? route.map((point, index) => { const role = pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'); const roleText = role === 'start' ? 'START' : role === 'goal' ? 'GOAL' : `経由 ${pointRoles.slice(0, index + 1).filter((item) => item === 'via').length || index}`; return <div key={`${point[0]}-${point[1]}-${index}`}><b>{roleText}</b><span><strong>{pointLabels[index] || '地図指定'}</strong><small>{point[1].toFixed(5)}, {point[0].toFixed(5)}</small></span>{role !== 'goal' && <button type="button" className={`insert-stop ${viaInsertAfter === index ? 'active' : ''}`} onClick={() => onChooseViaInsertion(viaInsertAfter === index ? null : index)} aria-label={`${roleText}の直後に経由地を追加`}>{viaInsertAfter === index ? '追加先' : '＋'}</button>}<button type="button" onClick={() => onRemovePoint(index)} aria-label={`${roleText}を削除`}>×</button></div> }) : <p>まだ地点がありません</p>}</div>
       {route.length >= 2 && !hasGoal && <button type="button" className="set-goal-button" onClick={onSetFinalPointAsGoal}>現在の最後の地点をゴールに設定</button>}
+      {route.length >= 2 && hasGoal && <button type="button" className="reverse-route-button" onClick={onReverseRoute}>⇄ 始点とゴールを入れ替える</button>}
       <div className="route-builder-summary"><strong className={exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints) ? 'form-error' : ''}>{canUseUnlimitedWaypoints ? `${route.length}地点` : `${route.length} / ${WAYPOINT_LIMIT}地点`}</strong><span>約 {routeDistanceKm(route).toFixed(1)} km</span></div>
       {searchNotice && <p className="form-success" role="status">{searchNotice}</p>}
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
