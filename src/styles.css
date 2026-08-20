@@ -72,7 +72,7 @@ h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .filter-row select { min-width: 0; height: 39px; padding: 0 10px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 8px; }
-.list-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.list-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
 .list-toolbar select { min-width: 0; height: 39px; padding: 0 10px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 8px; }
 .advanced-filter-toggle { min-height: 39px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fff; font-weight: 800; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
 .advanced-filter-toggle span { margin-left: 4px; color: var(--green); font-size: 17px; }
