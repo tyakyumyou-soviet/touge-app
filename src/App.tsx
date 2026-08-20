@@ -163,6 +163,19 @@ export default function App() {
   const setFinalPointAsGoal = useCallback(() => {
     setDraftPointRoles((roles) => roles.map((role, index) => index === roles.length - 1 ? 'goal' : role === 'goal' ? 'via' : role))
   }, [])
+  const moveRouteBlock = useCallback((from: number, count: number, to: number) => {
+    if (count < 1 || from < 0 || from + count > draftRoute.length || to < 0 || to > draftRoute.length || (to >= from && to <= from + count)) return
+    const move = <T,>(items: T[]) => {
+      const block = items.slice(from, from + count)
+      const rest = [...items.slice(0, from), ...items.slice(from + count)]
+      const insertAt = to > from ? to - count : to
+      return [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)]
+    }
+    setDraftRoute((items) => move(items))
+    setDraftPointLabels((items) => move(items))
+    setDraftPointRoles((items) => move(items).map((_, index, reordered) => index === 0 ? 'start' : index === reordered.length - 1 ? 'goal' : 'via'))
+    setDraftViaInsertAfter(null)
+  }, [draftRoute.length])
   function resetListSheet() {
     setListCollapsed(false); setListExpanded(false); setListOffset(0); setListDragging(false)
   }
@@ -445,7 +458,7 @@ export default function App() {
         </div>
 
         {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={useProposal} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={useProposal} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} courses={courses} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}

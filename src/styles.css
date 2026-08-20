@@ -260,6 +260,17 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .existing-route-results strong, .existing-route-results small { display: block; }
 .existing-route-results small { margin-top: 2px; color: var(--muted); }
 .set-goal-button { width: 100%; margin-top: 8px; padding: 10px 12px; color: var(--green); background: #eef7f1; border: 1px solid #a9cdb6; border-radius: 9px; font-weight: 800; cursor: pointer; }
+.route-order-editor { margin: 10px 0; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: #f7faf7; }
+.route-order-editor > div { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.route-order-editor > div small { color: var(--muted); }
+.route-order-editor ol { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.route-order-editor li { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 7px; padding: 8px; background: #fff; border: 1px solid var(--line); border-radius: 8px; cursor: grab; }
+.route-order-editor li.dragging { opacity: .45; }
+.route-order-editor li > span { color: var(--muted); font-size: 18px; line-height: 1; }
+.route-order-editor li strong, .route-order-editor li small { display: block; }
+.route-order-editor li small { margin-top: 1px; color: var(--muted); font-size: 11px; }
+.route-order-editor li button { width: 27px; height: 27px; padding: 0; color: var(--green); background: #edf5ef; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.route-order-editor li button:disabled { opacity: .35; cursor: default; }
 .search-not-found { display: grid; gap: 4px; padding: 11px 12px; color: #7d3029; background: #fff1ed; border: 1px solid #e4a59a; border-radius: 9px; }
 .search-not-found strong { font-size: 13px; }
 .search-not-found p { margin: 0; font-size: 11px; line-height: 1.5; }
