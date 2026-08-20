@@ -37,6 +37,7 @@ export default function App() {
   const [selected, setSelected] = useState<Course | null>(null)
   const [search, setSearch] = useState('')
   const [prefecture, setPrefecture] = useState<PrefectureFilter>('すべて')
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [tollFilter, setTollFilter] = useState<'all' | TollStatus>('all')
   const [nearbyCenter, setNearbyCenter] = useState<{ point: Coordinate; label: string } | null>(null)
   const [nearbyQuery, setNearbyQuery] = useState('')
@@ -436,17 +437,23 @@ export default function App() {
           </div>
           <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} header={<div className="course-list-drag-area" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
-            <div className="filter-row">
-              <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
+            <div className="list-toolbar">
               <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
+              <button type="button" className={`advanced-filter-toggle ${advancedFiltersOpen ? 'active' : ''}`} onClick={() => setAdvancedFiltersOpen((value) => !value)} aria-expanded={advancedFiltersOpen} aria-controls="advanced-course-filters">詳細検索 <span aria-hidden="true">{advancedFiltersOpen ? '−' : '+'}</span></button>
             </div>
-            <div className="filter-row course-extra-filters">
-              <select value={tollFilter} onChange={(event) => setTollFilter(event.target.value as 'all' | TollStatus)} aria-label="料金区分"><option value="all">料金すべて</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option><option value="unknown">料金情報未確認</option></select>
-              <select value={nearbyRadiusKm} onChange={(event) => setNearbyRadiusKm(Number(event.target.value))} disabled={!nearbyCenter} aria-label="検索半径"><option value={5}>半径5km</option><option value={10}>半径10km</option><option value={25}>半径25km</option><option value={50}>半径50km</option><option value={100}>半径100km</option></select>
-            </div>
-            <form className="nearby-course-search" onSubmit={findNearbyCourses}><input value={nearbyQuery} onChange={(event) => setNearbyQuery(event.target.value)} placeholder="地名・住所から近くのコースを探す" aria-label="近くのコースを探す場所" /><button type="submit" disabled={nearbyBusy}>{nearbyBusy ? '検索中…' : '近くを探す'}</button><button type="button" onClick={useCurrentLocationForSearch} disabled={nearbyBusy}>現在地</button></form>
-            {nearbyCenter && <div className="active-nearby-filter"><span>{nearbyCenter.label}から{nearbyRadiusKm}km以内</span><button type="button" onClick={() => setNearbyCenter(null)} aria-label="位置条件を解除">×</button></div>}
-            {nearbyError && <p className="filter-error" role="alert">{nearbyError}</p>}
+            <div id="advanced-course-filters" className={`advanced-filters ${advancedFiltersOpen ? 'open' : ''}`} aria-hidden={!advancedFiltersOpen}><div className="advanced-filters-inner">
+              <div className="filter-row">
+                <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
+                <select value={tollFilter} onChange={(event) => setTollFilter(event.target.value as 'all' | TollStatus)} aria-label="料金区分"><option value="all">料金すべて</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option><option value="unknown">料金情報未確認</option></select>
+              </div>
+              <div className="filter-row course-extra-filters">
+                <select value={nearbyRadiusKm} onChange={(event) => setNearbyRadiusKm(Number(event.target.value))} disabled={!nearbyCenter} aria-label="検索半径"><option value={5}>半径5km</option><option value={10}>半径10km</option><option value={25}>半径25km</option><option value={50}>半径50km</option><option value={100}>半径100km</option></select>
+                <span className="nearby-filter-caption">指定地点の近くから探す</span>
+              </div>
+              <form className="nearby-course-search" onSubmit={findNearbyCourses}><input value={nearbyQuery} onChange={(event) => setNearbyQuery(event.target.value)} placeholder="地名・住所から近くのコースを探す" aria-label="近くのコースを探す場所" /><button type="submit" disabled={nearbyBusy}>{nearbyBusy ? '検索中…' : '近くを探す'}</button><button type="button" onClick={useCurrentLocationForSearch} disabled={nearbyBusy}>現在地</button></form>
+              {nearbyCenter && <div className="active-nearby-filter"><span>{nearbyCenter.label}から{nearbyRadiusKm}km以内</span><button type="button" onClick={() => setNearbyCenter(null)} aria-label="位置条件を解除">×</button></div>}
+              {nearbyError && <p className="filter-error" role="alert">{nearbyError}</p>}
+            </div></div>
             <div className="result-count"><span>{filtered.length} ROUTES</span><small>東京・神奈川・静岡</small></div>
           </div>} />
         </section>
