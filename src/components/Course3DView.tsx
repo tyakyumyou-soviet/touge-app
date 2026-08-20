@@ -102,7 +102,7 @@ function unprojectGroundPoint(screen: Point2, view: ModelView, zoom: number): Po
   const yawRad = (view.yaw * Math.PI) / 180
   return [rotatedX * Math.cos(yawRad) + depth * Math.sin(yawRad), -rotatedX * Math.sin(yawRad) + depth * Math.cos(yawRad), 0]
 }
-export function Course3DView({ course, courses, onClose, onElevationRepaired }: { course: Course; courses: Course[]; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
+export function Course3DView({ course, onClose, onElevationRepaired }: { course: Course; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
@@ -124,7 +124,6 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
   const [modelZoom, setModelZoom] = useState(1.15)
   const [modelPan, setModelPan] = useState<Point2>([0, 0])
   const [activeLandmark, setActiveLandmark] = useState<{ name: string; progress: number; type?: string } | null>(null)
-  const [compareCourseId, setCompareCourseId] = useState('')
   const [exaggeration, setExaggeration] = useState(1.5)
   const [mapError, setMapError] = useState('')
   const [compactModel, setCompactModel] = useState(() => window.matchMedia('(max-width: 760px)').matches)
@@ -408,7 +407,6 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
     { kind: 'terminal' as const, key: 'terminal-start', terminal: 'start' as const, x: modelStart[0], y: modelStart[1], elevation: profile[0], depth: viewDepth(model.centers[0], modelYaw, modelPitch) - 9 },
     { kind: 'terminal' as const, key: 'terminal-goal', terminal: 'goal' as const, x: modelEnd[0], y: modelEnd[1], elevation: profile.at(-1) ?? 0, depth: viewDepth(model.centers.at(-1)!, modelYaw, modelPitch) - 9 },
   ].sort((a, b) => b.depth - a.depth), [distanceMarkers, effectiveZoom, geometryLayers, highlights, model.centers, modelEnd, modelPan, modelPitch, modelStart, modelYaw, profile, visibleLandmarks])
-  const comparedCourse = courses.find((item) => item.id === compareCourseId)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -661,7 +659,6 @@ export function Course3DView({ course, courses, onClose, onElevationRepaired }: 
           <circle className="model-current" cx={modelCurrent[0]} cy={modelCurrent[1]} r="6" fill="#fff" stroke="#101915" strokeWidth="2" /><text x="410" y="455">距離 {course.distanceKm}km</text>
         </svg>
         <small className="model-terrain-credit">地形: {terrainStatus === 'ready' ? 'AWS Terrain Tiles（実標高）' : '簡易推定'} · 等高線 {terrainModel.contourStep}m</small>
-        <div className="model-bottom-panels"><section className="compare-panel"><label>コース比較 <select value={compareCourseId} onChange={(event) => setCompareCourseId(event.target.value)}><option value="">選択…</option>{courses.filter((item) => item.id !== course.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{comparedCourse && <p><b>{course.name}</b> {course.distanceKm}km / {profileMax - profileMin}m<br /><b>{comparedCourse.name}</b> {comparedCourse.distanceKm}km / {comparedCourse.maxElevation - comparedCourse.minElevation}m</p>}</section></div>
         {activeLandmark && <aside className="landmark-card"><button onClick={() => setActiveLandmark(null)} aria-label="地点情報を閉じる">×</button><strong>{activeLandmark.name}</strong><span>{activeLandmark.type === 'ic' ? 'IC・出入口' : activeLandmark.type === 'viewpoint' ? '展望・休憩地点' : '周辺地点'} · STARTから約{(activeLandmark.progress * course.distanceKm).toFixed(1)}km</span></aside>}
       </section>}
       <div className="three-d-controls"><label>地形強調 <input type="range" min="1" max="2.5" step="0.1" value={exaggeration} onChange={(event) => setExaggeration(Number(event.target.value))} /><b>{exaggeration.toFixed(1)}×</b></label><button onClick={resetView}>全体を俯瞰</button></div>

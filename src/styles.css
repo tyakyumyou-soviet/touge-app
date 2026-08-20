@@ -412,14 +412,6 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .distance-marker circle { fill: #fff; stroke: #1e3529; stroke-width: 2px; }
 .distance-marker text, .route-highlight text { fill: #fff; stroke: #07100c; stroke-width: 5px; paint-order: stroke; font-size: 20px; font-weight: 800; }
 .route-highlight circle { fill: #07100c66; stroke-width: 3px; }
-.model-bottom-panels { position: absolute; z-index: 4; right: 16px; bottom: 10px; left: 16px; display: grid; grid-template-columns: 1fr; gap: 9px; }
-.cross-section, .compare-panel { min-width: 0; padding: 7px 9px; background: #07100cd9; border: 1px solid #ffffff20; border-radius: 7px; }
-.cross-section label, .compare-panel label { display: flex; align-items: center; gap: 6px; color: #c9d7cf; font-size: 11px; font-weight: 700; }
-.cross-section input { min-width: 0; flex: 1; accent-color: var(--yellow); }
-.cross-section svg { height: 34px; margin-top: 3px; }
-.cross-section polyline { fill: none; stroke: var(--yellow); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; }
-.compare-panel select { min-width: 0; flex: 1; color: #eaf2ed; background: #ffffff12; border: 1px solid #ffffff20; border-radius: 4px; font-size: 11px; }
-.compare-panel p { margin: 5px 0 0; color: #cad8d0; font-size: 11px; line-height: 1.5; }
 .landmark-card { position: absolute; z-index: 5; right: 22px; bottom: 94px; display: grid; gap: 4px; max-width: 220px; padding: 10px 34px 10px 12px; color: #e8f0eb; background: #07100cf2; border: 1px solid #f2d16b88; border-radius: 8px; box-shadow: 0 8px 26px #0008; }
 .landmark-card strong { color: var(--yellow); font-size: 16px; }.landmark-card span { color: #c2d2c9; font-size: 12px; line-height: 1.5; }.landmark-card button { position: absolute; top: 5px; right: 6px; color: #fff; background: none; border: 0; font-size: 21px; }
 .model-landmark circle { fill: #f2d16b; stroke: #101915; stroke-width: 2.5px; }
@@ -550,7 +542,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .route-model-panel svg { height: calc(100% - 68px); }
   .model-tools { align-items: flex-start; }
   .model-preset-buttons { flex-wrap: wrap; }.model-tools button { padding: 5px 6px; font-size: 10px; }
-  .model-bottom-panels { right: 8px; bottom: 6px; left: 8px; gap: 5px; }.compare-panel { padding: 7px 9px; }.compare-panel label, .compare-panel select { font-size: 12px; }.compare-panel p { font-size: 11px; }.landmark-card { right: 12px; bottom: 112px; max-width: 220px; }
+  .landmark-card { right: 12px; bottom: 112px; max-width: 220px; }
   .model-terrain-status { top: 45px; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
   .model-terrain-credit { left: 12px; bottom: 50px; font-size: 8px; }
   .three-d-controls { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); justify-content: space-between; gap: 8px; }
