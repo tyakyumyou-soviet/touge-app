@@ -63,6 +63,9 @@ main { position: relative; height: calc(100% - 72px); }
 .explore-panel-top { touch-action: none; cursor: grab; }
 .explore-panel-top:active { cursor: grabbing; }
 .explore-panel-top .filter-row { touch-action: auto; cursor: default; }
+.course-list-drag-area { touch-action: none; cursor: grab; }
+.course-list-drag-area:active { cursor: grabbing; }
+.course-list-drag-area :is(button, input, select, textarea, a) { touch-action: auto; cursor: auto; }
 .panel-heading { display: flex; justify-content: space-between; align-items: start; padding: 0 7px 17px; }
 .eyebrow { margin: 0 0 5px; color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: .15em; }
 h1, h2, h3, p { margin-top: 0; }

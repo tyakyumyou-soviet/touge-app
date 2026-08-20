@@ -173,6 +173,9 @@ export default function App() {
   }
 
   function startListDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    // The whole header zone is a sheet handle, except for controls that must
+    // keep their native tap/select/input behaviour.
+    if (event.target instanceof Element && event.target.closest('button, input, select, textarea, a, label')) return
     event.currentTarget.setPointerCapture(event.pointerId)
     listDrag.current = { pointerId: event.pointerId, y: event.clientY, moved: false }
     setListDragging(true)
@@ -431,7 +434,7 @@ export default function App() {
           <div className="explore-panel-top" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
           </div>
-          <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} header={<>
+          <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} header={<div className="course-list-drag-area" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
             <div className="filter-row">
               <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
@@ -445,7 +448,7 @@ export default function App() {
             {nearbyCenter && <div className="active-nearby-filter"><span>{nearbyCenter.label}から{nearbyRadiusKm}km以内</span><button type="button" onClick={() => setNearbyCenter(null)} aria-label="位置条件を解除">×</button></div>}
             {nearbyError && <p className="filter-error" role="alert">{nearbyError}</p>}
             <div className="result-count"><span>{filtered.length} ROUTES</span><small>東京・神奈川・静岡</small></div>
-          </>} />
+          </div>} />
         </section>
 
         <div className="map-tools">
