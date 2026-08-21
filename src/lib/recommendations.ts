@@ -1,4 +1,5 @@
 import type { Coordinate, Course, TollStatus } from '../types'
+import type { ElevationResult } from './elevation'
 import { distanceToRouteKm } from './courseSearch'
 import { courseTollStatus } from './toll'
 
@@ -24,6 +25,9 @@ export interface DriveProposal {
   route: Coordinate[]
   /** Sparse editable stops used only when the proposal enters the route builder. */
   waypoints?: Coordinate[]
+  /** Actual sampled elevations for the preview and 3D model, never a visual placeholder. */
+  elevationProfile: number[]
+  elevationSource: ElevationResult['source']
   labels: string[]
   tollStatus: TollStatus
   distanceKm: number
@@ -74,6 +78,8 @@ export function generateDriveProposals(courses: Course[], request: DriveProposal
         area: course.area,
         route: course.route,
         waypoints: sampledRoute(course),
+        elevationProfile: course.elevationProfile,
+        elevationSource: course.elevationSource ?? '地形傾向による推定',
         labels: [course.area.split('〜')[0] || course.name, ...(course.landmarks?.slice(0, 3).map((item) => item.name) ?? []), course.area.split('〜').at(-1) || course.name],
         tollStatus: courseTollStatus(course),
         distanceKm: course.distanceKm,

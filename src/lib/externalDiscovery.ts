@@ -172,6 +172,8 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       // waypoint list is only for the editor and must never replace the line.
       route: item.route,
       waypoints: proposalWaypoints(item.route),
+      elevationProfile: elevation.values,
+      elevationSource: elevation.source,
       labels: [name, `${item.validation.roadLengthKm}km区間`],
       tollStatus,
       distanceKm: item.validation.roadLengthKm,
