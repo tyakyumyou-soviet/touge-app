@@ -147,6 +147,11 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   async function findProposalArea(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!proposalQuery.trim()) return
+    if (proposalQuery.trim() === '現在地' && proposalCenter?.label.startsWith('現在地')) {
+      setProposalError('')
+      onFocusPoint(proposalCenter.coordinate)
+      return
+    }
     setBusy(true); setProposalError(''); setProposals([])
     try {
       const result = await geocodeJapanesePlace(proposalQuery)
@@ -161,8 +166,15 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     if (!navigator.geolocation) { setProposalError('この端末では現在地を取得できません'); return }
     setBusy(true); setProposalError('')
     navigator.geolocation.getCurrentPosition((position) => {
-      const result = { coordinate: [position.coords.longitude, position.coords.latitude] as Coordinate, label: '現在地' }
-      setProposalCenter(result); onFocusPoint(result.coordinate); onPendingPointChange(result.coordinate, result.label); setBusy(false)
+      const longitude = position.coords.longitude
+      const latitude = position.coords.latitude
+      const result = { coordinate: [longitude, latitude] as Coordinate, label: `現在地（${latitude.toFixed(5)}, ${longitude.toFixed(5)}）` }
+      setProposalCenter(result)
+      setProposalQuery('現在地')
+      setProposals([])
+      onFocusPoint(result.coordinate)
+      onPendingPointChange(null)
+      setBusy(false)
     }, () => { setProposalError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
   }
 
