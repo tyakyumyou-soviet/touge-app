@@ -22,6 +22,7 @@ interface Props {
   hasProposalEditSnapshot: boolean
   onIncorporateCourse: (course: Course, insertAfter?: number | null) => void
   onFocusPoint: (point: Coordinate) => void
+  onCurrentLocationChange: (point: Coordinate) => void
   onPendingPointChange: (point: Coordinate | null, label?: string) => void
   onUseProposal: (proposal: DriveProposal, placement?: 'replace' | 'append', insertAfter?: number | null) => void
   onUndoProposalEdit: () => void
@@ -49,7 +50,7 @@ interface DetailsValues {
   visibility: CourseDraft['visibility']
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
@@ -172,6 +173,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       setProposalCenter(result)
       setProposalQuery('現在地')
       setProposals([])
+      onCurrentLocationChange(result.coordinate)
       onFocusPoint(result.coordinate)
       onPendingPointChange(null)
       setBusy(false)

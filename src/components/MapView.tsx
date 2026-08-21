@@ -19,10 +19,13 @@ interface MapViewProps {
   draftRoles: DraftPointRole[]
   viaInsertAfter: number | null
   focusPoint: Coordinate | null
+  focusRoute: Coordinate[] | null
   pendingSearchPoint: Coordinate | null
   pendingSearchLabel: string
+  currentLocation: Coordinate | null
   searchCenter?: Coordinate | null
   searchRadiusKm?: number
+  onCurrentLocationChange: (point: Coordinate) => void
   onSelect: (course: Course) => void
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onMovePoint: (index: number, point: Coordinate) => void
@@ -59,6 +62,11 @@ const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
   }] : [],
 })
 
+const toCurrentLocation = (point: Coordinate | null) => ({
+  type: 'FeatureCollection' as const,
+  features: point ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: point } }] : [],
+})
+
 /** A lightweight geodesic approximation used only for the visible search radius. */
 const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number | undefined) => ({
   type: 'FeatureCollection' as const,
@@ -77,7 +85,7 @@ const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number 
   }],
 })
 
-export function MapView({ courses, selected, previewCourseIds, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, searchCenter, searchRadiusKm, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, previewCourseIds, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, focusRoute, pendingSearchPoint, pendingSearchLabel, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -131,6 +139,7 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
       const container = containerRef.current
       if (!container) return
       const result = event as GeolocationPosition
+      onCurrentLocationChange([result.coords.longitude, result.coords.latitude])
       map.flyTo({
         center: [result.coords.longitude, result.coords.latitude],
         padding: visibleMapCameraPadding(container),
@@ -188,6 +197,9 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
       map.addLayer({ id: 'pending-search-pin-tip', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': '▼', 'text-size': 23, 'text-offset': [0, .74], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#e76f51' } })
       map.addLayer({ id: 'pending-search-pin', type: 'circle', source: 'pending-search-point', paint: { 'circle-radius': 15, 'circle-color': '#e76f51', 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
       map.addLayer({ id: 'pending-search-label', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': ['concat', '仮  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.35], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#7f2f27', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
+      map.addSource('current-location', { type: 'geojson', data: toCurrentLocation(null) })
+      map.addLayer({ id: 'current-location-halo', type: 'circle', source: 'current-location', paint: { 'circle-radius': 14, 'circle-color': '#287bdc', 'circle-opacity': .18, 'circle-stroke-color': '#287bdc', 'circle-stroke-width': 1, 'circle-stroke-opacity': .38 } })
+      map.addLayer({ id: 'current-location-dot', type: 'circle', source: 'current-location', paint: { 'circle-radius': 7, 'circle-color': '#287bdc', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
       map.addLayer({ id: 'selected-contour-labels', type: 'symbol', source: 'selected-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
       map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
@@ -248,7 +260,7 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     return () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); draftPopupRef.current?.remove(); map.remove(); mapRef.current = null; setMapReady(false) }
   // Event handlers intentionally use refs above. Recreating the MapLibre map on
   // every parent render interrupts touch interactions, especially long-press drag.
-  }, [])
+  }, [onCurrentLocationChange])
 
   useEffect(() => {
     const map = mapRef.current
@@ -291,6 +303,12 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
 
   useEffect(() => {
     const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    ;(map.getSource('current-location') as GeoJSONSource | undefined)?.setData(toCurrentLocation(currentLocation))
+  }, [currentLocation, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
     const source = map?.getSource('draft-road') as GeoJSONSource | undefined
     if (!mapReady || !source) return
     let cancelled = false
@@ -315,6 +333,17 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     if (!map || !container || !focusPoint) return
     map.flyTo({ center: focusPoint, padding: visibleMapCameraPadding(container), zoom: Math.max(map.getZoom(), 15), duration: 500, essential: true })
   }, [focusPoint, drawing, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const container = containerRef.current
+    if (!map || !container || !focusRoute || focusRoute.length < 2) return
+    const bounds = focusRoute.reduce(
+      (value, point) => value.extend(point),
+      new maplibregl.LngLatBounds(focusRoute[0], focusRoute[0]),
+    )
+    map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration: 900 })
+  }, [focusRoute, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
