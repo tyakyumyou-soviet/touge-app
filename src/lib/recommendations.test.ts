@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateDriveProposals } from './recommendations'
+import { generateDriveProposals, proposalCountFor } from './recommendations'
 import type { Course } from '../types'
 
 const base = (id: string, tollStatus: Course['tollStatus'], curves: number): Course => ({
@@ -19,5 +19,17 @@ describe('drive proposals', () => {
     const [proposal] = generateDriveProposals([course], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, toll: 'free', style: 'winding', requiredPoints: [] })
     expect(proposal.route).toEqual(route)
     expect(proposal.waypoints?.length).toBeLessThan(route.length)
+  })
+
+  it('clamps detailed proposal counts to one through five', () => {
+    expect(proposalCountFor({})).toBe(3)
+    expect(proposalCountFor({ proposalCount: 0 })).toBe(1)
+    expect(proposalCountFor({ proposalCount: 4 })).toBe(4)
+    expect(proposalCountFor({ proposalCount: 9 })).toBe(5)
+  })
+
+  it('returns fewer proposals when the requested count cannot be satisfied', () => {
+    const results = generateDriveProposals([base('only', 'free', 5)], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, proposalCount: 5, toll: 'free', style: 'winding', requiredPoints: [] })
+    expect(results).toHaveLength(1)
   })
 })

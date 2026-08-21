@@ -65,6 +65,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [proposalCenter, setProposalCenter] = useState<GeocodedPoint | null>(null)
   const [proposalRadiusKm, setProposalRadiusKm] = useState(25)
   const [proposalMaxDistanceKm, setProposalMaxDistanceKm] = useState(60)
+  const [proposalCount, setProposalCount] = useState(1)
   const [proposalStyle, setProposalStyle] = useState<DriveStyle>('balanced')
   const [proposalToll, setProposalToll] = useState<'all' | TollStatus>('all')
   const [proposalViaQuery, setProposalViaQuery] = useState('')
@@ -221,13 +222,13 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     setBusy(true); setProposalError(''); setProposals([]); onSetProposalPreviews([]); setProposalProgress('OpenStreetMapから道路形状を取得しています…')
     const request = {
       center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
-      toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias,
+      proposalCount, toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias,
     } as const
     try {
       const external = await discoverExternalDriveProposals(request)
       setProposalProgress('道路のカーブ・標高・通行条件を確認しています…')
       const catalogue = generateDriveProposals(courses, request)
-      const next = [...external, ...catalogue].sort((left, right) => right.score - left.score).slice(0, 3)
+      const next = [...external, ...catalogue].sort((left, right) => right.score - left.score).slice(0, proposalCount)
       if (!next.length) { setProposalError('条件に合う道路候補が見つかりませんでした。半径・距離・料金条件を緩めてください。'); return }
       setProposals(next)
       onSetProposalPreviews(next)
@@ -282,6 +283,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
           <div className="proposal-grid">
             <label>探索半径<select value={proposalRadiusKm} onChange={(event) => setProposalRadiusKm(Number(event.target.value))}><option value={5}>5km</option><option value={10}>10km</option><option value={25}>25km</option><option value={50}>50km</option><option value={100}>100km</option></select></label>
             <label>最大距離<select value={proposalMaxDistanceKm} onChange={(event) => setProposalMaxDistanceKm(Number(event.target.value))}><option value={20}>20km</option><option value={40}>40km</option><option value={60}>60km</option><option value={100}>100km</option><option value={200}>200km</option></select></label>
+            <label>提案数<select value={proposalCount} onChange={(event) => setProposalCount(Number(event.target.value))}><option value={1}>1案</option><option value={2}>2案</option><option value={3}>3案</option><option value={4}>4案</option><option value={5}>5案</option></select></label>
             <label>走り方<select value={proposalStyle} onChange={(event) => setProposalStyle(event.target.value as DriveStyle)}><option value="winding">ワインディング重視</option><option value="balanced">バランス</option><option value="easy">走りやすさ重視</option></select></label>
             <label>料金<select value={proposalToll} onChange={(event) => setProposalToll(event.target.value as 'all' | TollStatus)}><option value="all">指定なし</option><option value="free">無料のみ</option><option value="toll">有料道路</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label>
           </div>
@@ -289,9 +291,9 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
           {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
         </div></div>
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
-        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '道路を探索中…' : 'この条件で3案を見る'}</button>
+        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '道路を探索中…' : `この条件で${proposalCount}案を見る`}</button>
         {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>道路を探索しています</strong><small>{proposalProgress}</small></div></div>}
-        {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">3案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => { sheet.reset(); onOpenProposalPreview(proposal.id) }}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>{route.length ? 'この候補をルートに追加 →' : 'この候補を使う →'}</button></div></article>)}</div>}
+        {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">{proposals.length}案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => { sheet.reset(); onOpenProposalPreview(proposal.id) }}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>{route.length ? 'この候補をルートに追加 →' : 'この候補を使う →'}</button></div></article>)}</div>}
       </section>}
       {hasProposalEditSnapshot && proposals.length > 0 && <button type="button" className="proposal-edit-back" onClick={() => { onUndoProposalEdit(); setProposalOpen(true); setSearchNotice('候補を採用する前の状態に戻しました。別の候補を選べます。') }}>← 候補を採用する前に戻る</button>}
       <section className="existing-route-insert" aria-label="既存コースをルートへ組み込む">

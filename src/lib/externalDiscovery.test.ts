@@ -8,6 +8,11 @@ describe('external road discovery', () => {
     expect(query).not.toContain('residential')
     expect(query).toContain('access')
     expect(query).toContain('out tags geom')
+    expect(query).toContain('out tags geom 80;')
+  })
+
+  it('caps the external road payload to keep a single suggestion responsive', () => {
+    expect(buildRoadDiscoveryQuery([139.03, 35.22], 25, 40)).toContain('out tags geom 40;')
   })
 
   it('rejects geometries with a large discontinuity', () => {

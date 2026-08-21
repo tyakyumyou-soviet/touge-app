@@ -1,7 +1,7 @@
 import type { Coordinate, TollStatus } from '../types'
 import { distanceKm, routeDistanceKm } from './course'
 import { fetchElevationProfile } from './elevation'
-import type { DriveProposal, DriveProposalRequest } from './recommendations'
+import { proposalCountFor, type DriveProposal, type DriveProposalRequest } from './recommendations'
 
 interface OverpassWay {
   type: 'way'
@@ -12,6 +12,15 @@ interface OverpassWay {
 
 interface OverpassResult { elements?: OverpassWay[] }
 
+interface OsrmRouteResponse {
+  code?: string
+  routes?: Array<{
+    distance?: number
+    duration?: number
+    geometry?: { coordinates?: Array<[number, number]> }
+  }>
+}
+
 // Requesting a 25km circle at once makes public Overpass instances time out
 // regularly in populated regions.  A 15km search is still useful for a
 // driving-area suggestion and keeps the road scan responsive.
@@ -20,14 +29,15 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ]
+const CLIENT_REQUEST_TIMEOUT_MS = 10_000
 
-export function buildRoadDiscoveryQuery(center: Coordinate, radiusKm: number): string {
+export function buildRoadDiscoveryQuery(center: Coordinate, radiusKm: number, maxWays = 80): string {
   const radius = Math.round(Math.min(MAX_DISCOVERY_RADIUS_KM, Math.max(2, radiusKm)) * 1000)
   const [lng, lat] = center
   // Avoid motorways, service roads, trails, private/no-access roads, tunnels,
   // and areas.  `out geom` returns the actual OSM way geometry rather than a
   // router's potentially unrelated shortcut.
-  return `[out:json][timeout:45];
+  return `[out:json][timeout:20];
 way(around:${radius},${lat.toFixed(6)},${lng.toFixed(6)})
   ["highway"~"^(primary|secondary|tertiary|unclassified)$"]
   ["motor_vehicle"!~"^(no|private)$"]
@@ -35,7 +45,10 @@ way(around:${radius},${lat.toFixed(6)},${lng.toFixed(6)})
   ["service"!~"^(parking|driveway)$"]
   ["tunnel"!="yes"]
   ["area"!="yes"];
-out tags geom;`
+// Limit the returned geometry instead of downloading every road segment in a
+// 12km circle.  This is the main protection against Overpass timeouts; the
+// score filter below still selects the most suitable of these road candidates.
+out tags geom ${Math.min(120, Math.max(25, Math.round(maxWays)))};`
 }
 
 function asRoute(geometry: OverpassWay['geometry']): Coordinate[] {
@@ -90,6 +103,77 @@ function sampled(route: Coordinate[], max = 14): Coordinate[] {
   return Array.from({ length: max }, (_, index) => route[Math.round(index * (route.length - 1) / (max - 1))])
 }
 
+function routeCandidateTargets(center: Coordinate, radiusKm: number, count: number): Array<{ start: Coordinate, goal: Coordinate }> {
+  const distance = Math.min(8, Math.max(2.5, Math.min(radiusKm, MAX_DISCOVERY_RADIUS_KM) * .55))
+  const latitudeScale = distance / 111
+  const longitudeScale = distance / (111 * Math.max(.35, Math.cos(center[1] * Math.PI / 180)))
+  const bearings = [22, 94, 166, 238, 310]
+  return bearings.slice(0, count).map((bearing) => {
+    const radians = bearing * Math.PI / 180
+    const lng = Math.sin(radians) * longitudeScale
+    const lat = Math.cos(radians) * latitudeScale
+    // Using a point on each side of the search centre produces a genuine
+    // drivable route through the requested area, rather than a straight line
+    // between two arbitrary map points.
+    return { start: [center[0] - lng * .65, center[1] - lat * .65], goal: [center[0] + lng, center[1] + lat] }
+  })
+}
+
+async function fetchRoutedRoad(start: Coordinate, center: Coordinate, goal: Coordinate): Promise<{ route: Coordinate[], distanceKm: number } | null> {
+  const coordinates = [start, center, goal].map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
+  const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`, { cache: 'no-store' })
+  if (!response.ok) throw new Error(`公開道路ルーティングエラー (${response.status})`)
+  const data = await response.json() as OsrmRouteResponse
+  const candidate = data.routes?.[0]
+  const route = (candidate?.geometry?.coordinates ?? []).map(([lng, lat]) => [lng, lat] as Coordinate)
+  const distanceMeters = candidate?.distance
+  if (data.code !== 'Ok' || route.length < 3 || !Number.isFinite(distanceMeters)) return null
+  return { route, distanceKm: Number((distanceMeters! / 1000).toFixed(1)) }
+}
+
+async function discoverRoutedDriveProposals(request: DriveProposalRequest): Promise<DriveProposal[]> {
+  const count = proposalCountFor(request)
+  const targets = routeCandidateTargets(request.center, request.radiusKm, count)
+  const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
+    const routed = await fetchRoutedRoad(start, request.center, goal)
+    if (!routed || routed.distanceKm > request.maxDistanceKm) return null
+    const validation = validateDiscoveredRoad(routed.route)
+    if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
+    const elevation = await fetchElevationProfile(sampled(routed.route, 18))
+    const range = elevation.values.length ? Math.max(...elevation.values) - Math.min(...elevation.values) : 0
+    const curve = validation.curveDensity
+    const width = 3.4
+    const styleScore = request.style === 'winding'
+      ? curve * 7 + range / 220
+      : request.style === 'easy'
+        ? width * 1.6 - curve * .35
+        : curve * 4 + width + range / 480
+    return {
+      id: `router-${Math.round(request.center[0] * 10000)}-${Math.round(request.center[1] * 10000)}-${index}`,
+      source: 'openstreetmap' as const,
+      name: `${Math.round(request.radiusKm)}km圏のドライブ候補 ${index + 1}`,
+      area: '公開道路データから探索',
+      route: routed.route,
+      waypoints: proposalWaypoints(routed.route),
+      elevationProfile: elevation.values,
+      elevationSource: elevation.source,
+      labels: ['探索中心', `${routed.distanceKm.toFixed(1)}km区間`],
+      tollStatus: 'unknown' as const,
+      distanceKm: routed.distanceKm,
+      score: styleScore,
+      reasons: [
+        '公開道路データから道路に沿って生成',
+        `カーブ密度 ${curve.toFixed(1)} 回/km`,
+        `高低差 ${Math.round(range)}m`,
+      ],
+      validation: { ...validation, elevationRangeM: Math.round(range), elevationSource: elevation.source },
+    } satisfies DriveProposal
+  }))
+  return settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count)
+}
+
 /**
  * The routing engine fills in the road between these points. Keep only enough
  * anchors to retain the intended road section: dense stop lists make an
@@ -128,14 +212,16 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
   let lastError: unknown
   const data = encodeURIComponent(query)
   const requests: Array<{ endpoint: string; init: RequestInit }> = [
-    // Netlify serves this same-origin relay in production.  It avoids browser
-    // CORS/rate-limit failures while retaining the same public OSM data source.
+    // The relay is the primary production path: it avoids CORS restrictions
+    // and can retry an Overpass mirror server-side. Direct mirrors remain a
+    // short-lived fallback for local development or a temporarily unavailable
+    // deployment function.
     { endpoint: `/api/road-discovery?data=${data}`, init: { method: 'GET' } },
     ...OVERPASS_ENDPOINTS.map((endpoint) => ({ endpoint: `${endpoint}?data=${data}`, init: { method: 'GET' } })),
   ]
   for (const { endpoint, init } of requests) {
     const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), 50_000)
+    const timer = window.setTimeout(() => controller.abort(), CLIENT_REQUEST_TIMEOUT_MS)
     try {
       const response = await fetch(endpoint, { ...init, signal: controller.signal, cache: 'no-store' })
       if (!response.ok) throw new Error(`道路データ取得エラー (${response.status})`)
@@ -154,9 +240,21 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
  * never automatically published as verified courses.
  */
 export async function discoverExternalDriveProposals(request: DriveProposalRequest): Promise<DriveProposal[]> {
-  const result = await fetchOverpass(buildRoadDiscoveryQuery(request.center, request.radiusKm))
+  const count = proposalCountFor(request)
+  let result: OverpassResult
+  try {
+    result = await fetchOverpass(buildRoadDiscoveryQuery(request.center, request.radiusKm, Math.max(40, count * 24)))
+  } catch (overpassError) {
+    // Public Overpass mirrors periodically rate-limit or time out on road
+    // geometry scans.  Fall back to a separate public road-routing service so
+    // the user still receives new, road-shaped candidates rather than only a
+    // locally registered catalogue.
+    const routed = await discoverRoutedDriveProposals(request)
+    if (routed.length) return routed
+    throw overpassError
+  }
   const raw = candidatesFromWays((result.elements ?? []).filter((item) => item.type === 'way'), request)
-  const enriched = await Promise.all(raw.slice(0, 5).map(async (item) => {
+  const enriched = await Promise.all(raw.slice(0, count).map(async (item) => {
     const elevation = await fetchElevationProfile(sampled(item.route, 18))
     const range = elevation.values.length ? Math.max(...elevation.values) - Math.min(...elevation.values) : 0
     const gradeBonus = Math.min(2, range / 250)
@@ -187,5 +285,5 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       validation: { ...item.validation, elevationRangeM: Math.round(range), elevationSource: elevation.source },
     } satisfies DriveProposal
   }))
-  return enriched.sort((a, b) => b.score - a.score).slice(0, 3)
+  return enriched.sort((a, b) => b.score - a.score).slice(0, count)
 }

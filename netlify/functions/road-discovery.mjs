@@ -2,6 +2,7 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ]
+const UPSTREAM_TIMEOUT_MS = 10_000
 
 function json(statusCode, body) {
   return {
@@ -26,9 +27,12 @@ export async function handler(event) {
   if (typeof query !== 'string' || query.length > 3000 || !query.includes('[out:json]') || !query.includes('way(around:')) return json(400, { error: '道路探索クエリが不正です' })
 
   let lastError = '道路データを取得できませんでした'
+  // Netlify functions have a platform timeout.  Keep individual attempts
+  // short so one saturated public mirror cannot consume the entire function
+  // and prevent the browser from trying the next route.
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 55_000)
+    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
     try {
       const response = await fetch(endpoint, {
         method: 'POST',

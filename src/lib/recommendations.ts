@@ -9,9 +9,17 @@ export interface DriveProposalRequest {
   center: Coordinate
   radiusKm: number
   maxDistanceKm: number
+  /** Number of results requested by the driver. Defaults to one for a focused first suggestion. */
+  proposalCount?: number
   toll: 'all' | TollStatus
   style: DriveStyle
   requiredPoints: Array<{ coordinate: Coordinate; label: string }>
+}
+
+export function proposalCountFor(request: Pick<DriveProposalRequest, 'proposalCount'>): number {
+  // Callers from the course builder always pass an explicit value (initially
+  // one). Preserve the previous three-item API behaviour for older callers.
+  return Math.min(5, Math.max(1, Math.floor(request.proposalCount ?? 3)))
 }
 
 export interface DriveProposal {
@@ -88,5 +96,5 @@ export function generateDriveProposals(courses: Course[], request: DriveProposal
       }
     })
     .sort((left, right) => right.score - left.score || left.distanceKm - right.distanceKm)
-    .slice(0, 3)
+    .slice(0, proposalCountFor(request))
 }
