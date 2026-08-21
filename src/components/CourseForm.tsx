@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react'
+import { useMemo, useState, type DragEvent, type FormEvent } from 'react'
 import type { Coordinate, Course, CourseDraft, DraftPointRole } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
@@ -20,11 +20,10 @@ interface Props {
   courses: Course[]
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   hasProposalEditSnapshot: boolean
-  proposalEditRevision: number
-  onIncorporateCourse: (course: Course) => void
+  onIncorporateCourse: (course: Course, insertAfter?: number | null) => void
   onFocusPoint: (point: Coordinate) => void
   onPendingPointChange: (point: Coordinate | null, label?: string) => void
-  onUseProposal: (proposal: DriveProposal) => void
+  onUseProposal: (proposal: DriveProposal, placement?: 'replace' | 'append', insertAfter?: number | null) => void
   onUndoProposalEdit: () => void
   onSetProposalPreviews: (proposals: DriveProposal[]) => void
   onOpenProposalPreview: (proposalId: string) => void
@@ -50,7 +49,7 @@ interface DetailsValues {
   visibility: CourseDraft['visibility']
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, proposalEditRevision, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
@@ -60,7 +59,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
   const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public' })
-  const [routeMode, setRouteMode] = useState<'manual' | 'suggest'>('manual')
+  const [proposalOpen, setProposalOpen] = useState(false)
   const [proposalQuery, setProposalQuery] = useState('')
   const [proposalCenter, setProposalCenter] = useState<GeocodedPoint | null>(null)
   const [proposalRadiusKm, setProposalRadiusKm] = useState(25)
@@ -74,9 +73,6 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [proposalError, setProposalError] = useState('')
   const [proposalProgress, setProposalProgress] = useState('')
 
-  useEffect(() => {
-    if (proposalEditRevision > 0) setRouteMode('manual')
-  }, [proposalEditRevision])
   const [courseLibraryOpen, setCourseLibraryOpen] = useState(false)
   const [courseLibraryQuery, setCourseLibraryQuery] = useState('')
   const [draggedBlockStart, setDraggedBlockStart] = useState<number | null>(null)
@@ -206,10 +202,11 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   }
 
   function chooseProposal(proposal: DriveProposal) {
-    onUseProposal(proposal)
-    setRouteMode('manual')
+    const append = route.length > 0
+    onUseProposal(proposal, append ? 'append' : 'replace', append ? viaInsertAfter : null)
+    setProposalOpen(false)
     setPendingSearchPoint(null); onPendingPointChange(null)
-    setSearchNotice(`「${proposal.name}」を提案ルートとして読み込みました。地点を追加・削除して仕上げられます。`)
+    setSearchNotice(append ? `「${proposal.name}」を現在のルートへ組み込みました。必要なら地点の順番を調整できます。` : `「${proposal.name}」をコースのベースにしました。地点を追加・削除して仕上げられます。`)
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -237,11 +234,8 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     </div>
     {stage === 'route' ? <div className="route-builder-stage">
-      <div className="route-mode-switch" role="tablist" aria-label="コースの作り方">
-        <button type="button" role="tab" aria-selected={routeMode === 'manual'} className={routeMode === 'manual' ? 'active' : ''} onClick={() => setRouteMode('manual')}>自分で作る</button>
-        <button type="button" role="tab" aria-selected={routeMode === 'suggest'} className={routeMode === 'suggest' ? 'active' : ''} onClick={() => { setRouteMode('suggest'); setSearchError('') }}>おまかせ提案</button>
-      </div>
-      {routeMode === 'suggest' ? <section className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
+      <section className="route-builder-intro" aria-label="コースに追加する方法"><div><p className="eyebrow">ROUTE COMPOSER</p><h3>{route.length ? 'コースに追加する' : 'コースを組み立てる'}</h3><p>地点・既存コース・おまかせ提案を好きな順で組み合わせられます。</p></div><button type="button" className={`proposal-launch ${proposalOpen ? 'active' : ''}`} onClick={() => { setProposalOpen((value) => !value); setSearchError('') }} aria-expanded={proposalOpen} aria-controls="drive-proposal-builder">✨ おまかせ提案 <span aria-hidden="true">{proposalOpen ? '−' : '+'}</span></button></section>
+      {proposalOpen && <section id="drive-proposal-builder" className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
         <div><p className="eyebrow">SMART DRIVE FINDER</p><h3>どこを走りたい？</h3></div>
         <form className="route-search proposal-area-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="地名・住所・IC・峠を入力" aria-label="走りたい場所を検索" /><button disabled={busy}>{busy ? '検索中…' : 'この場所にする'}</button></form>
         <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を使う</button>{proposalCenter && <strong>探索地点: {proposalCenter.label}</strong>}</div>
@@ -259,25 +253,25 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
         <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '道路を探索中…' : 'この条件で3案を見る'}</button>
         {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>道路を探索しています</strong><small>{proposalProgress}</small></div></div>}
-        {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">3案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => onOpenProposalPreview(proposal.id)}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>この候補を編集する →</button></div></article>)}</div>}
-      </section> : <>
-      {hasProposalEditSnapshot && proposals.length > 0 && <button type="button" className="proposal-edit-back" onClick={() => { onUndoProposalEdit(); setRouteMode('suggest'); setSearchNotice('候補を編集前の状態に戻しました。別の候補を選べます。') }}>← 編集を取り消して候補へ戻る</button>}
+        {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">3案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => onOpenProposalPreview(proposal.id)}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>{route.length ? 'この候補をルートに追加 →' : 'この候補を使う →'}</button></div></article>)}</div>}
+      </section>}
+      {hasProposalEditSnapshot && proposals.length > 0 && <button type="button" className="proposal-edit-back" onClick={() => { onUndoProposalEdit(); setProposalOpen(true); setSearchNotice('候補を採用する前の状態に戻しました。別の候補を選べます。') }}>← 候補を採用する前に戻る</button>}
       <section className="existing-route-insert" aria-label="既存コースをルートへ組み込む">
         <button type="button" className="existing-route-toggle" onClick={() => setCourseLibraryOpen((value) => !value)} aria-expanded={courseLibraryOpen}>
-          <span aria-hidden="true">⇄</span><strong>既存コースを組み込む</strong><small>今のゴールの後ろへ、選んだコースの道順を追加</small><b aria-hidden="true">{courseLibraryOpen ? '−' : '+'}</b>
+          <span aria-hidden="true">⇄</span><strong>既存コースを組み込む</strong><small>{viaInsertAfter !== null ? '選んだ追加先の直後へ道順を追加' : '今のゴールの直前へ道順を追加'}</small><b aria-hidden="true">{courseLibraryOpen ? '−' : '+'}</b>
         </button>
         <div className={`existing-route-library ${courseLibraryOpen ? 'open' : ''}`} aria-hidden={!courseLibraryOpen}>
           <div className="existing-route-library-inner">
             <input value={courseLibraryQuery} onChange={(event) => setCourseLibraryQuery(event.target.value)} placeholder="コース名・エリア・タグで絞り込み" aria-label="組み込む既存コースを検索" />
-            <p>選んだコースは現在の地点列の末尾へ追加されます。組み込んだ後も地点の追加・削除・ゴール設定ができます。</p>
-            <div className="existing-route-results">{incorporableCourses.map((course) => <button key={course.id} type="button" onClick={() => { onIncorporateCourse(course); setCourseLibraryOpen(false); setCourseLibraryQuery(''); setSearchNotice(`「${course.name}」をルートに組み込みました。最後の地点をゴールとして確認してください。`) }}><span>＋</span><div><strong>{course.name}</strong><small>{course.area} · {course.distanceKm.toFixed(1)} km</small></div></button>)}</div>
+            <p>選んだコースを現在の地点列へ追加します。追加先を選んでいる場合はその直後、それ以外はゴールの直前に組み込みます。</p>
+            <div className="existing-route-results">{incorporableCourses.map((course) => <button key={course.id} type="button" onClick={() => { onIncorporateCourse(course, viaInsertAfter); setCourseLibraryOpen(false); setCourseLibraryQuery(''); setSearchNotice(`「${course.name}」をルートに組み込みました。必要なら地点の順番を調整できます。`) }}><span>＋</span><div><strong>{course.name}</strong><small>{course.area} · {course.distanceKm.toFixed(1)} km</small></div></button>)}</div>
           </div>
         </div>
       </section>
       <form className="route-search" onSubmit={addSearchedPlace}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="地名・住所・IC・峠・コースを検索" aria-label="ルートへ追加する場所または住所を検索" /><button disabled={busy}>{busy ? '検索中…' : '地点を追加'}</button></form>
       {searchError && <section className="search-not-found" role="alert"><strong>場所が見つかりませんでした</strong><p>{searchError}</p><small>地点は追加されていません。地名の一部・施設名・IC名で検索し直すか、地図をタップして正確な位置を指定してください。</small></section>}
       {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の赤い仮ピンを確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via', viaInsertAfter); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>ゴールとして追加</button>}<button type="button" className="text-button" onClick={() => { setPendingSearchPoint(null); onPendingPointChange(null) }}>追加しない</button></div></section>}
-      {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} type="button" onClick={() => { onIncorporateCourse(course); setQuery(''); setSearchNotice(`「${course.name}」をルートに組み込みました。最後の地点をゴールとして確認してください。`) }}><strong>{course.name}</strong><small>{course.area} · コース全体を組み込む</small></button>)}</div>}
+      {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} type="button" onClick={() => { onIncorporateCourse(course, viaInsertAfter); setQuery(''); setSearchNotice(`「${course.name}」をルートに組み込みました。必要なら地点の順番を調整できます。`) }}><strong>{course.name}</strong><small>{course.area} · コース全体を組み込む</small></button>)}</div>}
       <p className="route-builder-help">最初に地点を追加すると始点になります。以降は地図上の道路や検索結果を「経由地」または「ゴール」として追加できます。既存コースも同じ地点列へ組み込めるため、地点・既存コース・地点を好きな順番でつなげられます。地点一覧の「＋」を押すと、その地点の直後を追加先に選べます。</p>
       {routeBlocks.length > 1 && <section className="route-order-editor" aria-label="ルートの順番を変更"><div><strong>ルートの順番</strong><small>ドラッグ＆ドロップで入れ替え</small></div><ol>{routeBlocks.map((block, index) => <li key={`${block.start}-${block.title}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedBlockStart(block.start) }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleBlockDrop(event, block)} onDragEnd={() => setDraggedBlockStart(null)} className={draggedBlockStart === block.start ? 'dragging' : ''}><span aria-hidden="true">⠿</span><div><strong>{block.title}</strong><small>{block.subtitle}{block.count > 1 ? ` · ${block.count}地点` : ''}</small></div><button type="button" onClick={() => { const target = routeBlocks[index - 1]; if (target) onMoveRouteBlock(block.start, block.count, target.start) }} disabled={index === 0} aria-label={`${block.title}を前へ`}>↑</button><button type="button" onClick={() => { const target = routeBlocks[index + 1]; if (target) onMoveRouteBlock(block.start, block.count, target.start + target.count) }} disabled={index === routeBlocks.length - 1} aria-label={`${block.title}を後へ`}>↓</button></li>)}</ol></section>}
       <div className="route-stop-list">{route.length ? route.map((point, index) => { const role = pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'); const roleText = role === 'start' ? 'START' : role === 'goal' ? 'GOAL' : `経由 ${pointRoles.slice(0, index + 1).filter((item) => item === 'via').length || index}`; return <div key={`${point[0]}-${point[1]}-${index}`}><b>{roleText}</b><span><strong>{pointLabels[index] || '地図指定'}</strong><small>{point[1].toFixed(5)}, {point[0].toFixed(5)}</small></span>{role !== 'goal' && <button type="button" className={`insert-stop ${viaInsertAfter === index ? 'active' : ''}`} onClick={() => onChooseViaInsertion(viaInsertAfter === index ? null : index)} aria-label={`${roleText}の直後に経由地を追加`}>{viaInsertAfter === index ? '追加先' : '＋'}</button>}<button type="button" onClick={() => onRemovePoint(index)} aria-label={`${roleText}を削除`}>×</button></div> }) : <p>まだ地点がありません</p>}</div>
@@ -289,7 +283,6 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       <p className="geocoder-credit">住所検索: <a href="https://geocode.csis.u-tokyo.ac.jp/" target="_blank" rel="noreferrer">CSISシンプルジオコーディング実験</a></p>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2 || !hasGoal || exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)} onClick={openDetails}>詳細へ →</button></footer>
-      </>}
     </div> : <form className="route-details-stage" onSubmit={submit}>
       <button type="button" className="text-button" onClick={() => setStage('route')}>← ルートを修正</button>
       <div className="form-grid">

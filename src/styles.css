@@ -578,9 +578,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .toll-chip.conditional { color: #7d4c12; background: #ffe6c7; }
 .toll-chip.mixed { color: #5a4d78; background: #ece6fb; }
 .toll-chip.unknown { color: #55625c; background: #e9ecea; }
-.route-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 13px; padding: 4px; border-radius: 11px; background: #edf0eb; }
-.route-mode-switch button { min-height: 38px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-weight: 800; cursor: pointer; }
-.route-mode-switch button.active { color: var(--ink); background: var(--paper); box-shadow: 0 2px 7px #14201818; }
+.route-builder-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid #c9d9ce; border-radius: 12px; background: #f5f9f5; }
+.route-builder-intro h3 { margin: 0; font-size: 18px; }
+.route-builder-intro p:not(.eyebrow) { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.proposal-launch { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 10px 11px; color: #5d4811; border: 1px solid #d7b854; border-radius: 9px; background: #fff4cf; font-weight: 800; cursor: pointer; }
+.proposal-launch.active { color: #fff; border-color: #287e5a; background: #287e5a; }
 .drive-proposal-builder { display: grid; gap: 13px; }
 .drive-proposal-builder h3 { margin: 0; font-size: 21px; }
 .drive-proposal-builder > div > p:not(.eyebrow) { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
@@ -667,6 +669,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 @media (max-width:760px) { .live-road-grid { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
   .nearby-course-search { grid-template-columns: minmax(0, 1fr) auto; }.nearby-course-search button:last-child { grid-column: 1 / -1; min-height: 34px; }
+  .route-builder-intro { align-items: stretch; flex-direction: column; }
+  .proposal-launch { justify-content: space-between; width: 100%; }
   .proposal-grid { grid-template-columns: 1fr; }
   .community-panel { width: calc(100% - 16px); max-height: 92dvh; padding: 16px; }
   .profile-editor { grid-template-columns: 1fr; }
