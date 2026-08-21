@@ -345,12 +345,20 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     // A preview opens its detail sheet in the same render. Defer this camera
     // request until that sheet has its final size, so its fitBounds call wins
     // over an earlier point-focus animation and lands in the visible map area.
-    const frame = window.requestAnimationFrame(() => {
+    const fitPreviewRoute = (duration: number) => {
       map.stop()
       map.resize()
-      map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration: 900, essential: true })
-    })
-    return () => window.cancelAnimationFrame(frame)
+      map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration, essential: true })
+    }
+    const compact = window.matchMedia('(max-width: 760px)').matches
+    // On mobile, wait for the maximized builder sheet to return to its regular
+    // height. Fitting against the old height can leave too little map canvas
+    // for MapLibre to calculate a valid camera.
+    let frame = 0
+    let settleTimer = 0
+    if (compact) settleTimer = window.setTimeout(() => fitPreviewRoute(900), 260)
+    else frame = window.requestAnimationFrame(() => fitPreviewRoute(900))
+    return () => { if (frame) window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
   }, [focusRoute, mapReady])
 
   useEffect(() => {
@@ -362,6 +370,9 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     ;(map.getSource('selected-contours') as GeoJSONSource | undefined)?.setData(toContourFeatureCollection(selected))
     ;(map.getSource('course-annotations') as GeoJSONSource | undefined)?.setData(toCourseAnnotationCollection(selected))
     if (!selected) return
+    // Proposal previews use focusRoute after the builder sheet finishes its
+    // height transition. An immediate fit here would use stale occlusion.
+    if (selected.authorId === '__proposal_preview__') return
     const bounds = selected.route.reduce(
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
