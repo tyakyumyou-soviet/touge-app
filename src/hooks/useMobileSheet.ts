@@ -1,10 +1,11 @@
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
 
 /** Shared gesture contract for every mobile bottom sheet (機能A).
  * Attach dragProps to the sheet's entire non-interactive top region and apply
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet() {
   const drag = useRef<{ pointerId: number; y: number; moved: boolean } | null>(null)
+  const scrollDrag = useRef<{ y: number; active: boolean } | null>(null)
   const ignoreTap = useRef(false)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -36,6 +37,10 @@ export function useMobileSheet() {
     setOffset(0)
     ignoreTap.current = active.moved
     if (active.moved) window.setTimeout(() => { ignoreTap.current = false }, 0)
+    settle(distance)
+  }
+
+  function settle(distance: number) {
     if (collapsed) {
       if (distance < -42) { setCollapsed(false); setExpanded(true) }
       return
@@ -43,6 +48,45 @@ export function useMobileSheet() {
     if (distance > 52) { setCollapsed(true); setExpanded(false) }
     else if (distance < -52) setExpanded(true)
     else if (distance > 24) setExpanded(false)
+  }
+
+  /**
+   * Lets a scrollable sheet body hand a downward pull to the sheet once it has
+   * reached its top. This keeps the native scroll behaviour everywhere else.
+   */
+  function startScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
+    if (!isMobile() || event.touches.length !== 1 || event.currentTarget.scrollTop > 1) return
+    scrollDrag.current = { y: event.touches[0].clientY, active: false }
+  }
+
+  function moveScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
+    const active = scrollDrag.current
+    if (!active || event.touches.length !== 1) return
+    const distance = event.touches[0].clientY - active.y
+    if (event.currentTarget.scrollTop > 1 && !active.active) {
+      scrollDrag.current = null
+      return
+    }
+    if (distance <= 8 && !active.active) return
+    if (distance <= 0) return
+    active.active = true
+    // Once the content cannot scroll upward any further, the gesture should
+    // behave exactly like pulling the sheet by its fixed handle.
+    event.preventDefault()
+    setDragging(true)
+    setOffset(Math.max(0, distance))
+  }
+
+  function endScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
+    const active = scrollDrag.current
+    if (!active) return
+    const endY = event.changedTouches[0]?.clientY ?? active.y
+    const distance = endY - active.y
+    scrollDrag.current = null
+    if (!active.active) return
+    setDragging(false)
+    setOffset(0)
+    settle(distance)
   }
 
   function tap(event: ReactPointerEvent<HTMLDivElement>) {
@@ -54,6 +98,7 @@ export function useMobileSheet() {
 
   function reset() {
     drag.current = null
+    scrollDrag.current = null
     ignoreTap.current = false
     setCollapsed(false)
     setExpanded(false)
@@ -71,5 +116,6 @@ export function useMobileSheet() {
     style,
     reset,
     dragProps: { onPointerDown: start, onPointerMove: move, onPointerUp: end, onPointerCancel: end, onClick: tap },
+    scrollProps: { onTouchStart: startScrollDrag, onTouchMove: moveScrollDrag, onTouchEnd: endScrollDrag, onTouchCancel: endScrollDrag },
   }
 }

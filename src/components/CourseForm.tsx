@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import type { Coordinate, Course, CourseDraft, DraftPointRole } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
@@ -73,6 +73,8 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [proposals, setProposals] = useState<DriveProposal[]>([])
   const [proposalError, setProposalError] = useState('')
   const [proposalProgress, setProposalProgress] = useState('')
+  const proposalSearchTimer = useRef<number | null>(null)
+  const proposalSearchRevision = useRef(0)
 
   const [courseLibraryOpen, setCourseLibraryOpen] = useState(false)
   const [courseLibraryQuery, setCourseLibraryQuery] = useState('')
@@ -145,26 +147,47 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     } catch (caught) { setSearchError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
   }
 
-  async function findProposalArea(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!proposalQuery.trim()) return
-    if (proposalQuery.trim() === '現在地' && proposalCenter?.label.startsWith('現在地')) {
+  async function resolveProposalArea(value: string, revision?: number) {
+    if (!value.trim()) return
+    if (value.trim() === '現在地' && proposalCenter?.label.startsWith('現在地')) {
       setProposalError('')
       onFocusPoint(proposalCenter.coordinate)
       return
     }
     setBusy(true); setProposalError(''); setProposals([])
     try {
-      const result = await geocodeJapanesePlace(proposalQuery)
+      const result = await geocodeJapanesePlace(value)
+      if (revision !== undefined && revision !== proposalSearchRevision.current) return
       setProposalCenter(result)
       onFocusPoint(result.coordinate)
       onPendingPointChange(result.coordinate, result.label)
-    } catch (caught) { setProposalError(caught instanceof Error ? caught.message : '探索エリアを検索できませんでした') }
-    finally { setBusy(false) }
+    } catch (caught) {
+      if (revision === undefined || revision === proposalSearchRevision.current) setProposalError(caught instanceof Error ? caught.message : '探索エリアを検索できませんでした')
+    } finally {
+      if (revision === undefined || revision === proposalSearchRevision.current) setBusy(false)
+    }
+  }
+
+  function findProposalArea(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (proposalSearchTimer.current !== null) window.clearTimeout(proposalSearchTimer.current)
+    proposalSearchRevision.current += 1
+    void resolveProposalArea(proposalQuery)
+  }
+
+  function scheduleProposalAreaSearch(value: string) {
+    setProposalQuery(value)
+    if (proposalSearchTimer.current !== null) window.clearTimeout(proposalSearchTimer.current)
+    const revision = proposalSearchRevision.current + 1
+    proposalSearchRevision.current = revision
+    if (!value.trim() || value.trim() === '現在地') return
+    proposalSearchTimer.current = window.setTimeout(() => { void resolveProposalArea(value.trim(), revision) }, 550)
   }
 
   function useCurrentLocationForProposal() {
     if (!navigator.geolocation) { setProposalError('この端末では現在地を取得できません'); return }
+    if (proposalSearchTimer.current !== null) window.clearTimeout(proposalSearchTimer.current)
+    proposalSearchRevision.current += 1
     setBusy(true); setProposalError('')
     navigator.geolocation.getCurrentPosition((position) => {
       const longitude = position.coords.longitude
@@ -247,11 +270,12 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     </div>
+    <div className="course-form-scroll" {...sheet.scrollProps}>
     {stage === 'route' ? <div className="route-builder-stage">
       <section className="route-builder-intro" aria-label="コースに追加する方法"><div><p className="eyebrow">ROUTE COMPOSER</p><h3>{route.length ? 'コースに追加する' : 'コースを組み立てる'}</h3></div><button type="button" className={`proposal-launch ${proposalOpen ? 'active' : ''}`} onClick={() => { setProposalOpen((value) => !value); setSearchError('') }} aria-expanded={proposalOpen} aria-controls="drive-proposal-builder">✨ 峠道を探す <span aria-hidden="true">{proposalOpen ? '−' : '+'}</span></button></section>
       {proposalOpen && <section id="drive-proposal-builder" className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">
         <div><p className="eyebrow">TOUGE FINDER</p><h3>このあたりの峠道を探す</h3></div>
-        <form className="route-search proposal-area-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} placeholder="地名・住所・IC・峠を入力" aria-label="走りたい場所を検索" /><button disabled={busy}>{busy ? '検索中…' : 'この場所にする'}</button></form>
+        <form className="route-search proposal-area-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => scheduleProposalAreaSearch(event.target.value)} placeholder="地名・住所・IC・峠を入力すると自動で探索地点に設定" aria-label="走りたい場所を検索" />{busy && <span className="proposal-area-status" role="status">検索中…</span>}</form>
         <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を使う</button>{proposalCenter && <strong>探索地点: {proposalCenter.label}</strong>}</div>
         <button type="button" className={`proposal-settings-toggle ${proposalSettingsOpen ? 'open' : ''}`} onClick={() => setProposalSettingsOpen((value) => !value)} aria-expanded={proposalSettingsOpen} aria-controls="proposal-settings">詳細条件 <span aria-hidden="true">{proposalSettingsOpen ? '−' : '+'}</span></button>
         <div id="proposal-settings" className={`proposal-settings ${proposalSettingsOpen ? 'open' : ''}`} aria-hidden={!proposalSettingsOpen}><div className="proposal-settings-inner">
@@ -310,5 +334,6 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer><button type="button" className="button secondary" onClick={onCancel}>キャンセル</button><button className="button primary" disabled={busy}>{busy ? '道路・標高を確認して保存中…' : 'コースを保存'}</button></footer>
     </form>}
+    </div>
   </section></div>
 }

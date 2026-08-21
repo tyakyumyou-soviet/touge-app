@@ -207,10 +207,12 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .logout-dialog { width: min(420px, 100%); }
 .logout-dialog h2 { margin: 0 0 9px; font-size: 20px; }
 .logout-dialog p { margin: 0; color: #657169; font-size: 12px; line-height: 1.7; }
-.course-form { position: absolute; left: 390px; top: 90px; width: min(430px, calc(100vw - 420px)); }
+.course-form { position: absolute; left: 390px; top: 90px; display: flex; flex-direction: column; width: min(430px, calc(100vw - 420px)); overflow: hidden; }
 .course-form + * { pointer-events: auto; }
 .modal-backdrop:has(.course-form) { pointer-events: none; place-items: start; background: transparent; backdrop-filter: none; }
 .course-form { pointer-events: auto; box-shadow: 0 20px 70px #10221955; }
+.course-form > .mobile-sheet-drag-region { flex: 0 0 auto; background: var(--paper); z-index: 2; }
+.course-form-scroll { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
 .course-form.surface-leaving { pointer-events: none; animation: surfaceDropOut .22s ease-in both; }
 .course-form.surface-entering { animation: surfaceRiseIn .28s cubic-bezier(.2, .8, .25, 1) both; }
 @keyframes surfaceDropOut { to { opacity: 0; transform: translateY(84px); } }
@@ -509,6 +511,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .modal { max-height: 88dvh; border-radius: 18px 18px 8px 8px; }
   .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; max-height: 61dvh; }
   .course-form.mobile-sheet.expanded { max-height: calc(100dvh - 14px); }
+  .course-form-scroll { padding: 0 1px 8px; touch-action: pan-y; }
   .modal footer, .route-builder-stage footer, .route-details-stage footer { flex-wrap: wrap; }
   .modal footer > .button, .route-builder-stage footer > .button, .route-details-stage footer > .button { flex: 1 1 150px; }
   .course-manager { padding: 18px; }
@@ -589,7 +592,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .drive-proposal-builder > div > p:not(.eyebrow) { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .proposal-current-location { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 9px; background: #f0f5f1; font-size: 12px; }
 .proposal-current-location .text-button { padding: 0; }
-.proposal-area-search input { min-width: 0; }
+.proposal-area-search { grid-template-columns: minmax(0, 1fr); position: relative; }
+.proposal-area-search input { min-width: 0; padding-right: 64px; }
+.proposal-area-status { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: #287e5a; font-size: 11px; font-weight: 800; pointer-events: none; }
 .proposal-settings-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 11px; color: var(--green); background: #f4f8f4; border: 1px solid #c3d8ca; border-radius: 9px; font-weight: 800; cursor: pointer; }
 .proposal-settings-toggle span { font-size: 20px; line-height: .7; }
 .proposal-settings { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms ease; }

@@ -342,7 +342,15 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(focusRoute[0], focusRoute[0]),
     )
-    map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration: 900 })
+    // A preview opens its detail sheet in the same render. Defer this camera
+    // request until that sheet has its final size, so its fitBounds call wins
+    // over an earlier point-focus animation and lands in the visible map area.
+    const frame = window.requestAnimationFrame(() => {
+      map.stop()
+      map.resize()
+      map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration: 900, essential: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [focusRoute, mapReady])
 
   useEffect(() => {
