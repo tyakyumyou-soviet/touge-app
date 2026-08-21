@@ -5,7 +5,7 @@ import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
-import { generateDriveProposals, type DriveProposal, type DriveStyle } from '../lib/recommendations'
+import { type DriveProposal, type DriveStyle } from '../lib/recommendations'
 import { discoverExternalDriveProposals } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
@@ -227,15 +227,12 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     try {
       const external = await discoverExternalDriveProposals(request)
       setProposalProgress('道路のカーブ・標高・通行条件を確認しています…')
-      const catalogue = generateDriveProposals(courses, request)
-      const next = [...external, ...catalogue].sort((left, right) => right.score - left.score).slice(0, proposalCount)
-      if (!next.length) { setProposalError('条件に合う道路候補が見つかりませんでした。半径・距離・料金条件を緩めてください。'); return }
-      setProposals(next)
-      onSetProposalPreviews(next)
+      if (!external.length) { setProposalError('この条件では新しいコースを見つけられませんでした。探索範囲・距離・料金条件を変えて再試行してください。'); return }
+      setProposals(external)
+      onSetProposalPreviews(external)
     } catch (caught) {
-      const fallback = generateDriveProposals(courses, request)
-      if (fallback.length) { setProposals(fallback); onSetProposalPreviews(fallback); setProposalError('外部道路データの取得に失敗しました。代替候補を表示しています。') }
-      else setProposalError(caught instanceof Error ? `外部道路データを取得できませんでした: ${caught.message}` : '外部道路データを取得できませんでした。時間を置いて再試行してください。')
+      setProposals([]); onSetProposalPreviews([])
+      setProposalError(caught instanceof Error ? `新しいコースを見つけられませんでした。${caught.message}` : '新しいコースを見つけられませんでした。時間を置いて再試行してください。')
     } finally { setBusy(false); setProposalProgress('') }
   }
 

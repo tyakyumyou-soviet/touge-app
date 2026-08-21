@@ -137,6 +137,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
     const routed = await fetchRoutedRoad(start, request.center, goal)
     if (!routed || routed.distanceKm > request.maxDistanceKm) return null
+    if (request.toll !== 'all') return null
     const validation = validateDiscoveredRoad(routed.route)
     if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
     const elevation = await fetchElevationProfile(sampled(routed.route, 18))
@@ -241,20 +242,10 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
  */
 export async function discoverExternalDriveProposals(request: DriveProposalRequest): Promise<DriveProposal[]> {
   const count = proposalCountFor(request)
-  let result: OverpassResult
-  try {
-    result = await fetchOverpass(buildRoadDiscoveryQuery(request.center, request.radiusKm, Math.max(40, count * 24)))
-  } catch (overpassError) {
-    // Public Overpass mirrors periodically rate-limit or time out on road
-    // geometry scans.  Fall back to a separate public road-routing service so
-    // the user still receives new, road-shaped candidates rather than only a
-    // locally registered catalogue.
-    const routed = await discoverRoutedDriveProposals(request)
-    if (routed.length) return routed
-    throw overpassError
-  }
-  const raw = candidatesFromWays((result.elements ?? []).filter((item) => item.type === 'way'), request)
-  const enriched = await Promise.all(raw.slice(0, count).map(async (item) => {
+  const fromOverpass = async () => {
+    const result = await fetchOverpass(buildRoadDiscoveryQuery(request.center, request.radiusKm, Math.max(40, count * 24)))
+    const raw = candidatesFromWays((result.elements ?? []).filter((item) => item.type === 'way'), request)
+    const enriched = await Promise.all(raw.slice(0, count).map(async (item) => {
     const elevation = await fetchElevationProfile(sampled(item.route, 18))
     const range = elevation.values.length ? Math.max(...elevation.values) - Math.min(...elevation.values) : 0
     const gradeBonus = Math.min(2, range / 250)
@@ -284,6 +275,21 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       ],
       validation: { ...item.validation, elevationRangeM: Math.round(range), elevationSource: elevation.source },
     } satisfies DriveProposal
-  }))
-  return enriched.sort((a, b) => b.score - a.score).slice(0, count)
+    }))
+    const next = enriched.sort((a, b) => b.score - a.score).slice(0, count)
+    if (!next.length) throw new Error('条件に合う外部道路が見つかりませんでした')
+    return next
+  }
+  const fromRoutedRoads = async () => {
+    const next = await discoverRoutedDriveProposals(request)
+    if (!next.length) throw new Error('公開道路ルーティングで条件に合う道路が見つかりませんでした')
+    return next
+  }
+  // Overpassは道路のタグ・形状に強く、OSRMは実際に走行可能な接続道路を
+  // すぐ返せる。どちらか先に有効な新規候補を返した方を採用する。
+  try {
+    return await Promise.any([fromOverpass(), fromRoutedRoads()])
+  } catch {
+    throw new Error('外部道路データから条件に合う新しいコースを見つけられませんでした')
+  }
 }
