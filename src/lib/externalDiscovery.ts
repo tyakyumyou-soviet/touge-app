@@ -71,6 +71,18 @@ function tollFromTags(tags: Record<string, string>): TollStatus {
   return 'unknown'
 }
 
+function residentialRisk(tags: Record<string, string>): number {
+  let risk = 0
+  if (tags.highway === 'unclassified') risk += 1.2
+  if (!tags.ref) risk += .7
+  if (!tags.name) risk += .3
+  if (tags.lit === 'yes') risk += .5
+  if (tags.sidewalk && tags.sidewalk !== 'no') risk += .8
+  const speed = Number.parseInt(tags.maxspeed ?? '', 10)
+  if (Number.isFinite(speed) && speed <= 40) risk += 1
+  return risk
+}
+
 function curveDensity(route: Coordinate[]): number {
   if (route.length < 3) return 0
   let curves = 0
@@ -212,12 +224,13 @@ function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) 
     const route = asRoute(way.geometry)
     const validation = validateDiscoveredRoad(route)
     const width = highwayWidthScore(tags)
+    const housingRisk = residentialRisk(tags)
     const styleScore = request.style === 'winding'
       ? validation.curveDensity * 7 + width * .25
       : request.style === 'easy'
         ? width * 1.6 - validation.curveDensity * .35
         : validation.curveDensity * 4 + width
-    return { way, tags, route, validation, width, score: styleScore }
+    return { way, tags, route, validation, width, housingRisk, score: styleScore - housingRisk * 1.8 }
   })
     .filter((item) => item.validation.warnings.length === 0)
     .filter((item) => item.validation.roadLengthKm <= request.maxDistanceKm)
@@ -282,6 +295,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
         `外部道路データから発見（${item.tags.highway ?? 'road'}）`,
         `カーブ密度 ${item.validation.curveDensity.toFixed(1)} 回/km`,
         `推定道幅スコア ${item.width.toFixed(1)} / 5`,
+        item.housingRisk <= 1 ? '民家の少ない幹線・山間道路を優先' : '生活道路らしさを減点して選定',
         `高低差 ${Math.round(range)}m`,
       ],
       validation: { ...item.validation, elevationRangeM: Math.round(range), elevationSource: elevation.source },
@@ -300,11 +314,11 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   // With required stops, use OSRM exclusively so that the constraint remains
   // true in both the preview and the subsequently saved route.
   if (request.requiredPoints.length) return fromRoutedRoads()
-  // Overpassは道路のタグ・形状に強く、OSRMは実際に走行可能な接続道路を
-  // すぐ返せる。どちらか先に有効な新規候補を返した方を採用する。
-  try {
-    return await Promise.any([fromOverpass(), fromRoutedRoads()])
-  } catch {
-    throw new Error('外部道路データから条件に合う新しいコースを見つけられませんでした')
-  }
+  // Run both sources concurrently, but prefer the tagged Overpass result when
+  // available because its road class, speed, lighting and sidewalk metadata
+  // lets us penalize residential-looking streets. OSRM remains the fallback.
+  const [tagged, routed] = await Promise.allSettled([fromOverpass(), fromRoutedRoads()])
+  if (tagged.status === 'fulfilled' && tagged.value.length) return tagged.value
+  if (routed.status === 'fulfilled' && routed.value.length) return routed.value
+  throw new Error('外部道路データから条件に合う新しいコースを見つけられませんでした')
 }

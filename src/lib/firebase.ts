@@ -191,7 +191,7 @@ export async function loadPublicCourses(userId?: string): Promise<Course[]> {
   const sharedSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId))).catch(() => null) : null
   const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? []), ...(sharedSnapshot?.docs ?? [])]
   const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
-  return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))
+  return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2 && (!userId || (!course.blockedViewerIds?.includes(userId) && !course.globalBlockedViewerIds?.includes(userId)))))
 }
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
@@ -212,7 +212,7 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
   return result.id
 }
 
-export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'>): Promise<void> {
+export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'> & Partial<Pick<Course, 'globalBlockedViewerIds'>>): Promise<void> {
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 
@@ -276,7 +276,9 @@ export async function reviewAdminReport(reportId: string, status: 'approved' | '
 
 export async function loadUserProfile(userId: string): Promise<UserProfile | null> {
   const snapshot = await getDoc(doc(db, 'users', userId))
-  return snapshot.exists() ? ({ id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...snapshot.data() } as UserProfile) : null
+  if (!snapshot.exists()) return null
+  const data = snapshot.data()
+  return { id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...data, updatedAt: firestoreDate(data.updatedAt) } as UserProfile
 }
 
 export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {
@@ -292,10 +294,11 @@ export async function clearFriendPresence(userId: string): Promise<void> {
 }
 
 export function subscribeFriendPresence(userIds: string[], onChange: (items: FriendPresence[]) => void): () => void {
-  if (!userIds.length) { onChange([]); return () => undefined }
-  // Firestore's `in` limit is 30; the UI shows the first 30 followed drivers.
-  return onSnapshot(query(collection(db, 'presence'), where('userId', 'in', userIds.slice(0, 30))), (snapshot) => {
-    onChange(snapshot.docs.map((item) => ({ userId: item.id, ...item.data(), updatedAt: firestoreDate(item.data().updatedAt) } as FriendPresence)))
+  const viewerId = auth.currentUser?.uid
+  if (!userIds.length || !viewerId) { onChange([]); return () => undefined }
+  const followed = new Set(userIds)
+  return onSnapshot(query(collection(db, 'presence'), where('allowedViewerIds', 'array-contains', viewerId)), (snapshot) => {
+    onChange(snapshot.docs.filter((item) => followed.has(item.id)).map((item) => ({ userId: item.id, ...item.data(), updatedAt: firestoreDate(item.data().updatedAt) } as FriendPresence)))
   }, () => onChange([]))
 }
 

@@ -660,14 +660,26 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .friend-settings, .presence-settings, .route-display-settings, .personalization-settings { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .friend-settings h3, .presence-settings h3, .route-display-settings h3, .personalization-settings h3 { margin: 0 0 7px; }
 .friend-settings article { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.friend-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .friend-members, .presence-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .friend-members label, .toggle-row { display: flex; align-items: center; gap: 7px; }
 .presence-list span { padding: 6px 8px; background: color-mix(in srgb, var(--panel) 85%, var(--accent)); border-radius: 8px; font-size: 12px; }
-.personalization-settings label { display: grid; grid-template-columns: 92px 1fr 24px; align-items: center; gap: 8px; margin-top: 8px; }
+.personalization-settings label { display: grid; grid-template-columns: 72px minmax(100px, 1fr) 86px 24px; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
+.personalization-settings label > span:last-of-type { text-align: right; }
 .personalization-settings input[type="range"] { width: 100%; }
+.course-share-picker { padding: 14px; border: 1px solid #c9d8cf; border-radius: 14px; background: #f4faf6; }
+.course-share-picker h3 { margin: 0 0 8px; }
+.course-share-picker p { margin: 0; color: var(--muted); }
+.course-share-picker .toggle-row { margin-top: 8px; }
 .preset-row { display: flex; gap: 8px; margin-top: 8px; }
-.preset-row select { min-width: 0; flex: 1; }
+.preset-row input, .preset-row select { min-width: 0; flex: 1; }
 .preset-row button { white-space: nowrap; }
+.search-presets { margin-top: 10px; }
+.search-presets > small { display: block; margin-top: 6px; color: var(--muted); text-align: right; }
+.preset-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.preset-chips span { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
+.preset-chips button { border: 0; padding: 6px 9px; background: transparent; color: inherit; }
+.preset-chips button:last-child { border-left: 1px solid var(--line); color: #a33; }
 .drive-timer { width: min(440px, calc(100vw - 32px)); }
 .timer-value { margin: 26px 0 18px; font-variant-numeric: tabular-nums; font-size: clamp(42px, 10vw, 64px); font-weight: 850; letter-spacing: .04em; text-align: center; }
 .timer-mode, .timer-actions { display: flex; gap: 8px; }
@@ -675,6 +687,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .timer-mode button.active { background: var(--accent); color: white; }
 .timer-actions { margin-top: 16px; }
 .timer-actions .button { flex: 1; }
+.timer-history { display: grid; gap: 7px; margin: 18px 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.timer-history h3 { margin: 0 0 3px; font-size: 14px; }
+.timer-history div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.timer-history span { color: var(--muted); font-size: 12px; }
 .live-road-info { margin: 18px 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 88%, var(--accent)); }
 .live-road-info.closed { border-color: #c45151; background: #fff0f0; }
 .live-road-info.good { border-color: #5ba77d; }
@@ -700,4 +716,5 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .social-actions { flex-wrap: wrap; }
   .social-thread form { align-items: stretch; flex-direction: column; }
   .social-thread form .button { width: 100%; margin-top: 0; }
+  .personalization-settings label { grid-template-columns: 62px minmax(90px, 1fr) 74px 22px; gap: 5px; }
 }

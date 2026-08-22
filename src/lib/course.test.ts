@@ -20,6 +20,14 @@ describe('course helpers', () => {
     expect(new URL(url).searchParams.get('waypoints')?.split('|')).toHaveLength(8)
   })
 
+  it('hands off current location before the course start', () => {
+    const course = sampleCourses[0]
+    const url = new URL(googleMapsUrl(course, true))
+    expect(url.searchParams.has('origin')).toBe(false)
+    expect(url.searchParams.get('waypoints')?.split('|')[0]).toBe(`${course.route[0][1]},${course.route[0][0]}`)
+    expect(url.searchParams.get('destination')).toBe(`${course.route.at(-1)?.[1]},${course.route.at(-1)?.[0]}`)
+  })
+
   it('reverses only the Google Maps handoff direction', () => {
     const course = sampleCourses[0]
     const url = new URL(googleMapsUrl(course, false, true))

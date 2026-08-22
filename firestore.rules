@@ -16,7 +16,9 @@ service cloud.firestore {
     function validVisibility(value) { return value in ['public', 'limited', 'private']; }
 
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || resource.data.mapVisibility == 'all');
+      allow read: if signedIn() && (request.auth.uid == userId
+        || resource.data.mapVisibility == 'all'
+        || exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(userId)));
       allow create, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
       match /following/{targetId} {
@@ -26,10 +28,15 @@ service cloud.firestore {
     }
 
     match /presence/{userId} {
-      // Live location is opt-in and exposed only to followed users. Presence
-      // documents are removed immediately when sharing is switched off.
-      allow read: if signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(userId));
-      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn() && (request.auth.uid == userId || (
+        resource.data.allowedViewerIds is list
+        && request.auth.uid in resource.data.allowedViewerIds
+      ));
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.allowedViewerIds is list;
+      allow delete: if signedIn() && request.auth.uid == userId;
     }
 
     match /courses/{courseId} {
@@ -38,10 +45,16 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.blockedUserIds is list
           && request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.blockedUserIds;
       }
-      function courseBlocked() { return signedIn() && resource.data.blockedViewerIds is list && request.auth.uid in resource.data.blockedViewerIds; }
+      function courseBlocked() { return signedIn() && (
+        (resource.data.blockedViewerIds is list && request.auth.uid in resource.data.blockedViewerIds)
+        || (resource.data.globalBlockedViewerIds is list && request.auth.uid in resource.data.globalBlockedViewerIds)
+      ); }
       function explicitlyAllowed() { return signedIn() && resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds; }
+      // Direct shared links enforce both blacklist levels. Collection queries
+      // must remain provable from visibility/author/share fields; the client
+      // additionally removes blocked documents from catalogue results.
       allow get: if !globallyBlocked() && !courseBlocked() && (resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed());
-      allow list: if !globallyBlocked() && !courseBlocked() && (resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed());
+      allow list: if resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed();
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
         && validVisibility(request.resource.data.visibility)

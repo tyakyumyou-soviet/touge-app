@@ -67,6 +67,9 @@ export interface Course {
   visibility: 'public' | 'limited' | 'private'
   /** Explicit recipients for limited sharing. Kept server-readable for rules. */
   allowedViewerIds?: string[]
+  /** Global profile blocks are stored separately so unblocking does not erase
+   * an intentional per-course block. */
+  globalBlockedViewerIds?: string[]
   blockedViewerIds?: string[]
   authorId: string
   authorName: string
@@ -84,6 +87,8 @@ export interface CourseDraft {
   cautions: string[]
   tollStatus: TollStatus
   visibility: Course['visibility']
+  allowedViewerIds?: string[]
+  blockedViewerIds?: string[]
 }
 
 export interface UserProfile {
@@ -117,7 +122,7 @@ export interface SearchPreset { id: string; name: string; prefecture: 'すべて
 export interface PersonalizationProfile { curves: number; elevation: number; width: number; scenery: number; surface: number; traffic: number; access: number }
 export interface LocationSharingSettings { enabled: boolean; audience: 'friends' | 'lists'; listIds: string[] }
 export interface NowPlaying { title: string; artist?: string; updatedAt: string }
-export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate; updatedAt?: string; nowPlaying?: NowPlaying }
+export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate | null; allowedViewerIds?: string[]; updatedAt?: string; nowPlaying?: NowPlaying }
 
 export interface CourseComment {
   id: string

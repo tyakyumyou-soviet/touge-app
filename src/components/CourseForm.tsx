@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
-import type { Coordinate, Course, CourseDraft, DraftPointRole } from '../types'
+import type { Coordinate, Course, CourseDraft, DraftPointRole, UserProfile } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
@@ -9,6 +9,7 @@ import { type DriveProposal, type DriveStyle } from '../lib/recommendations'
 import { discoverExternalDriveProposals } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
+import { auth } from '../lib/firebase'
 
 interface Props {
   transitionState?: 'idle' | 'entering' | 'leaving'
@@ -18,6 +19,7 @@ interface Props {
   pointRoles: DraftPointRole[]
   viaInsertAfter: number | null
   courses: Course[]
+  profile?: UserProfile | null
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   hasProposalEditSnapshot: boolean
   onIncorporateCourse: (course: Course, insertAfter?: number | null) => void
@@ -48,10 +50,18 @@ interface DetailsValues {
   cautions: string
   tollStatus: TollStatus
   visibility: CourseDraft['visibility']
+  allowedViewerIds: string[]
+  blockedViewerIds: string[]
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
+  const effectiveProfile = useMemo(() => {
+    if (profile) return profile
+    const uid = auth.currentUser?.uid
+    if (!uid) return null
+    try { return JSON.parse(localStorage.getItem(`touge-profile-${uid}`) ?? 'null') as UserProfile | null } catch { return null }
+  }, [profile])
   const [stage, setStage] = useState<'route' | 'details'>('route')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -59,7 +69,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [searchError, setSearchError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
-  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public' })
+  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: [] })
   const [proposalOpen, setProposalOpen] = useState(false)
   const [proposalQuery, setProposalQuery] = useState('')
   const [proposalCenter, setProposalCenter] = useState<GeocodedPoint | null>(null)
@@ -124,7 +134,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
 
   function openDetails() {
     const defaults = buildCourseDraftDefaults(pointLabels, route)
-    setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public' })
+    setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: effectiveProfile?.blockedUserIds ?? [] })
     setError('')
     setStage('details')
   }
@@ -251,7 +261,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     const defaults = buildCourseDraftDefaults(pointLabels, route)
     const draft: CourseDraft = {
       name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
-      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility,
+      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility, allowedViewerIds: details.allowedViewerIds, blockedViewerIds: details.blockedViewerIds,
     }
     setBusy(true); setError('')
     try { await onSave(draft) } catch (caught: unknown) {
@@ -324,6 +334,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       <div className="form-grid">
         <label>コース名<input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="地点名から自動入力されます" /></label><label>エリア<input value={details.area} onChange={(event) => setDetails((previous) => ({ ...previous, area: event.target.value }))} placeholder="地点名から自動入力されます" /></label>
         <label>都県<select value={details.prefecture} onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value as CourseDraft['prefecture'] }))}><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select value={details.visibility} onChange={(event) => setDetails((previous) => ({ ...previous, visibility: event.target.value as CourseDraft['visibility'] }))}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
+        {details.visibility === 'limited' && <section className="wide course-share-picker"><h3>共有相手</h3>{(effectiveProfile?.followingIds ?? []).length > 0 ? <><label className="toggle-row"><input type="checkbox" checked={effectiveProfile!.followingIds.every((id) => details.allowedViewerIds.includes(id))} onChange={(event) => setDetails((previous) => ({ ...previous, allowedViewerIds: event.target.checked ? [...new Set([...previous.allowedViewerIds, ...effectiveProfile!.followingIds])] : previous.allowedViewerIds.filter((id) => !effectiveProfile!.followingIds.includes(id)) }))} />フレンド全員</label>{(effectiveProfile?.friendLists ?? []).map((list) => <label className="toggle-row" key={list.id}><input type="checkbox" checked={list.memberIds.length > 0 && list.memberIds.every((id) => details.allowedViewerIds.includes(id))} onChange={(event) => setDetails((previous) => ({ ...previous, allowedViewerIds: event.target.checked ? [...new Set([...previous.allowedViewerIds, ...list.memberIds])] : previous.allowedViewerIds.filter((id) => !list.memberIds.includes(id)) }))} />{list.name}（{list.memberIds.length}人）</label>)}</> : <p>共有できるフレンドがいません。先にプロフィールからフォロー・リスト設定を行ってください。</p>}</section>}
         <label className="wide">料金区分<select value={details.tollStatus} onChange={(event) => setDetails((previous) => ({ ...previous, tollStatus: event.target.value as TollStatus }))}><option value="unknown">料金情報未確認</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select><small className="tag-help">不明な場合は「料金情報未確認」のまま保存します。無料と推測して登録しません。</small></label>
         <label className="wide">説明（任意）<textarea value={details.description} onChange={(event) => setDetails((previous) => ({ ...previous, description: event.target.value }))} rows={3} placeholder="コースの特徴やおすすめポイント" /></label><label className="wide">タグ（任意）<input value={details.tags} onChange={(event) => setDetails((previous) => ({ ...previous, tags: event.target.value }))} list="course-tag-suggestions" placeholder="#ワイド, #高原, #展望" /><datalist id="course-tag-suggestions">{recommendedTags.map((tag) => <option key={tag} value={`#${tag}`} />)}</datalist><small className="tag-help">#から始まる語だけを保存します。カンマまたは空白で区切れます。</small></label>
         {recommendedTags.length > 0 && <div className="wide tag-recommendations" aria-label="おすすめのタグ"><span>おすすめ</span>{recommendedTags.map((tag) => <button key={tag} type="button" onClick={() => addRecommendedTag(tag)}>#{tag}</button>)}</div>}

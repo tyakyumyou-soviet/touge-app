@@ -7,7 +7,9 @@ export function normalizePersonalization(values: Partial<PersonalizationProfile>
 }
 
 export function personalizedScore(course: Course, preferences: Partial<PersonalizationProfile>): number {
-  const weights = normalizePersonalization(preferences)
-  const keys = Object.keys(weights) as RatingKey[]
-  return keys.reduce((total, key) => total + course.ratings[key] * weights[key], 0) / keys.reduce((total, key) => total + weights[key], 0)
+  const targets = normalizePersonalization(preferences)
+  const keys = Object.keys(targets) as RatingKey[]
+  const similarity = keys.reduce((total, key) => total + (5 - Math.abs(course.ratings[key] - targets[key])), 0) / keys.length
+  const quality = keys.reduce((total, key) => total + course.ratings[key], 0) / keys.length
+  return similarity * .9 + quality * .1
 }
