@@ -1,8 +1,9 @@
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
 ]
-const UPSTREAM_TIMEOUT_MS = 10_000
+const UPSTREAM_TIMEOUT_MS = 14_000
 
 function json(statusCode, body) {
   return {

@@ -28,4 +28,12 @@ describe('external road discovery', () => {
     expect(waypoints[0]).toEqual(route[0])
     expect(waypoints.at(-1)).toEqual(route.at(-1))
   })
+
+  it('retains required stops in the editable route anchors', () => {
+    const route = [[139, 35], [139.01, 35.01], [139.02, 35.02], [139.03, 35.03]] as [number, number][]
+    const required = [route[2]]
+    const waypoints = proposalWaypoints(route, required)
+    expect(waypoints).toContainEqual(required[0])
+  })
+
 })

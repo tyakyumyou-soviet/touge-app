@@ -55,7 +55,10 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
-        navigationPreload: true,
+        // Workbox does not consume navigationPreload for this SPA fallback.
+        // Leaving it enabled causes Chrome to emit cancelled-preload warnings
+        // whenever a navigation is replaced by a new app navigation.
+        navigationPreload: false,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/(tiles\.openfreemap\.org|demotiles\.maplibre\.org)\//,

@@ -1,5 +1,6 @@
 import type { Coordinate, TollStatus } from '../types'
 import { distanceKm, routeDistanceKm } from './course'
+import { distanceToRouteKm } from './courseSearch'
 import { fetchElevationProfile } from './elevation'
 import { proposalCountFor, type DriveProposal, type DriveProposalRequest } from './recommendations'
 
@@ -25,11 +26,10 @@ interface OsrmRouteResponse {
 // regularly in populated regions.  A 15km search is still useful for a
 // driving-area suggestion and keeps the road scan responsive.
 const MAX_DISCOVERY_RADIUS_KM = 12
-const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-]
 const CLIENT_REQUEST_TIMEOUT_MS = 10_000
+const ROAD_DISCOVERY_RELAY = import.meta.env.DEV
+  ? '/api/road-discovery'
+  : '/.netlify/functions/road-discovery'
 
 export function buildRoadDiscoveryQuery(center: Coordinate, radiusKm: number, maxWays = 80): string {
   const radius = Math.round(Math.min(MAX_DISCOVERY_RADIUS_KM, Math.max(2, radiusKm)) * 1000)
@@ -119,8 +119,8 @@ function routeCandidateTargets(center: Coordinate, radiusKm: number, count: numb
   })
 }
 
-async function fetchRoutedRoad(start: Coordinate, center: Coordinate, goal: Coordinate): Promise<{ route: Coordinate[], distanceKm: number } | null> {
-  const coordinates = [start, center, goal].map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
+async function fetchRoutedRoad(stops: Coordinate[]): Promise<{ route: Coordinate[], distanceKm: number } | null> {
+  const coordinates = stops.map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
   const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`, { cache: 'no-store' })
   if (!response.ok) throw new Error(`公開道路ルーティングエラー (${response.status})`)
   const data = await response.json() as OsrmRouteResponse
@@ -135,8 +135,14 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   const count = proposalCountFor(request)
   const targets = routeCandidateTargets(request.center, request.radiusKm, count)
   const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
-    const routed = await fetchRoutedRoad(start, request.center, goal)
+    // Required points are routing stops, not a ranking hint.  Keep their
+    // entered order so every generated candidate physically passes each one.
+    const mandatoryStops = request.requiredPoints.map((point) => point.coordinate)
+    const routed = await fetchRoutedRoad([start, request.center, ...mandatoryStops, goal])
     if (!routed || routed.distanceKm > request.maxDistanceKm) return null
+    // A router may snap an unreachable coordinate to a distant road. Do not
+    // present such a route as satisfying the user's mandatory-stop request.
+    if (mandatoryStops.some((point) => distanceToRouteKm(point, routed.route) > .25)) return null
     if (request.toll !== 'all') return null
     const validation = validateDiscoveredRoad(routed.route)
     if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
@@ -155,7 +161,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       name: `${Math.round(request.radiusKm)}km圏のドライブ候補 ${index + 1}`,
       area: '公開道路データから探索',
       route: routed.route,
-      waypoints: proposalWaypoints(routed.route),
+      waypoints: proposalWaypoints(routed.route, mandatoryStops),
       elevationProfile: elevation.values,
       elevationSource: elevation.source,
       labels: ['探索中心', `${routed.distanceKm.toFixed(1)}km区間`],
@@ -164,6 +170,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       score: styleScore,
       reasons: [
         '公開道路データから道路に沿って生成',
+        ...(request.requiredPoints.length ? [`必須地点 ${request.requiredPoints.map((point) => point.label).join('、')} を通過`] : []),
         `カーブ密度 ${curve.toFixed(1)} 回/km`,
         `高低差 ${Math.round(range)}m`,
       ],
@@ -180,10 +187,23 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
  * anchors to retain the intended road section: dense stop lists make an
  * automatically proposed route impossible to inspect or edit.
  */
-export function proposalWaypoints(route: Coordinate[]): Coordinate[] {
+export function proposalWaypoints(route: Coordinate[], requiredPoints: Coordinate[] = []): Coordinate[] {
   const length = routeDistanceKm(route)
   const count = Math.min(6, Math.max(2, Math.ceil(length / 8) + 1))
-  return sampled(route, count)
+  const requiredAtIndex = new Map<number, Coordinate>()
+  for (const required of requiredPoints) {
+    const index = route.reduce((best, point, candidate) => (
+      distanceKm(point, required) < distanceKm(route[best], required) ? candidate : best
+    ), 0)
+    // Preserve the driver-selected coordinate instead of the router's nearby
+    // snapped vertex. When the proposal is edited/saved, this makes OSRM route
+    // through the exact mandatory point again.
+    requiredAtIndex.set(index, required)
+  }
+  const sampleIndices = Array.from({ length: count }, (_, index) => Math.round(index * (route.length - 1) / Math.max(1, count - 1)))
+  return [...new Set([0, ...sampleIndices, ...requiredAtIndex.keys(), route.length - 1])]
+    .sort((left, right) => left - right)
+    .map((index) => requiredAtIndex.get(index) ?? route[index])
 }
 
 function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) {
@@ -210,29 +230,20 @@ function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) 
 }
 
 async function fetchOverpass(query: string): Promise<OverpassResult> {
-  let lastError: unknown
   const data = encodeURIComponent(query)
-  const requests: Array<{ endpoint: string; init: RequestInit }> = [
-    // The relay is the primary production path: it avoids CORS restrictions
-    // and can retry an Overpass mirror server-side. Direct mirrors remain a
-    // short-lived fallback for local development or a temporarily unavailable
-    // deployment function.
-    { endpoint: `/api/road-discovery?data=${data}`, init: { method: 'GET' } },
-    ...OVERPASS_ENDPOINTS.map((endpoint) => ({ endpoint: `${endpoint}?data=${data}`, init: { method: 'GET' } })),
-  ]
-  for (const { endpoint, init } of requests) {
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), CLIENT_REQUEST_TIMEOUT_MS)
-    try {
-      const response = await fetch(endpoint, { ...init, signal: controller.signal, cache: 'no-store' })
-      if (!response.ok) throw new Error(`道路データ取得エラー (${response.status})`)
-      if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('道路データの応答形式が不正です')
-      const result = await response.json() as OverpassResult
-      if (!Array.isArray(result.elements)) throw new Error('道路データの応答形式が不正です')
-      return result
-    } catch (error) { lastError = error } finally { window.clearTimeout(timer) }
-  }
-  throw new Error(lastError instanceof Error ? lastError.message : '外部道路データを取得できませんでした')
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), CLIENT_REQUEST_TIMEOUT_MS)
+  try {
+    // Never fall back to a browser-to-Overpass request in production. Public
+    // mirrors generally reject that with CORS, which both fails discovery and
+    // pollutes the console. The Netlify relay owns mirror retries instead.
+    const response = await fetch(`${ROAD_DISCOVERY_RELAY}?data=${data}`, { method: 'GET', signal: controller.signal, cache: 'no-store' })
+    if (!response.ok) throw new Error(`道路データ取得エラー (${response.status})`)
+    if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('道路データの応答形式が不正です')
+    const result = await response.json() as OverpassResult
+    if (!Array.isArray(result.elements)) throw new Error('道路データの応答形式が不正です')
+    return result
+  } finally { window.clearTimeout(timer) }
 }
 
 /**
@@ -285,6 +296,10 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
     if (!next.length) throw new Error('公開道路ルーティングで条件に合う道路が見つかりませんでした')
     return next
   }
+  // A standalone OSM way cannot guarantee traversal of an arbitrary point.
+  // With required stops, use OSRM exclusively so that the constraint remains
+  // true in both the preview and the subsequently saved route.
+  if (request.requiredPoints.length) return fromRoutedRoads()
   // Overpassは道路のタグ・形状に強く、OSRMは実際に走行可能な接続道路を
   // すぐ返せる。どちらか先に有効な新規候補を返した方を採用する。
   try {

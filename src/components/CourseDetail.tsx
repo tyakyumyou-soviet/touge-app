@@ -92,8 +92,14 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         <header className="detail-header">
           <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
           <div className="detail-header-actions">
-            <button className="icon-button back-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onBack() }} aria-label="コース一覧へ戻る">←</button>
-            <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
+            {isPreview ? (
+              <button className="icon-button back-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onBack() }} aria-label="候補一覧へ戻る">←</button>
+            ) : (
+              <>
+                <button className="icon-button back-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onBack() }} aria-label="コース一覧へ戻る">←</button>
+                <button className="icon-button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose() }} aria-label="詳細を閉じる">×</button>
+              </>
+            )}
           </div>
         </header>
         {isPreview && <section className="proposal-preview-actions" aria-label="提案候補の操作">{previewNavigation && <div className="preview-navigation"><button type="button" onClick={previewNavigation.onPrevious} disabled={previewNavigation.index === 0}>← 前の候補</button><button type="button" onClick={previewNavigation.onReturn}>候補一覧へ</button><button type="button" onClick={previewNavigation.onNext} disabled={previewNavigation.index === previewNavigation.total - 1}>次の候補 →</button></div>}{onEditPreview && <button type="button" className="edit-preview-button" onClick={onEditPreview}>この候補を編集する</button>}</section>}

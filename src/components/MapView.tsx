@@ -132,6 +132,23 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
       setMapError('地図を初期化できませんでした。端末のWebGL設定を確認してください。')
       return
     }
+    // OpenFreeMap styles occasionally reference POI icons that are absent
+    // from the current sprite sheet. MapLibre otherwise logs one error for
+    // every affected tile. Supply a small neutral fallback so map rendering
+    // remains stable without pretending an unrelated icon is available.
+    map.on('styleimagemissing', ({ id }) => {
+      if (map.hasImage(id)) return
+      const size = 8
+      const data = new Uint8Array(size * size * 4)
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const offset = (y * size + x) * 4
+          const visible = (x - 3.5) ** 2 + (y - 3.5) ** 2 <= 7
+          data[offset] = 73; data[offset + 1] = 91; data[offset + 2] = 80; data[offset + 3] = visible ? 190 : 0
+        }
+      }
+      map.addImage(id, { width: size, height: size, data })
+    })
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     const geolocate = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true })
     map.addControl(geolocate, 'top-right')
