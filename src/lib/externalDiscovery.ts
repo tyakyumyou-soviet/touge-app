@@ -245,7 +245,10 @@ async function fetchRoutedRoad(stops: Coordinate[]): Promise<{ route: Coordinate
 
 async function discoverRoutedDriveProposals(request: DriveProposalRequest): Promise<DriveProposal[]> {
   const count = proposalCountFor(request)
-  const targets = routeCandidateTargets(request.center, request.radiusKm, count)
+  // Probe several directions even when the UI asks to show one result. A pass
+  // can lie on only one side of the selected place; returning the first router
+  // line was the reason a city connector could win over a real mountain road.
+  const targets = routeCandidateTargets(request.center, request.radiusKm, 5)
   const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
@@ -272,7 +275,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       id: `router-${Math.round(request.center[0] * 10000)}-${Math.round(request.center[1] * 10000)}-${index}`,
       source: 'openstreetmap' as const,
       name: `${Math.round(request.radiusKm)}km圏の峠候補 ${index + 1}`,
-      area: '必須地点を経由する山間ルート',
+      area: request.requiredPoints.length ? '必須地点を経由する山間ルート' : '公開道路データから検証した山間ルート',
       route: routed.route,
       waypoints: proposalWaypoints(routed.route, mandatoryStops),
       elevationProfile: elevation.values,
@@ -282,7 +285,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       distanceKm: routed.distanceKm,
       score: styleScore,
       reasons: [
-        '峠適格判定を通過した必須地点経由ルート',
+        request.requiredPoints.length ? '峠適格判定を通過した必須地点経由ルート' : '峠適格判定を通過した公開道路ルート',
         ...(request.requiredPoints.length ? [`必須地点 ${request.requiredPoints.map((point) => point.label).join('、')} を通過`] : []),
         `高低差 ${suitability.elevationRangeM}m · 累積上り ${suitability.totalAscentM}m`,
         `最大勾配 ${suitability.maxGradePct}% · カーブ密度 ${suitability.curveDensity.toFixed(1)} 回/km`,
@@ -426,7 +429,17 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   // With required stops, use OSRM exclusively so that the constraint remains
   // true in both the preview and the subsequently saved route.
   if (request.requiredPoints.length) return fromRoutedRoads()
-  // Do not fall back to an arbitrary OSRM route here. A generic car route is
-  // not evidence of a pass road and was the source of urban "峠" proposals.
-  return fromOverpass()
+  try {
+    return await fromOverpass()
+  } catch (overpassError) {
+    // Overpass mirrors are often saturated. OSRM is still public road data,
+    // and it is safe as a fallback only because every result must pass the
+    // same terrain, grade, curve, length and settlement gates above.
+    try { return await fromRoutedRoads() }
+    catch (routingError) {
+      const overpassMessage = overpassError instanceof Error ? overpassError.message : '道路データを取得できませんでした'
+      const routingMessage = routingError instanceof Error ? routingError.message : '条件に合う道路が見つかりませんでした'
+      throw new Error(`${overpassMessage}。代替の公開道路ルーティングでも${routingMessage}`)
+    }
+  }
 }
