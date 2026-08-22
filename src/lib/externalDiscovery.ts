@@ -26,7 +26,10 @@ interface OsrmRouteResponse {
 // regularly in populated regions.  A 15km search is still useful for a
 // driving-area suggestion and keeps the road scan responsive.
 const MAX_DISCOVERY_RADIUS_KM = 12
-const CLIENT_REQUEST_TIMEOUT_MS = 10_000
+// The production relay may retry more than one public Overpass mirror.  This
+// must be longer than a single upstream attempt; otherwise the app aborts a
+// healthy retry and reports a false negative before road data arrives.
+const CLIENT_REQUEST_TIMEOUT_MS = 30_000
 const ROAD_DISCOVERY_RELAY = import.meta.env.DEV
   ? '/api/road-discovery'
   : '/.netlify/functions/road-discovery'
@@ -43,6 +46,8 @@ way(around:${radius},${lat.toFixed(6)},${lng.toFixed(6)})
   ["motor_vehicle"!~"^(no|private)$"]
   ["access"!~"^(no|private)$"]
   ["service"!~"^(parking|driveway)$"]
+  ["sidewalk"!~"^(both|left|right)$"]
+  ["lit"!="yes"]
   ["tunnel"!="yes"]
   ["area"!="yes"];
 // Limit the returned geometry instead of downloading every road segment in a
@@ -54,6 +59,61 @@ out tags geom ${Math.min(120, Math.max(25, Math.round(maxWays)))};`
 function asRoute(geometry: OverpassWay['geometry']): Coordinate[] {
   return (geometry ?? []).map((item) => [item.lon, item.lat] as Coordinate)
     .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
+}
+
+interface RoadChain { tags: Record<string, string>; route: Coordinate[]; wayIds: number[] }
+
+function samePoint(left: Coordinate, right: Coordinate) {
+  return distanceKm(left, right) < .035
+}
+
+function roadIdentity(tags: Record<string, string>, id: number) {
+  // Ref/name preserves a real road corridor while avoiding an arbitrary walk
+  // across junctions. Anonymous unclassified roads are intentionally kept as
+  // isolated fragments and will normally fail the pass-quality gate.
+  return tags.ref || tags.name || `anonymous-${id}`
+}
+
+/** Join adjacent OSM way fragments into a road corridor before judging it. */
+export function chainRoadWays(ways: OverpassWay[]): RoadChain[] {
+  const grouped = new Map<string, Array<{ id: number; tags: Record<string, string>; route: Coordinate[] }>>()
+  for (const way of ways) {
+    const route = asRoute(way.geometry)
+    if (route.length < 2) continue
+    const tags = way.tags ?? {}
+    const key = roadIdentity(tags, way.id)
+    grouped.set(key, [...(grouped.get(key) ?? []), { id: way.id, tags, route }])
+  }
+  const chains: RoadChain[] = []
+  for (const group of grouped.values()) {
+    const remaining = [...group]
+    while (remaining.length) {
+      const seed = remaining.shift()!
+      let route = [...seed.route]
+      const wayIds = [seed.id]
+      let expanded = true
+      while (expanded) {
+        expanded = false
+        const head = route[0]
+        const tail = route.at(-1)!
+        const index = remaining.findIndex((candidate) => {
+          const first = candidate.route[0]; const last = candidate.route.at(-1)!
+          return samePoint(last, head) || samePoint(first, head) || samePoint(first, tail) || samePoint(last, tail)
+        })
+        if (index < 0) continue
+        const candidate = remaining.splice(index, 1)[0]
+        const first = candidate.route[0]; const last = candidate.route.at(-1)!
+        if (samePoint(last, head)) route = [...candidate.route.slice(0, -1), ...route]
+        else if (samePoint(first, head)) route = [...candidate.route.slice().reverse().slice(0, -1), ...route]
+        else if (samePoint(first, tail)) route = [...route, ...candidate.route.slice(1)]
+        else route = [...route, ...candidate.route.slice().reverse().slice(1)]
+        wayIds.push(candidate.id)
+        expanded = true
+      }
+      chains.push({ tags: seed.tags, route, wayIds })
+    }
+  }
+  return chains
 }
 
 function highwayWidthScore(tags: Record<string, string>): number {
@@ -81,6 +141,46 @@ function residentialRisk(tags: Record<string, string>): number {
   const speed = Number.parseInt(tags.maxspeed ?? '', 10)
   if (Number.isFinite(speed) && speed <= 40) risk += 1
   return risk
+}
+
+export interface TougeSuitability {
+  eligible: boolean
+  elevationRangeM: number
+  totalAscentM: number
+  maxGradePct: number
+  curveDensity: number
+  settlementRisk: number
+  reasons: string[]
+}
+
+/**
+ * A pass suggestion needs a hard quality gate, not merely a score.  These
+ * deliberately conservative thresholds keep ordinary city/connector roads
+ * out of a 峠 finder even when a router happens to draw a pleasant line.
+ */
+export function assessTougeSuitability(route: Coordinate[], elevations: number[], tags: Record<string, string> = {}): TougeSuitability {
+  const lengthKm = routeDistanceKm(route)
+  const elevationRangeM = elevations.length ? Math.max(...elevations) - Math.min(...elevations) : 0
+  const totalAscentM = elevations.slice(1).reduce((sum, value, index) => sum + Math.max(0, value - elevations[index]), 0)
+  const sampleDistanceM = elevations.length > 1 ? lengthKm * 1000 / (elevations.length - 1) : 0
+  const maxGradePct = elevations.slice(1).reduce((maximum, value, index) => Math.max(maximum, Math.abs(value - elevations[index]) / Math.max(1, sampleDistanceM) * 100), 0)
+  const density = curveDensity(route)
+  const settlementRisk = residentialRisk(tags)
+  const reasons: string[] = []
+  if (lengthKm < 4) reasons.push('峠区間として短すぎます')
+  if (elevationRangeM < 120 || totalAscentM < 120) reasons.push('十分な高低差がありません')
+  if (maxGradePct < 3) reasons.push('勾配が峠道の基準に達しません')
+  if (density < .18) reasons.push('連続カーブが不足しています')
+  if (settlementRisk > 2.1) reasons.push('生活道路・市街地らしさが強すぎます')
+  return {
+    eligible: reasons.length === 0,
+    elevationRangeM: Math.round(elevationRangeM),
+    totalAscentM: Math.round(totalAscentM),
+    maxGradePct: Number(maxGradePct.toFixed(1)),
+    curveDensity: Number(density.toFixed(2)),
+    settlementRisk: Number(settlementRisk.toFixed(1)),
+    reasons,
+  }
 }
 
 function curveDensity(route: Coordinate[]): number {
@@ -158,35 +258,36 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     if (request.toll !== 'all') return null
     const validation = validateDiscoveredRoad(routed.route)
     if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
-    const elevation = await fetchElevationProfile(sampled(routed.route, 18))
-    const range = elevation.values.length ? Math.max(...elevation.values) - Math.min(...elevation.values) : 0
-    const curve = validation.curveDensity
+    const elevation = await fetchElevationProfile(sampled(routed.route, 30))
+    if (elevation.source !== '国土地理院 標高API') return null
+    const suitability = assessTougeSuitability(routed.route, elevation.values)
+    if (!suitability.eligible) return null
     const width = 3.4
     const styleScore = request.style === 'winding'
-      ? curve * 7 + range / 220
+      ? suitability.curveDensity * 7 + suitability.elevationRangeM / 220
       : request.style === 'easy'
-        ? width * 1.6 - curve * .35
-        : curve * 4 + width + range / 480
+        ? width * 1.6 - suitability.curveDensity * .35
+        : suitability.curveDensity * 4 + width + suitability.elevationRangeM / 480
     return {
       id: `router-${Math.round(request.center[0] * 10000)}-${Math.round(request.center[1] * 10000)}-${index}`,
       source: 'openstreetmap' as const,
-      name: `${Math.round(request.radiusKm)}km圏のドライブ候補 ${index + 1}`,
-      area: '公開道路データから探索',
+      name: `${Math.round(request.radiusKm)}km圏の峠候補 ${index + 1}`,
+      area: '必須地点を経由する山間ルート',
       route: routed.route,
       waypoints: proposalWaypoints(routed.route, mandatoryStops),
       elevationProfile: elevation.values,
       elevationSource: elevation.source,
-      labels: ['探索中心', `${routed.distanceKm.toFixed(1)}km区間`],
+      labels: ['探索中心', `標高差 ${suitability.elevationRangeM}m`, `最大勾配 ${suitability.maxGradePct}%`],
       tollStatus: 'unknown' as const,
       distanceKm: routed.distanceKm,
       score: styleScore,
       reasons: [
-        '公開道路データから道路に沿って生成',
+        '峠適格判定を通過した必須地点経由ルート',
         ...(request.requiredPoints.length ? [`必須地点 ${request.requiredPoints.map((point) => point.label).join('、')} を通過`] : []),
-        `カーブ密度 ${curve.toFixed(1)} 回/km`,
-        `高低差 ${Math.round(range)}m`,
+        `高低差 ${suitability.elevationRangeM}m · 累積上り ${suitability.totalAscentM}m`,
+        `最大勾配 ${suitability.maxGradePct}% · カーブ密度 ${suitability.curveDensity.toFixed(1)} 回/km`,
       ],
-      validation: { ...validation, elevationRangeM: Math.round(range), elevationSource: elevation.source },
+      validation: { ...validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
   }))
   return settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
@@ -219,9 +320,8 @@ export function proposalWaypoints(route: Coordinate[], requiredPoints: Coordinat
 }
 
 function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) {
-  return ways.map((way) => {
-    const tags = way.tags ?? {}
-    const route = asRoute(way.geometry)
+  return chainRoadWays(ways).map((chain) => {
+    const { tags, route } = chain
     const validation = validateDiscoveredRoad(route)
     const width = highwayWidthScore(tags)
     const housingRisk = residentialRisk(tags)
@@ -230,15 +330,16 @@ function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) 
       : request.style === 'easy'
         ? width * 1.6 - validation.curveDensity * .35
         : validation.curveDensity * 4 + width
-    return { way, tags, route, validation, width, housingRisk, score: styleScore - housingRisk * 1.8 }
+    return { chain, tags, route, validation, width, housingRisk, score: styleScore - housingRisk * 1.8 }
   })
     .filter((item) => item.validation.warnings.length === 0)
+    .filter((item) => item.validation.roadLengthKm >= 4)
     .filter((item) => item.validation.roadLengthKm <= request.maxDistanceKm)
     .filter((item) => request.toll === 'all' || tollFromTags(item.tags) === request.toll)
     .sort((a, b) => b.score - a.score)
     // One road often occurs in multiple adjacent way fragments. Keep a compact
     // representative set while preferring different named/ref'd roads.
-    .filter((item, index, items) => items.findIndex((other) => (other.tags.name || other.tags.ref || other.way.id) === (item.tags.name || item.tags.ref || item.way.id)) === index)
+    .filter((item, index, items) => items.findIndex((other) => (other.tags.name || other.tags.ref || other.chain.wayIds[0]) === (item.tags.name || item.tags.ref || item.chain.wayIds[0])) === index)
     .slice(0, 8)
 }
 
@@ -251,11 +352,18 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
     // mirrors generally reject that with CORS, which both fails discovery and
     // pollutes the console. The Netlify relay owns mirror retries instead.
     const response = await fetch(`${ROAD_DISCOVERY_RELAY}?data=${data}`, { method: 'GET', signal: controller.signal, cache: 'no-store' })
-    if (!response.ok) throw new Error(`道路データ取得エラー (${response.status})`)
+    if (!response.ok) {
+      const failure = await response.json().catch(() => null) as { error?: unknown } | null
+      const detail = typeof failure?.error === 'string' ? failure.error : `道路データ取得エラー (${response.status})`
+      throw new Error(detail)
+    }
     if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('道路データの応答形式が不正です')
     const result = await response.json() as OverpassResult
     if (!Array.isArray(result.elements)) throw new Error('道路データの応答形式が不正です')
     return result
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('道路データの取得が時間切れになりました。少し待って再試行してください')
+    throw error
   } finally { window.clearTimeout(timer) }
 }
 
@@ -269,40 +377,44 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   const fromOverpass = async () => {
     const result = await fetchOverpass(buildRoadDiscoveryQuery(request.center, request.radiusKm, Math.max(40, count * 24)))
     const raw = candidatesFromWays((result.elements ?? []).filter((item) => item.type === 'way'), request)
-    const enriched = await Promise.all(raw.slice(0, count).map(async (item) => {
-    const elevation = await fetchElevationProfile(sampled(item.route, 18))
-    const range = elevation.values.length ? Math.max(...elevation.values) - Math.min(...elevation.values) : 0
-    const gradeBonus = Math.min(2, range / 250)
+    const enriched = await Promise.all(raw.slice(0, Math.max(count * 4, 12)).map(async (item) => {
+    const elevation = await fetchElevationProfile(sampled(item.route, 30))
+    // A synthetic profile is fine for a visual fallback elsewhere in the app,
+    // but it is not reliable enough to label an unknown road a "峠".
+    if (elevation.source !== '国土地理院 標高API') return null
+    const suitability = assessTougeSuitability(item.route, elevation.values, item.tags)
+    if (!suitability.eligible) return null
+    const gradeBonus = Math.min(3, suitability.elevationRangeM / 180 + suitability.maxGradePct / 4)
     const score = item.score + gradeBonus
-    const name = item.tags.name || item.tags.ref || `${Math.round(request.radiusKm)}km圏のワインディング`
+    const name = item.tags.name || item.tags.ref || `${Math.round(request.radiusKm)}km圏の峠道`
     const tollStatus = tollFromTags(item.tags)
     return {
-      id: `osm-${item.way.id}`,
+      id: `osm-${item.chain.wayIds.join('-')}`,
       source: 'openstreetmap' as const,
       name,
-      area: item.tags.ref ? `${item.tags.ref} · OpenStreetMap道路候補` : 'OpenStreetMap道路候補',
+      area: item.tags.ref ? `${item.tags.ref} · 山間道路候補` : 'OpenStreetMap山間道路候補',
       // Keep the complete OSM geometry for preview rendering. The compact
       // waypoint list is only for the editor and must never replace the line.
       route: item.route,
       waypoints: proposalWaypoints(item.route),
       elevationProfile: elevation.values,
       elevationSource: elevation.source,
-      labels: [name, `${item.validation.roadLengthKm}km区間`],
+      labels: [name, `標高差 ${suitability.elevationRangeM}m`, `最大勾配 ${suitability.maxGradePct}%`],
       tollStatus,
       distanceKm: item.validation.roadLengthKm,
       score,
       reasons: [
-        `外部道路データから発見（${item.tags.highway ?? 'road'}）`,
-        `カーブ密度 ${item.validation.curveDensity.toFixed(1)} 回/km`,
+        '峠適格判定を通過した山間道路',
+        `高低差 ${suitability.elevationRangeM}m · 累積上り ${suitability.totalAscentM}m`,
+        `最大勾配 ${suitability.maxGradePct}% · カーブ密度 ${suitability.curveDensity.toFixed(1)} 回/km`,
         `推定道幅スコア ${item.width.toFixed(1)} / 5`,
-        item.housingRisk <= 1 ? '民家の少ない幹線・山間道路を優先' : '生活道路らしさを減点して選定',
-        `高低差 ${Math.round(range)}m`,
+        item.housingRisk <= 1 ? '生活道路・市街地要素が少ない区間を優先' : '市街地要素を減点して選定',
       ],
-      validation: { ...item.validation, elevationRangeM: Math.round(range), elevationSource: elevation.source },
+      validation: { ...item.validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
     }))
-    const next = enriched.sort((a, b) => b.score - a.score).slice(0, count)
-    if (!next.length) throw new Error('条件に合う外部道路が見つかりませんでした')
+    const next = enriched.flatMap((item): DriveProposal[] => item ? [item] : []).sort((a, b) => b.score - a.score).slice(0, count)
+    if (!next.length) throw new Error('この範囲に峠として提案できる道路が見つかりませんでした')
     return next
   }
   const fromRoutedRoads = async () => {
@@ -314,11 +426,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   // With required stops, use OSRM exclusively so that the constraint remains
   // true in both the preview and the subsequently saved route.
   if (request.requiredPoints.length) return fromRoutedRoads()
-  // Run both sources concurrently, but prefer the tagged Overpass result when
-  // available because its road class, speed, lighting and sidewalk metadata
-  // lets us penalize residential-looking streets. OSRM remains the fallback.
-  const [tagged, routed] = await Promise.allSettled([fromOverpass(), fromRoutedRoads()])
-  if (tagged.status === 'fulfilled' && tagged.value.length) return tagged.value
-  if (routed.status === 'fulfilled' && routed.value.length) return routed.value
-  throw new Error('外部道路データから条件に合う新しいコースを見つけられませんでした')
+  // Do not fall back to an arbitrary OSRM route here. A generic car route is
+  // not evidence of a pass road and was the source of urban "峠" proposals.
+  return fromOverpass()
 }

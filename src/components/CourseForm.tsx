@@ -242,7 +242,10 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
       onSetProposalPreviews(external)
     } catch (caught) {
       setProposals([]); onSetProposalPreviews([])
-      setProposalError(caught instanceof Error ? `新しいコースを見つけられませんでした。${caught.message}` : '新しいコースを見つけられませんでした。時間を置いて再試行してください。')
+      const message = caught instanceof Error ? caught.message : ''
+      setProposalError(message
+        ? `峠候補を見つけられませんでした。${message}`
+        : 'この範囲に峠として提案できる道路が見つかりませんでした。探索範囲を広げるか、別のエリアを指定してください。')
     } finally { setBusy(false); setProposalProgress('') }
   }
 
@@ -298,8 +301,8 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
           {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
         </div></div>
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
-        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '道路を探索中…' : `この条件で${proposalCount}案を見る`}</button>
-        {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>道路を探索しています</strong><small>{proposalProgress}</small></div></div>}
+        <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '峠道を検証中…' : `この条件で${proposalCount}案を見る`}</button>
+        {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>峠適格の道路を検証しています</strong><small>{proposalProgress}</small></div></div>}
         {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">{proposals.length}案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => { sheet.reset(); onOpenProposalPreview(proposal.id) }}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>{route.length ? 'この候補をルートに追加 →' : 'この候補を使う →'}</button></div></article>)}</div>}
       </section>}
       {hasProposalEditSnapshot && proposals.length > 0 && <button type="button" className="proposal-edit-back" onClick={() => { onUndoProposalEdit(); setProposalOpen(true); setSearchNotice('候補を採用する前の状態に戻しました。別の候補を選べます。') }}>← 候補を採用する前に戻る</button>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRoadDiscoveryQuery, proposalWaypoints, validateDiscoveredRoad } from './externalDiscovery'
+import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, validateDiscoveredRoad } from './externalDiscovery'
 
 describe('external road discovery', () => {
   it('uses a bounded Overpass around query and excludes private road classes', () => {
@@ -7,6 +7,8 @@ describe('external road discovery', () => {
     expect(query).toContain('around:12000,35.220000,139.030000')
     expect(query).not.toContain('residential')
     expect(query).toContain('access')
+    expect(query).toContain('sidewalk')
+    expect(query).toContain('lit')
     expect(query).toContain('out tags geom')
     expect(query).toContain('out tags geom 80;')
   })
@@ -34,6 +36,37 @@ describe('external road discovery', () => {
     const required = [route[2]]
     const waypoints = proposalWaypoints(route, required)
     expect(waypoints).toContainEqual(required[0])
+  })
+
+  it('joins named OSM way fragments into one mountain-road corridor', () => {
+    const chains = chainRoadWays([
+      { type: 'way', id: 10, tags: { name: '山道', highway: 'secondary' }, geometry: [{ lon: 139, lat: 35 }, { lon: 139.01, lat: 35.01 }] },
+      { type: 'way', id: 11, tags: { name: '山道', highway: 'secondary' }, geometry: [{ lon: 139.01, lat: 35.01 }, { lon: 139.02, lat: 35.005 }] },
+      { type: 'way', id: 12, tags: { name: '別の道', highway: 'secondary' }, geometry: [{ lon: 139.02, lat: 35.005 }, { lon: 139.03, lat: 35.01 }] },
+    ])
+    expect(chains).toHaveLength(2)
+    expect(chains[0].wayIds).toEqual([10, 11])
+    expect(chains[0].route).toHaveLength(3)
+  })
+
+  it('accepts a sufficiently long, winding mountain corridor with verified elevation', () => {
+    const route = [
+      [139, 35], [139.008, 35.008], [139.016, 35.004], [139.024, 35.012],
+      [139.032, 35.008], [139.04, 35.016], [139.048, 35.012], [139.056, 35.02],
+    ] as [number, number][]
+    const result = assessTougeSuitability(route, [100, 150, 210, 270, 350, 300, 230, 160], { highway: 'secondary', ref: 'R1', maxspeed: '50' })
+    expect(result.eligible).toBe(true)
+    expect(result.elevationRangeM).toBe(250)
+    expect(result.maxGradePct).toBeGreaterThan(3)
+    expect(result.curveDensity).toBeGreaterThan(.18)
+  })
+
+  it('rejects flat, settled roads even when their geometry contains turns', () => {
+    const route = [[139, 35], [139.01, 35.004], [139.02, 35], [139.03, 35.004], [139.04, 35]] as [number, number][]
+    const result = assessTougeSuitability(route, [12, 13, 12, 13, 12], { highway: 'unclassified', lit: 'yes', sidewalk: 'both', maxspeed: '30' })
+    expect(result.eligible).toBe(false)
+    expect(result.reasons).toContain('十分な高低差がありません')
+    expect(result.reasons).toContain('生活道路・市街地らしさが強すぎます')
   })
 
 })
