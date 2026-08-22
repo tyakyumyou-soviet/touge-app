@@ -12,12 +12,14 @@ import { RoadConditionReportForm, type RoadConditionReport } from './components/
 import { CommunityPanel } from './components/CommunityPanel'
 import { AdminPanel } from './components/AdminPanel'
 import { CourseManageForm } from './components/CourseManageForm'
+import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loginWithGoogle, logout, saveRating, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
+import { auth, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveRating, saveUserProfileSettings, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
-import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, TollStatus } from './types'
+import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, SearchPreset, TollStatus, UserProfile } from './types'
+import { personalizedScore } from './lib/personalization'
 import { useMobileSheet } from './hooks/useMobileSheet'
 import { canUseUnlimitedWaypoints, exceedsWaypointLimit, isAdministrator, WAYPOINT_LIMIT } from './lib/access'
 import { courseMatchesSearch } from './lib/courseSearch'
@@ -61,9 +63,10 @@ export default function App() {
   const [currentLocation, setCurrentLocation] = useState<Coordinate | null>(null)
   const [nearbyBusy, setNearbyBusy] = useState(false)
   const [nearbyError, setNearbyError] = useState('')
-  const [sort, setSort] = useState<'recommended' | 'curves' | 'elevation' | 'width'>('recommended')
+  const [sort, setSort] = useState<'recommended' | 'curves' | 'elevation' | 'width' | 'personalized'>('recommended')
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
+  const [viewerProfile, setViewerProfile] = useState<UserProfile | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [drawing, setDrawing] = useState(false)
@@ -93,6 +96,7 @@ export default function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
   const [courseManagerOpen, setCourseManagerOpen] = useState(false)
+  const [timerOpen, setTimerOpen] = useState(false)
   const surfaceTimer = useRef<number | null>(null)
   const unlimitedWaypoints = canUseUnlimitedWaypoints(user)
 
@@ -120,6 +124,10 @@ export default function App() {
     return () => { cancelled = true }
   }, [authReady, user?.uid])
   useEffect(() => {
+    if (!user) { setViewerProfile(null); return }
+    loadUserProfile(user.uid).then((profile) => setViewerProfile(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0 })).catch(() => undefined)
+  }, [user?.uid])
+  useEffect(() => {
     const courseId = new URLSearchParams(location.search).get('course')
     if (!courseId) return
     const local = sampleCourses.find((course) => course.id === courseId)
@@ -143,10 +151,32 @@ export default function App() {
       .filter((course) => courseMatchesSearch(course, { text: search, prefecture, toll: tollFilter, center: nearbyCenter?.point, radiusKm: nearbyCenter ? nearbyRadiusKm : undefined }))
       .sort((a, b) => {
         if (sort === 'recommended') return (b.ratings.curves + b.ratings.elevation + b.ratings.width) - (a.ratings.curves + a.ratings.elevation + a.ratings.width)
+        if (sort === 'personalized') return personalizedScore(b, viewerProfile?.personalization ?? {}) - personalizedScore(a, viewerProfile?.personalization ?? {})
         return b.ratings[sort] - a.ratings[sort]
       })
-  }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter])
-  const mapCourses = useMemo(() => [...courses, ...proposalPreviews], [courses, proposalPreviews])
+  }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization])
+  const mapCourses = useMemo(() => {
+    const mode = viewerProfile?.mapRouteVisibility ?? 'all'
+    const followed = new Set(viewerProfile?.followingIds ?? [])
+    const hidden = new Set(viewerProfile?.hiddenRouteIds ?? [])
+    const visible = mode === 'none' ? [] : courses.filter((course) => !hidden.has(course.id) && (mode === 'all' || (mode === 'mine' && course.authorId === user?.uid) || (mode === 'friends' && (course.authorId === user?.uid || followed.has(course.authorId)))))
+    return [...visible, ...proposalPreviews]
+  }, [courses, proposalPreviews, user?.uid, viewerProfile?.followingIds, viewerProfile?.hiddenRouteIds, viewerProfile?.mapRouteVisibility])
+
+  async function saveSearchPreset() {
+    if (!user || !viewerProfile) { setNotice('プリセットの保存にはログインが必要です'); return }
+    const name = window.prompt('この検索条件の名前')?.trim()
+    if (!name) return
+    const existing = viewerProfile.searchPresets ?? []
+    if (existing.length >= 5) { setNotice('検索プリセットは5件までです'); return }
+    const preset: SearchPreset = { id: crypto.randomUUID(), name, prefecture, toll: tollFilter, radiusKm: nearbyRadiusKm, sort }
+    const next = { ...viewerProfile, searchPresets: [...existing, preset] }
+    await saveUserProfileSettings(user, next); setViewerProfile(next); setNotice('検索条件を保存しました')
+  }
+  function applySearchPreset(id: string) {
+    const preset = viewerProfile?.searchPresets?.find((item) => item.id === id); if (!preset) return
+    setPrefecture(preset.prefecture); setTollFilter(preset.toll); setNearbyRadiusKm(preset.radiusKm); setSort(preset.sort)
+  }
 
   const selectCourse = useCallback((course: Course) => {
     setSelected(course)
@@ -415,6 +445,8 @@ export default function App() {
       systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
       authorId: activeUser.uid,
       authorName: activeUser.displayName ?? 'ドライバー',
+      blockedViewerIds: viewerProfile?.blockedUserIds ?? [],
+      allowedViewerIds: [],
       updatedAt: new Date().toISOString().slice(0, 10),
     }
     let id: string
@@ -464,7 +496,7 @@ export default function App() {
     setNotice('評価を投稿しました。集計への反映には時間がかかる場合があります。')
   }
 
-  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility'>) {
+  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'>) {
     const current = courses.find((course) => course.id === courseId)
     if (!current || current.authorId !== auth.currentUser?.uid) throw new Error('Not authorized')
     await updateCourse(courseId, changes)
@@ -512,7 +544,7 @@ export default function App() {
           <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} header={<div className="course-list-drag-area" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
             <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
             <div className="list-toolbar">
-              <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
+              <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="personalized">パーソナライズ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
               <button type="button" className={`advanced-filter-toggle ${advancedFiltersOpen ? 'active' : ''}`} onClick={() => setAdvancedFiltersOpen((value) => !value)} aria-expanded={advancedFiltersOpen} aria-controls="advanced-course-filters">詳細検索 <span aria-hidden="true">{advancedFiltersOpen ? '−' : '+'}</span></button>
             </div>
             <div id="advanced-course-filters" className={`advanced-filters ${advancedFiltersOpen ? 'open' : ''}`} aria-hidden={!advancedFiltersOpen}><div className="advanced-filters-inner">
@@ -526,6 +558,7 @@ export default function App() {
               </div>
               <form className="nearby-course-search" onSubmit={findNearbyCourses}><input value={nearbyQuery} onChange={(event) => setNearbyQuery(event.target.value)} placeholder="地名・住所から近くのコースを探す" aria-label="近くのコースを探す場所" /><button type="submit" disabled={nearbyBusy}>{nearbyBusy ? '検索中…' : '近くを探す'}</button><button type="button" onClick={useCurrentLocationForSearch} disabled={nearbyBusy}>現在地</button></form>
               {nearbyCenter && <div className="active-nearby-filter"><span>{nearbyCenter.label}から{nearbyRadiusKm}km以内</span><button type="button" onClick={() => setNearbyCenter(null)} aria-label="位置条件を解除">×</button></div>}
+              {user && <div className="preset-row"><select defaultValue="" onChange={(event) => { applySearchPreset(event.target.value); event.currentTarget.value = '' }} aria-label="保存した検索条件"><option value="">検索プリセットを適用</option>{viewerProfile?.searchPresets?.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={() => void saveSearchPreset()}>この条件を保存</button></div>}
               {nearbyError && <p className="filter-error" role="alert">{nearbyError}</p>}
             </div></div>
           </div>} />
@@ -535,10 +568,11 @@ export default function App() {
           <button className={is3d ? 'active' : ''} onClick={() => setIs3d((value) => !value)} aria-pressed={is3d}><span>▰</span>{is3d ? '2Dに戻す' : '3D地形'}</button>
         </div>
 
-        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)} onCommunity={() => setCommunityOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} isPreview={selected.authorId === '__proposal_preview__'} previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) { setProposalFocusRoute([...next.route]); setSelected(next) } }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) { setProposalFocusRoute([...next.route]); setSelected(next) } }, onReturn: () => setSelected(null) } : undefined} onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) { handleUseProposal(proposal); setSelected(null) } }} />}
+        {selected && <CourseDetail course={selected} onClose={() => setSelected(null)} onBack={() => { setSelected(null); resetListSheet() }} onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)} onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)} onCommunity={() => setCommunityOpen(true)} onOpenTimer={() => setTimerOpen(true)} canManageCourse={Boolean(user && selected.authorId === user.uid)} onManageCourse={() => setCourseManagerOpen(true)} mapHidden={Boolean(viewerProfile?.hiddenRouteIds?.includes(selected.id))} onToggleMapRoute={user && viewerProfile ? async () => { const hidden = new Set(viewerProfile.hiddenRouteIds ?? []); hidden.has(selected.id) ? hidden.delete(selected.id) : hidden.add(selected.id); const next = { ...viewerProfile, hiddenRouteIds: [...hidden] }; await saveUserProfileSettings(user, next); setViewerProfile(next) } : undefined} isPreview={selected.authorId === '__proposal_preview__'} previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) { setProposalFocusRoute([...next.route]); setSelected(next) } }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) { setProposalFocusRoute([...next.route]); setSelected(next) } }, onReturn: () => setSelected(null) } : undefined} onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) { handleUseProposal(proposal); setSelected(null) } }} />}
         {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const preview = proposalPreviews.find((course) => course.id === `proposal-preview-${proposalId}`); if (preview) { setProposalFocusRoute([...preview.route]); setSelected(preview) } }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
+        {timerOpen && selected && <DriveTimer course={selected} onClose={() => setTimerOpen(false)} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
         {roadReportOpen && selected && <RoadConditionReportForm courseName={selected.name} onCancel={() => setRoadReportOpen(false)} onSave={handleRoadConditionReport} />}
       </main>
@@ -550,8 +584,8 @@ export default function App() {
           <footer><button className="button secondary" onClick={() => { setLogoutConfirmOpen(false); logoutSheet.reset() }}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
         </section>
       </div>}
-      {courseManagerOpen && selected && user?.uid === selected.authorId && <CourseManageForm course={selected} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} />}
-      {communityOpen && <CommunityPanel user={user} course={selected} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onAdminOpen={isAdministrator(user) ? () => { setCommunityOpen(false); setAdminOpen(true) } : undefined} />}
+      {courseManagerOpen && selected && user?.uid === selected.authorId && <CourseManageForm course={selected} profile={viewerProfile} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} />}
+      {communityOpen && <CommunityPanel user={user} course={selected} onProfileSaved={setViewerProfile} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onAdminOpen={isAdministrator(user) ? () => { setCommunityOpen(false); setAdminOpen(true) } : undefined} />}
       {adminOpen && user && isAdministrator(user) && <AdminPanel user={user} courses={courses} onClose={() => setAdminOpen(false)} />}
       <InstallPrompt />
     </div>

@@ -25,9 +25,23 @@ service cloud.firestore {
       }
     }
 
+    match /presence/{userId} {
+      // Live location is opt-in and exposed only to followed users. Presence
+      // documents are removed immediately when sharing is switched off.
+      allow read: if signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(userId));
+      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+    }
+
     match /courses/{courseId} {
-      allow get: if resource.data.visibility in ['public', 'limited'] || owns(resource.data);
-      allow list: if resource.data.visibility == 'public' || owns(resource.data);
+      function globallyBlocked() {
+        return signedIn()
+          && get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.blockedUserIds is list
+          && request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.blockedUserIds;
+      }
+      function courseBlocked() { return signedIn() && resource.data.blockedViewerIds is list && request.auth.uid in resource.data.blockedViewerIds; }
+      function explicitlyAllowed() { return signedIn() && resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds; }
+      allow get: if !globallyBlocked() && !courseBlocked() && (resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed());
+      allow list: if !globallyBlocked() && !courseBlocked() && (resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed());
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
         && validVisibility(request.resource.data.visibility)

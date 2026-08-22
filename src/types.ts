@@ -65,6 +65,9 @@ export interface Course {
   tollStatus?: TollStatus
   tollInfo?: TollInfo
   visibility: 'public' | 'limited' | 'private'
+  /** Explicit recipients for limited sharing. Kept server-readable for rules. */
+  allowedViewerIds?: string[]
+  blockedViewerIds?: string[]
   authorId: string
   authorName: string
   updatedAt: string
@@ -97,8 +100,24 @@ export interface UserProfile {
   vehicleDetails?: string
   socialLinks?: Partial<Record<'x' | 'instagram' | 'youtube' | 'tiktok', string>>
   showcasePostUrls?: string[]
+  friendLists?: FriendList[]
+  blockedUserIds?: string[]
+  /** Controls which route lines are rendered on this driver's map. */
+  mapRouteVisibility?: 'all' | 'friends' | 'mine' | 'none'
+  hiddenRouteIds?: string[]
+  searchPresets?: SearchPreset[]
+  personalization?: PersonalizationProfile
+  locationSharing?: LocationSharingSettings
+  nowPlaying?: NowPlaying
   updatedAt?: string
 }
+
+export interface FriendList { id: string; name: string; memberIds: string[] }
+export interface SearchPreset { id: string; name: string; prefecture: 'すべて' | Course['prefecture']; toll: 'all' | TollStatus; radiusKm: number; sort: 'recommended' | 'curves' | 'elevation' | 'width' | 'personalized' }
+export interface PersonalizationProfile { curves: number; elevation: number; width: number; scenery: number; surface: number; traffic: number; access: number }
+export interface LocationSharingSettings { enabled: boolean; audience: 'friends' | 'lists'; listIds: string[] }
+export interface NowPlaying { title: string; artist?: string; updatedAt: string }
+export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate; updatedAt?: string; nowPlaying?: NowPlaying }
 
 export interface CourseComment {
   id: string

@@ -31,7 +31,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseComment, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
+import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseComment, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
 import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -185,10 +185,11 @@ async function hydrateCourses(documents: Awaited<ReturnType<typeof getDocs>>['do
 /** Load public routes plus the signed-in driver's own limited/private routes. */
 export async function loadPublicCourses(userId?: string): Promise<Course[]> {
   const publicSnapshot = await getDocs(query(collection(db, 'courses'), where('visibility', '==', 'public')))
-  const ownSnapshot = userId
-    ? await getDocs(query(collection(db, 'courses'), where('authorId', '==', userId)))
-    : null
-  const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? [])]
+  // A legacy rule/index must not make the public catalogue disappear. Private
+  // and list-shared additions are best-effort; the public query is authoritative.
+  const ownSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('authorId', '==', userId))).catch(() => null) : null
+  const sharedSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId))).catch(() => null) : null
+  const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? []), ...(sharedSnapshot?.docs ?? [])]
   const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
   return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))
 }
@@ -211,7 +212,7 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
   return result.id
 }
 
-export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility'>): Promise<void> {
+export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'>): Promise<void> {
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 
@@ -278,15 +279,40 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
   return snapshot.exists() ? ({ id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...snapshot.data() } as UserProfile) : null
 }
 
-export async function saveUserProfileSettings(user: User, values: Pick<UserProfile, 'displayName' | 'bio' | 'homeArea' | 'mapVisibility' | 'vehicleName' | 'vehicleDetails' | 'socialLinks' | 'showcasePostUrls'>): Promise<void> {
+export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {
   await setDoc(doc(db, 'users', user.uid), { ...values, displayName: values.displayName || user.displayName || 'ドライバー', updatedAt: serverTimestamp() }, { merge: true })
+}
+
+export async function saveFriendPresence(user: User, presence: Omit<FriendPresence, 'userId' | 'displayName' | 'photoURL' | 'updatedAt'>): Promise<void> {
+  await setDoc(doc(db, 'presence', user.uid), { userId: user.uid, displayName: user.displayName ?? 'ドライバー', photoURL: user.photoURL ?? null, ...presence, updatedAt: serverTimestamp() }, { merge: true })
+}
+
+export async function clearFriendPresence(userId: string): Promise<void> {
+  await deleteDoc(doc(db, 'presence', userId))
+}
+
+export function subscribeFriendPresence(userIds: string[], onChange: (items: FriendPresence[]) => void): () => void {
+  if (!userIds.length) { onChange([]); return () => undefined }
+  // Firestore's `in` limit is 30; the UI shows the first 30 followed drivers.
+  return onSnapshot(query(collection(db, 'presence'), where('userId', 'in', userIds.slice(0, 30))), (snapshot) => {
+    onChange(snapshot.docs.map((item) => ({ userId: item.id, ...item.data(), updatedAt: firestoreDate(item.data().updatedAt) } as FriendPresence)))
+  }, () => onChange([]))
 }
 
 export async function toggleFollow(targetId: string, user: User): Promise<boolean> {
   const followRef = doc(db, 'users', user.uid, 'following', targetId)
   const existing = await getDoc(followRef)
-  if (existing.exists()) { await deleteDoc(followRef); return false }
-  await setDoc(followRef, { targetId, createdAt: serverTimestamp() }); return true
+  const profileRef = doc(db, 'users', user.uid)
+  const profile = await getDoc(profileRef)
+  const ids = strings(profile.data()?.followingIds)
+  if (existing.exists()) {
+    await deleteDoc(followRef)
+    await setDoc(profileRef, { followingIds: ids.filter((id) => id !== targetId), updatedAt: serverTimestamp() }, { merge: true })
+    return false
+  }
+  await setDoc(followRef, { targetId, createdAt: serverTimestamp() })
+  await setDoc(profileRef, { followingIds: [...new Set([...ids, targetId])], updatedAt: serverTimestamp() }, { merge: true })
+  return true
 }
 
 export async function toggleCourseLike(courseId: string, user: User): Promise<boolean> {

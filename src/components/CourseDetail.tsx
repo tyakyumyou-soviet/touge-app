@@ -20,12 +20,15 @@ interface Props {
   onCommunity: () => void
   canManageCourse: boolean
   onManageCourse: () => void
+  mapHidden?: boolean
+  onToggleMapRoute?: () => void
+  onOpenTimer?: () => void
   isPreview?: boolean
   onEditPreview?: () => void
   previewNavigation?: { index: number; total: number; onPrevious: () => void; onNext: () => void; onReturn: () => void }
 }
 
-export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, isPreview = false, onEditPreview, previewNavigation }: Props) {
+export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, previewNavigation }: Props) {
   const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
   const [sheetOffset, setSheetOffset] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
@@ -143,6 +146,8 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
           <button onClick={onShare}>コースを共有</button>
           <button onClick={onCommunity}>コメント・いいね</button>
           <button onClick={onReportRoad}>道路状況を報告</button>
+          {onOpenTimer && <button onClick={onOpenTimer}>走行タイマー</button>}
+          {onToggleMapRoute && <button onClick={onToggleMapRoute}>{mapHidden ? '地図に表示する' : '地図から隠す'}</button>}
         </div>}
       </div>
       <footer className="nav-actions">
