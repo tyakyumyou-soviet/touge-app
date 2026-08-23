@@ -104,12 +104,21 @@ export default defineConfig({
         navigationPreload: false,
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/(tiles\.openfreemap\.org|demotiles\.maplibre\.org)\//,
+            urlPattern: /^https:\/\/tiles\.openfreemap\.org\//,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'map-tiles',
               cacheableResponse: { statuses: [0, 200] },
               expiration: { maxEntries: 240, maxAgeSeconds: 60 * 60 * 24 * 7 }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/elevation-tiles-prod\.s3\.amazonaws\.com\/terrarium\//,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'terrain-tiles',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 7 }
             }
           },
           {

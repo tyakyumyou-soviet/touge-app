@@ -7,6 +7,7 @@ import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { assignCourseColors } from '../lib/courseColors'
 import { visibleMapCameraPadding } from '../lib/mapCamera'
+import { createTougeMapStyle } from '../lib/mapStyle'
 
 interface MapViewProps {
   courses: Course[]
@@ -121,7 +122,7 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: 'https://tiles.openfreemap.org/styles/liberty',
+        style: createTougeMapStyle(),
         center: [139.03, 35.22],
         zoom: 8.2,
         pitch: 0,
@@ -179,14 +180,15 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     map.on('load', () => {
       map.addSource('terrain-dem', {
         type: 'raster-dem',
-        url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json',
+        tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'],
         tileSize: 256,
         encoding: 'terrarium',
+        maxzoom: 15,
       })
       map.addLayer({
         id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem',
         paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' },
-      })
+      }, 'road-labels')
       map.addSource('courses', { type: 'geojson', data: toFeatureCollection(coursesRef.current, assignCourseColors(coursesRef.current)) })
       map.addLayer({
         id: 'courses-shadow', type: 'line', source: 'courses',

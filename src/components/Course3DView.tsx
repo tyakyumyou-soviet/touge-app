@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
+import { createTougeMapStyle } from '../lib/mapStyle'
 import { fetchElevationProfile, isSuspiciousElevationProfile, type ElevationResult } from '../lib/elevation'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { fetchTerrainGrid, type TerrainGrid } from '../lib/terrain'
@@ -413,7 +414,7 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     if (!supportsWebGL()) { setMapError('この端末ではWebGL地形を利用できません。'); return }
     let map: MapLibreMap
     try {
-      map = new maplibregl.Map({ container: containerRef.current, style: 'https://tiles.openfreemap.org/styles/liberty', center: course.route[Math.floor(course.route.length / 2)], zoom: 11, pitch: 70, bearing: -28, maxPitch: 85, attributionControl: false })
+      map = new maplibregl.Map({ container: containerRef.current, style: createTougeMapStyle(), center: course.route[Math.floor(course.route.length / 2)], zoom: 11, pitch: 70, bearing: -28, maxPitch: 85, attributionControl: false })
     } catch { setMapError('3D地図を初期化できませんでした。'); return }
     map.on('error', (event) => {
       const message = event.error?.message ?? ''
@@ -424,11 +425,11 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     map.addControl(new maplibregl.FullscreenControl(), 'top-right')
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     map.on('load', () => {
-      map.addSource('terrain-dem', { type: 'raster-dem', url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json', tileSize: 256, encoding: 'terrarium' })
+      map.addSource('terrain-dem', { type: 'raster-dem', tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
       // MapLibre recommends separate raster-dem source instances for terrain
       // displacement and hillshade rendering, even when they share tile URLs.
-      map.addSource('hillshade-dem', { type: 'raster-dem', url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json', tileSize: 256, encoding: 'terrarium' })
-      map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'hillshade-dem', paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' } })
+      map.addSource('hillshade-dem', { type: 'raster-dem', tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
+      map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'hillshade-dem', paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' } }, 'road-labels')
       map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 })
       map.addSource('course-contours', { type: 'geojson', data: toContourFeatureCollection(displayCourse) })
       map.addLayer({ id: 'course-contours', type: 'line', source: 'course-contours', paint: { 'line-color': '#637e70', 'line-width': 1.2, 'line-opacity': .62, 'line-dasharray': [1, 2] } })
