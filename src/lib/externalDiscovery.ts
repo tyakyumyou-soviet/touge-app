@@ -247,10 +247,14 @@ function sampled(route: Coordinate[], max = 14): Coordinate[] {
 }
 
 function routeCandidateTargets(center: Coordinate, radiusKm: number, count: number): Array<{ start: Coordinate, goal: Coordinate }> {
-  const distance = Math.min(8, Math.max(2.5, Math.min(radiusKm, MAX_DISCOVERY_RADIUS_KM) * .55))
+  // Probe beyond the immediate urban core.  The finder subsequently applies
+  // the strict elevation/curve/quietness gate, so this wider radial probe is
+  // what lets a town-centre search find the surrounding mountain pass rather
+  // than repeatedly testing only flat connector roads.
+  const distance = Math.min(12, Math.max(4, Math.min(radiusKm, 18) * .72))
   const latitudeScale = distance / 111
   const longitudeScale = distance / (111 * Math.max(.35, Math.cos(center[1] * Math.PI / 180)))
-  const bearings = [22, 94, 166, 238, 310]
+  const bearings = [0, 45, 90, 135, 180, 225, 270, 315]
   return bearings.slice(0, count).map((bearing) => {
     const radians = bearing * Math.PI / 180
     const lng = Math.sin(radians) * longitudeScale
@@ -288,7 +292,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   // Probe several directions even when the UI asks to show one result. A pass
   // can lie on only one side of the selected place; returning the first router
   // line was the reason a city connector could win over a real mountain road.
-  const targets = routeCandidateTargets(request.center, request.radiusKm, 5)
+  const targets = routeCandidateTargets(request.center, request.radiusKm, 8)
   const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.

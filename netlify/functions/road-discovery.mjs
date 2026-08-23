@@ -1,9 +1,25 @@
 const OVERPASS_ENDPOINTS = [
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 const UPSTREAM_TIMEOUT_MS = 18_000
+
+// Around queries in a mountainous but populated area can still be too broad
+// for a public Overpass instance.  Keep the original query as the preferred
+// request, but issue a bounded retry at the same time.  A smaller successful
+// response is much more useful to the driver than failing the whole finder
+// because a mirror is temporarily overloaded.
+function compactDiscoveryQuery(query) {
+  const radiusMatch = query.match(/way\(around:(\d+),/)
+  const originalRadius = Number(radiusMatch?.[1])
+  if (!Number.isFinite(originalRadius) || originalRadius <= 4500) return query
+  const compactRadius = Math.max(4500, Math.round(originalRadius * .58))
+  return query
+    .replace(/way\(around:\d+,/, `way(around:${compactRadius},`)
+    .replace(/out tags geom \d+;/, 'out tags geom 28;')
+    .replace('[timeout:20]', '[timeout:14]')
+}
 
 function json(statusCode, body) {
   const cacheHeaders = statusCode === 200
@@ -35,14 +51,14 @@ export async function handler(event) {
 
   // Run the mirrors in parallel. Sequential retries could outlive the Netlify
   // invocation and make the client abort before a healthy mirror replied.
-  const attempts = OVERPASS_ENDPOINTS.map(async (endpoint) => {
+  const request = async (endpoint, requestQuery) => {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8', 'user-agent': 'Touge-App road discovery/1.0' },
-        body: new URLSearchParams({ data: query }),
+        body: new URLSearchParams({ data: requestQuery }),
         signal: controller.signal,
       })
       if (!response.ok) throw new Error(`Overpass API ${response.status}`)
@@ -50,7 +66,14 @@ export async function handler(event) {
       if (!Array.isArray(data?.elements)) throw new Error('Overpass APIの応答形式が不正です')
       return data
     } finally { clearTimeout(timer) }
-  })
+  }
+  const compactQuery = compactDiscoveryQuery(query)
+  const attempts = [
+    ...OVERPASS_ENDPOINTS.map((endpoint) => request(endpoint, query)),
+    // Do not double the request for already-small searches.  For larger
+    // searches this fast, bounded pass is the resilience path for 5xx load.
+    ...(compactQuery === query ? [] : [request(OVERPASS_ENDPOINTS[0], compactQuery)]),
+  ]
   try {
     return json(200, await Promise.any(attempts))
   } catch (error) {
