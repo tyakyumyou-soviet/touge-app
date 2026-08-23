@@ -65,7 +65,7 @@ describe('external road discovery', () => {
     const route = [[139, 35], [139.01, 35.004], [139.02, 35], [139.03, 35.004], [139.04, 35]] as [number, number][]
     const result = assessTougeSuitability(route, [12, 13, 12, 13, 12], { highway: 'unclassified', lit: 'yes', sidewalk: 'both', maxspeed: '30' })
     expect(result.eligible).toBe(false)
-    expect(result.reasons).toContain('十分な高低差がありません')
+    expect(result.reasons).toContain('峠として十分な高低差がありません')
     expect(result.reasons).toContain('生活道路・市街地らしさが強すぎます')
   })
 

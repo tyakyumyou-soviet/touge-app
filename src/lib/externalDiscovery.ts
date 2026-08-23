@@ -168,9 +168,9 @@ export function assessTougeSuitability(route: Coordinate[], elevations: number[]
   const settlementRisk = residentialRisk(tags)
   const reasons: string[] = []
   if (lengthKm < 4) reasons.push('峠区間として短すぎます')
-  if (elevationRangeM < 120 || totalAscentM < 120) reasons.push('十分な高低差がありません')
-  if (maxGradePct < 3) reasons.push('勾配が峠道の基準に達しません')
-  if (density < .18) reasons.push('連続カーブが不足しています')
+  if (elevationRangeM < 150 || totalAscentM < 180) reasons.push('峠として十分な高低差がありません')
+  if (maxGradePct < 3.5) reasons.push('勾配が峠道の基準に達しません')
+  if (density < .25) reasons.push('峠らしい連続カーブが不足しています')
   if (settlementRisk > 2.1) reasons.push('生活道路・市街地らしさが強すぎます')
   return {
     eligible: reasons.length === 0,
@@ -429,17 +429,20 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   // With required stops, use OSRM exclusively so that the constraint remains
   // true in both the preview and the subsequently saved route.
   if (request.requiredPoints.length) return fromRoutedRoads()
-  try {
-    return await fromOverpass()
-  } catch (overpassError) {
-    // Overpass mirrors are often saturated. OSRM is still public road data,
-    // and it is safe as a fallback only because every result must pass the
-    // same terrain, grade, curve, length and settlement gates above.
+  // Use the dependable public road router first. It is still constrained by
+  // the strict pass gate above, so ordinary city routes cannot become a
+  // suggestion. This also avoids surfacing a transient Overpass 5xx error in
+  // the normal proposal flow.
+  if (request.toll === 'all') {
     try { return await fromRoutedRoads() }
     catch (routingError) {
-      const overpassMessage = overpassError instanceof Error ? overpassError.message : '道路データを取得できませんでした'
-      const routingMessage = routingError instanceof Error ? routingError.message : '条件に合う道路が見つかりませんでした'
-      throw new Error(`${overpassMessage}。代替の公開道路ルーティングでも${routingMessage}`)
+      try { return await fromOverpass() }
+      catch (overpassError) {
+        const routingMessage = routingError instanceof Error ? routingError.message : '条件に合う道路が見つかりませんでした'
+        const overpassMessage = overpassError instanceof Error ? overpassError.message : '道路データを取得できませんでした'
+        throw new Error(`${routingMessage}。道路属性の照合でも${overpassMessage}`)
+      }
     }
   }
+  return fromOverpass()
 }

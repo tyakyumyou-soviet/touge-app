@@ -29,4 +29,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Application root element was not found')
+
+// Older installed versions may have enabled navigation preload. The generated
+// SPA worker does not consume that response, so explicitly disable it once a
+// worker is ready to prevent cancelled-preload warnings after an update.
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker.ready.then((registration) => registration.navigationPreload?.disable()).catch(() => undefined)
+}
+
 createRoot(root).render(<StrictMode><ErrorBoundary><App /></ErrorBoundary></StrictMode>)
