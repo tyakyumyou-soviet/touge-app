@@ -1,16 +1,22 @@
 const OVERPASS_ENDPOINTS = [
-  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ]
-const UPSTREAM_TIMEOUT_MS = 14_000
+const UPSTREAM_TIMEOUT_MS = 18_000
 
 function json(statusCode, body) {
+  const cacheHeaders = statusCode === 200
+    ? {
+        'cache-control': 'public, max-age=60, stale-while-revalidate=300',
+        'netlify-cdn-cache-control': 'public, durable, s-maxage=86400, stale-while-revalidate=604800',
+      }
+    : { 'cache-control': 'no-store' }
   return {
     statusCode,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'public, max-age=60, stale-while-revalidate=300',
+      ...cacheHeaders,
     },
     body: JSON.stringify(body),
   }

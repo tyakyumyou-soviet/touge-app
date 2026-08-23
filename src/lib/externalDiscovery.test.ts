@@ -6,6 +6,7 @@ describe('external road discovery', () => {
     const query = buildRoadDiscoveryQuery([139.03, 35.22], 100)
     expect(query).toContain('around:12000,35.220000,139.030000')
     expect(query).not.toContain('residential')
+    expect(query).toContain('["name"]')
     expect(query).toContain('access')
     expect(query).toContain('sidewalk')
     expect(query).toContain('lit')

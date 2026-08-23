@@ -44,6 +44,7 @@ export function buildRoadDiscoveryQuery(center: Coordinate, radiusKm: number, ma
   return `[out:json][timeout:20];
 way(around:${radius},${lat.toFixed(6)},${lng.toFixed(6)})
   ["highway"~"^(primary|secondary|tertiary|unclassified)$"]
+  ["name"]
   ["motor_vehicle"!~"^(no|private)$"]
   ["access"!~"^(no|private)$"]
   ["service"!~"^(parking|driveway)$"]
@@ -51,10 +52,17 @@ way(around:${radius},${lat.toFixed(6)},${lng.toFixed(6)})
   ["lit"!="yes"]
   ["tunnel"!="yes"]
   ["area"!="yes"];
-// Limit the returned geometry instead of downloading every road segment in a
-// 12km circle.  This is the main protection against Overpass timeouts; the
-// score filter below still selects the most suitable of these road candidates.
+// The evaluator joins fragments by road name. Fetching anonymous ways here
+// only makes the public Overpass query much heavier and those fragments cannot
+// form a useful pass corridor later. Limit geometry as a second guard.
 out tags geom ${Math.min(120, Math.max(25, Math.round(maxWays)))};`
+}
+
+export class RoadDiscoveryUnavailableError extends Error {
+  constructor(message = '道路データサービスが混雑しています。少し待ってからもう一度お試しください') {
+    super(message)
+    this.name = 'RoadDiscoveryUnavailableError'
+  }
 }
 
 function asRoute(geometry: OverpassWay['geometry']): Coordinate[] {
@@ -398,6 +406,7 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
     if (!response.ok) {
       const failure = await response.json().catch(() => null) as { error?: unknown } | null
       const detail = typeof failure?.error === 'string' ? failure.error : `道路データ取得エラー (${response.status})`
+      if (response.status >= 500 || response.status === 429) throw new RoadDiscoveryUnavailableError(detail)
       throw new Error(detail)
     }
     if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('道路データの応答形式が不正です')
@@ -405,7 +414,7 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
     if (!Array.isArray(result.elements)) throw new Error('道路データの応答形式が不正です')
     return result
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('道路データの取得が時間切れになりました。少し待って再試行してください')
+    if (controller.signal.aborted) throw new RoadDiscoveryUnavailableError('道路データの取得が時間切れになりました。少し待って再試行してください')
     throw error
   } finally { window.clearTimeout(timer) }
 }
@@ -481,6 +490,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
     catch (routingError) {
       try { return await fromOverpass() }
       catch (overpassError) {
+        if (overpassError instanceof RoadDiscoveryUnavailableError) throw overpassError
         const routingMessage = routingError instanceof Error ? routingError.message : '条件に合う道路が見つかりませんでした'
         const overpassMessage = overpassError instanceof Error ? overpassError.message : '道路データを取得できませんでした'
         throw new Error(`${routingMessage}。道路属性の照合でも${overpassMessage}`)

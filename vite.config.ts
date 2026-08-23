@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const LOCAL_OVERPASS_ENDPOINTS = [
-  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ]
@@ -23,7 +23,7 @@ function localRoadDiscoveryRelay() {
         }
         const attempts = LOCAL_OVERPASS_ENDPOINTS.map(async (endpoint) => {
           const controller = new AbortController()
-          const timer = setTimeout(() => controller.abort(), 9_000)
+          const timer = setTimeout(() => controller.abort(), 18_000)
           try {
             const upstream = await fetch(endpoint, {
               method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },

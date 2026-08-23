@@ -6,7 +6,7 @@ import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
 import { type DriveProposal, type DriveStyle } from '../lib/recommendations'
-import { discoverExternalDriveProposals } from '../lib/externalDiscovery'
+import { discoverExternalDriveProposals, RoadDiscoveryUnavailableError } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
 import { auth } from '../lib/firebase'
@@ -243,7 +243,9 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     } catch (caught) {
       setProposals([]); onSetProposalPreviews([])
       const message = caught instanceof Error ? caught.message : ''
-      setProposalError(message
+      setProposalError(caught instanceof RoadDiscoveryUnavailableError
+        ? `道路データを取得できませんでした。${message}`
+        : message
         ? `峠候補を見つけられませんでした。${message}`
         : 'この範囲に峠として提案できる道路が見つかりませんでした。探索範囲を広げるか、別のエリアを指定してください。')
     } finally { setBusy(false); setProposalProgress('') }
