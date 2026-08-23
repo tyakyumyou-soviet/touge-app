@@ -21,6 +21,6 @@ describe('visible map camera viewport', () => {
 
   it('keeps a usable map viewport even when a sheet is nearly full-screen', () => {
     const padding = mergeCameraPadding(mapRect, 590, { top: 30, bottom: 30 })
-    expect(padding.top + padding.bottom).toBeCloseTo(504)
+    expect(padding.top + padding.bottom).toBeCloseTo(420)
   })
 })

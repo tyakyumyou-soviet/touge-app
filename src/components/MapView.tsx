@@ -368,14 +368,13 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
       map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration, essential: true })
     }
     const compact = window.matchMedia('(max-width: 760px)').matches
-    // On mobile, wait for the maximized builder sheet to return to its regular
-    // height. Fitting against the old height can leave too little map canvas
-    // for MapLibre to calculate a valid camera.
-    let frame = 0
-    let settleTimer = 0
-    if (compact) settleTimer = window.setTimeout(() => fitPreviewRoute(900), 260)
-    else frame = window.requestAnimationFrame(() => fitPreviewRoute(900))
-    return () => { if (frame) window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
+    // The detail sheet and builder animate independently from the map. Run the
+    // fit once in the next frame and once after the mobile sheet transition;
+    // the latter observes the final visible-map area instead of the old,
+    // maximized builder height. This also makes reopening a preview reliable.
+    const frame = window.requestAnimationFrame(() => fitPreviewRoute(0))
+    const settleTimer = compact ? window.setTimeout(() => fitPreviewRoute(900), 460) : 0
+    return () => { window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
   }, [focusRoute, mapReady])
 
   useEffect(() => {
@@ -386,19 +385,28 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected?.route ?? [] } })
     ;(map.getSource('selected-contours') as GeoJSONSource | undefined)?.setData(toContourFeatureCollection(selected))
     ;(map.getSource('course-annotations') as GeoJSONSource | undefined)?.setData(toCourseAnnotationCollection(selected))
-    if (!selected) return
-    // Proposal previews use focusRoute after the builder sheet finishes its
-    // height transition. An immediate fit here would use stale occlusion.
-    if (selected.authorId === '__proposal_preview__') return
+    if (!selected || selected.route.length < 2) return
     const bounds = selected.route.reduce(
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
     )
-    map.fitBounds(bounds, {
-      padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }),
-      maxZoom: 12.5,
-      duration: 900,
-    })
+    const fitSelectedRoute = (duration: number) => {
+      map.stop()
+      map.resize()
+      map.fitBounds(bounds, {
+        padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }),
+        maxZoom: 12.5,
+        duration,
+        essential: true,
+      })
+    }
+    // Do not treat proposal previews as an exception. Both regular courses
+    // and previews use the same camera guarantee; the delayed pass accounts
+    // for the sheet changing from the builder to the detail view on mobile.
+    const frame = window.requestAnimationFrame(() => fitSelectedRoute(0))
+    const compact = window.matchMedia('(max-width: 760px)').matches
+    const settleTimer = compact ? window.setTimeout(() => fitSelectedRoute(900), 460) : 0
+    return () => { window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
   }, [selected, mapReady])
 
   useEffect(() => {

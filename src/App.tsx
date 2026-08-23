@@ -202,8 +202,13 @@ export default function App() {
     const followed = new Set(viewerProfile?.followingIds ?? [])
     const hidden = new Set(viewerProfile?.hiddenRouteIds ?? [])
     const visible = mode === 'none' ? [] : courses.filter((course) => !hidden.has(course.id) && (mode === 'all' || (mode === 'mine' && course.authorId === user?.uid) || (mode === 'friends' && (course.authorId === user?.uid || followed.has(course.authorId)))))
-    return [...visible, ...proposalPreviews]
-  }, [courses, proposalPreviews, user?.uid, viewerProfile?.followingIds, viewerProfile?.hiddenRouteIds, viewerProfile?.mapRouteVisibility])
+    // A course picked from the list must remain visible even when the user's
+    // background-map preference hides that category. Otherwise its detail can
+    // open with no corresponding route on the map, which is especially
+    // confusing for shared and proposal previews.
+    const selectedCourse = selected ? [selected] : []
+    return [...new Map([...visible, ...proposalPreviews, ...selectedCourse].map((course) => [course.id, course])).values()]
+  }, [courses, proposalPreviews, selected, user?.uid, viewerProfile?.followingIds, viewerProfile?.hiddenRouteIds, viewerProfile?.mapRouteVisibility])
 
   function saveSearchPreset() {
     if (!user || !viewerProfile) { setNotice('プリセットの保存にはログインが必要です'); return }
@@ -231,7 +236,10 @@ export default function App() {
 
   const selectCourse = useCallback((course: Course) => {
     setSelected(course)
-    if (course.authorId === '__proposal_preview__') setProposalFocusRoute([...course.route])
+    // Use one focus path for list routes, shared routes, and proposal previews.
+    // Cloning intentionally creates a fresh camera request when the same
+    // course is opened again after the sheet layout has changed.
+    setProposalFocusRoute([...course.route])
     setListCollapsed(true)
   }, [])
   const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
@@ -638,10 +646,10 @@ export default function App() {
             profileDirty.current = true; setViewerProfile(next); await saveUserProfileSettings(user, { hiddenRouteIds: next.hiddenRouteIds })
           } : undefined}
           isPreview={selected.authorId === '__proposal_preview__'}
-          previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) { setProposalFocusRoute([...next.route]); setSelected(next) } }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) { setProposalFocusRoute([...next.route]); setSelected(next) } }, onReturn: () => setSelected(null) } : undefined}
+          previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) selectCourse(next) }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) selectCourse(next) }, onReturn: () => setSelected(null) } : undefined}
           onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) { handleUseProposal(proposal); setSelected(null) } }}
         />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const preview = proposalPreviews.find((course) => course.id === `proposal-preview-${proposalId}`); if (preview) { setProposalFocusRoute([...preview.route]); setSelected(preview) } }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {timerOpen && selected && <DriveTimer course={selected} onClose={() => setTimerOpen(false)} />}

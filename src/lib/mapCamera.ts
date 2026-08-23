@@ -14,7 +14,10 @@ export interface CameraPadding {
   left: number
 }
 
-const MIN_VISIBLE_MAP_SIZE = 96
+// MapLibre refuses fitBounds when padding leaves only a very thin strip of
+// canvas. A detail sheet can cover most of a phone screen, so retain a real
+// viewport rather than merely the minimum needed to avoid a zero-sized box.
+const MIN_VISIBLE_MAP_SIZE = 180
 
 /**
  * Returns the part of the map hidden by bottom sheets at their current,
