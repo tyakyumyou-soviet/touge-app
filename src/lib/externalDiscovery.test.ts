@@ -57,8 +57,22 @@ describe('external road discovery', () => {
     const result = assessTougeSuitability(route, [100, 150, 210, 270, 350, 300, 230, 160], { highway: 'secondary', ref: 'R1', maxspeed: '50' })
     expect(result.eligible).toBe(true)
     expect(result.elevationRangeM).toBe(250)
+    expect(result.highPointM).toBe(350)
+    expect(result.averageElevationM).toBeGreaterThan(220)
+    expect(result.quietnessScore).toBeGreaterThan(4)
     expect(result.maxGradePct).toBeGreaterThan(3)
     expect(result.curveDensity).toBeGreaterThan(.18)
+  })
+
+  it('rejects junction-heavy slow routes even when their elevation looks mountainous', () => {
+    const route = [
+      [139, 35], [139.008, 35.008], [139.016, 35.004], [139.024, 35.012],
+      [139.032, 35.008], [139.04, 35.016], [139.048, 35.012], [139.056, 35.02],
+    ] as [number, number][]
+    const result = assessTougeSuitability(route, [100, 150, 210, 270, 350, 300, 230, 160], {}, { averageSpeedKmh: 22, stepDensity: 1.6 })
+    expect(result.eligible).toBe(false)
+    expect(result.reasons).toContain('生活道路・市街地らしさが強すぎます')
+    expect(result.quietnessScore).toBeLessThan(3)
   })
 
   it('rejects flat, settled roads even when their geometry contains turns', () => {

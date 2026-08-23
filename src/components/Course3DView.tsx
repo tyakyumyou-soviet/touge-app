@@ -415,14 +415,19 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     try {
       map = new maplibregl.Map({ container: containerRef.current, style: 'https://tiles.openfreemap.org/styles/liberty', center: course.route[Math.floor(course.route.length / 2)], zoom: 11, pitch: 70, bearing: -28, maxPitch: 85, attributionControl: false })
     } catch { setMapError('3D地図を初期化できませんでした。'); return }
+    map.on('error', (event) => {
+      const message = event.error?.message ?? ''
+      if (/Expected value to be of type number, but found null|terrain|DEM|tile/i.test(message)) return
+      console.warn('3D地図データの一部を読み込めませんでした', message)
+    })
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.addControl(new maplibregl.FullscreenControl(), 'top-right')
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     map.on('load', () => {
-      map.addSource('terrain-dem', { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
+      map.addSource('terrain-dem', { type: 'raster-dem', url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json', tileSize: 256, encoding: 'terrarium' })
       // MapLibre recommends separate raster-dem source instances for terrain
       // displacement and hillshade rendering, even when they share tile URLs.
-      map.addSource('hillshade-dem', { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, encoding: 'terrarium', maxzoom: 15 })
+      map.addSource('hillshade-dem', { type: 'raster-dem', url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json', tileSize: 256, encoding: 'terrarium' })
       map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'hillshade-dem', paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' } })
       map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 })
       map.addSource('course-contours', { type: 'geojson', data: toContourFeatureCollection(displayCourse) })

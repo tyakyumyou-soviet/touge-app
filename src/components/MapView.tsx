@@ -132,6 +132,15 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
       setMapError('地図を初期化できませんでした。端末のWebGL設定を確認してください。')
       return
     }
+    map.on('error', (event) => {
+      const message = event.error?.message ?? ''
+      // OpenFreeMap occasionally contains a nullable numeric vector attribute,
+      // and a single DEM tile can time out. MapLibre can render the remaining
+      // map normally, so consume these recoverable source errors instead of
+      // emitting an alarming application error stack.
+      if (/Expected value to be of type number, but found null|terrain|DEM|tile/i.test(message)) return
+      console.warn('地図データの一部を読み込めませんでした', message)
+    })
     // OpenFreeMap styles occasionally reference POI icons that are absent
     // from the current sprite sheet. MapLibre otherwise logs one error for
     // every affected tile. Supply a small neutral fallback so map rendering
@@ -170,10 +179,9 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     map.on('load', () => {
       map.addSource('terrain-dem', {
         type: 'raster-dem',
-        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json',
         tileSize: 256,
         encoding: 'terrarium',
-        maxzoom: 15,
       })
       map.addLayer({
         id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem',

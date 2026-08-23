@@ -19,6 +19,7 @@ interface OsrmRouteResponse {
     distance?: number
     duration?: number
     geometry?: { coordinates?: Array<[number, number]> }
+    legs?: Array<{ steps?: Array<{ distance?: number; duration?: number; name?: string }> }>
   }>
 }
 
@@ -131,7 +132,12 @@ function tollFromTags(tags: Record<string, string>): TollStatus {
   return 'unknown'
 }
 
-function residentialRisk(tags: Record<string, string>): number {
+interface RouteActivityContext {
+  averageSpeedKmh?: number
+  stepDensity?: number
+}
+
+function residentialRisk(tags: Record<string, string>, activity: RouteActivityContext = {}): number {
   let risk = 0
   if (tags.highway === 'unclassified') risk += 1.2
   if (!tags.ref) risk += .7
@@ -140,6 +146,13 @@ function residentialRisk(tags: Record<string, string>): number {
   if (tags.sidewalk && tags.sidewalk !== 'no') risk += .8
   const speed = Number.parseInt(tags.maxspeed ?? '', 10)
   if (Number.isFinite(speed) && speed <= 40) risk += 1
+  // OSRM does not expose population data, but frequent named manoeuvres are a
+  // useful proxy for junction-heavy built-up roads. Low speed is only counted
+  // together with junction density so a genuinely winding mountain road is
+  // not mistaken for a town centre merely because it is slow.
+  if ((activity.stepDensity ?? 0) >= 1.4) risk += 1.4
+  else if ((activity.stepDensity ?? 0) >= .8) risk += .7
+  if ((activity.averageSpeedKmh ?? 100) < 28 && (activity.stepDensity ?? 0) >= .6) risk += .8
   return risk
 }
 
@@ -150,6 +163,9 @@ export interface TougeSuitability {
   maxGradePct: number
   curveDensity: number
   settlementRisk: number
+  highPointM: number
+  averageElevationM: number
+  quietnessScore: number
   reasons: string[]
 }
 
@@ -158,17 +174,21 @@ export interface TougeSuitability {
  * deliberately conservative thresholds keep ordinary city/connector roads
  * out of a 峠 finder even when a router happens to draw a pleasant line.
  */
-export function assessTougeSuitability(route: Coordinate[], elevations: number[], tags: Record<string, string> = {}): TougeSuitability {
+export function assessTougeSuitability(route: Coordinate[], elevations: number[], tags: Record<string, string> = {}, activity: RouteActivityContext = {}): TougeSuitability {
   const lengthKm = routeDistanceKm(route)
   const elevationRangeM = elevations.length ? Math.max(...elevations) - Math.min(...elevations) : 0
+  const highPointM = elevations.length ? Math.max(...elevations) : 0
+  const averageElevationM = elevations.length ? elevations.reduce((sum, value) => sum + value, 0) / elevations.length : 0
   const totalAscentM = elevations.slice(1).reduce((sum, value, index) => sum + Math.max(0, value - elevations[index]), 0)
   const sampleDistanceM = elevations.length > 1 ? lengthKm * 1000 / (elevations.length - 1) : 0
   const maxGradePct = elevations.slice(1).reduce((maximum, value, index) => Math.max(maximum, Math.abs(value - elevations[index]) / Math.max(1, sampleDistanceM) * 100), 0)
   const density = curveDensity(route)
-  const settlementRisk = residentialRisk(tags)
+  const settlementRisk = residentialRisk(tags, activity)
+  const quietnessScore = Math.max(1, Math.min(5, 5 - settlementRisk * 1.25))
   const reasons: string[] = []
   if (lengthKm < 4) reasons.push('峠区間として短すぎます')
   if (elevationRangeM < 150 || totalAscentM < 180) reasons.push('峠として十分な高低差がありません')
+  if (highPointM < 220) reasons.push('山地として十分な標高に達していません')
   if (maxGradePct < 3.5) reasons.push('勾配が峠道の基準に達しません')
   if (density < .25) reasons.push('峠らしい連続カーブが不足しています')
   if (settlementRisk > 2.1) reasons.push('生活道路・市街地らしさが強すぎます')
@@ -179,6 +199,9 @@ export function assessTougeSuitability(route: Coordinate[], elevations: number[]
     maxGradePct: Number(maxGradePct.toFixed(1)),
     curveDensity: Number(density.toFixed(2)),
     settlementRisk: Number(settlementRisk.toFixed(1)),
+    highPointM: Math.round(highPointM),
+    averageElevationM: Math.round(averageElevationM),
+    quietnessScore: Number(quietnessScore.toFixed(1)),
     reasons,
   }
 }
@@ -231,16 +254,25 @@ function routeCandidateTargets(center: Coordinate, radiusKm: number, count: numb
   })
 }
 
-async function fetchRoutedRoad(stops: Coordinate[]): Promise<{ route: Coordinate[], distanceKm: number } | null> {
+async function fetchRoutedRoad(stops: Coordinate[]): Promise<{ route: Coordinate[], distanceKm: number, averageSpeedKmh: number, stepDensity: number } | null> {
   const coordinates = stops.map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
-  const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`, { cache: 'no-store' })
+  const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`, { cache: 'no-store' })
   if (!response.ok) throw new Error(`公開道路ルーティングエラー (${response.status})`)
   const data = await response.json() as OsrmRouteResponse
   const candidate = data.routes?.[0]
   const route = (candidate?.geometry?.coordinates ?? []).map(([lng, lat]) => [lng, lat] as Coordinate)
   const distanceMeters = candidate?.distance
   if (data.code !== 'Ok' || route.length < 3 || !Number.isFinite(distanceMeters)) return null
-  return { route, distanceKm: Number((distanceMeters! / 1000).toFixed(1)) }
+  const distanceKm = distanceMeters! / 1000
+  const durationHours = Number(candidate?.duration) / 3600
+  const steps = candidate?.legs?.flatMap((leg) => leg.steps ?? []) ?? []
+  const meaningfulSteps = steps.filter((step) => Number(step.distance) >= 35)
+  return {
+    route,
+    distanceKm: Number(distanceKm.toFixed(1)),
+    averageSpeedKmh: Number((Number.isFinite(durationHours) && durationHours > 0 ? distanceKm / durationHours : 50).toFixed(1)),
+    stepDensity: Number((meaningfulSteps.length / Math.max(1, distanceKm)).toFixed(2)),
+  }
 }
 
 async function discoverRoutedDriveProposals(request: DriveProposalRequest): Promise<DriveProposal[]> {
@@ -263,14 +295,20 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
     const elevation = await fetchElevationProfile(sampled(routed.route, 30))
     if (elevation.source !== '国土地理院 標高API') return null
-    const suitability = assessTougeSuitability(routed.route, elevation.values)
+    const suitability = assessTougeSuitability(routed.route, elevation.values, {}, {
+      averageSpeedKmh: routed.averageSpeedKmh,
+      stepDensity: routed.stepDensity,
+    })
     if (!suitability.eligible) return null
     const width = 3.4
+    const mountainBonus = suitability.elevationRangeM / 130 + suitability.totalAscentM / 260
+      + suitability.highPointM / 420 + suitability.averageElevationM / 650
+    const quietnessBonus = suitability.quietnessScore * 1.15
     const styleScore = request.style === 'winding'
-      ? suitability.curveDensity * 7 + suitability.elevationRangeM / 220
+      ? suitability.curveDensity * 7 + mountainBonus + quietnessBonus
       : request.style === 'easy'
-        ? width * 1.6 - suitability.curveDensity * .35
-        : suitability.curveDensity * 4 + width + suitability.elevationRangeM / 480
+        ? width * 1.6 - suitability.curveDensity * .35 + mountainBonus + quietnessBonus
+        : suitability.curveDensity * 4 + width + mountainBonus + quietnessBonus
     return {
       id: `router-${Math.round(request.center[0] * 10000)}-${Math.round(request.center[1] * 10000)}-${index}`,
       source: 'openstreetmap' as const,
@@ -288,7 +326,9 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
         request.requiredPoints.length ? '峠適格判定を通過した必須地点経由ルート' : '峠適格判定を通過した公開道路ルート',
         ...(request.requiredPoints.length ? [`必須地点 ${request.requiredPoints.map((point) => point.label).join('、')} を通過`] : []),
         `高低差 ${suitability.elevationRangeM}m · 累積上り ${suitability.totalAscentM}m`,
+        `最高標高 ${suitability.highPointM}m · 平均標高 ${suitability.averageElevationM}m`,
         `最大勾配 ${suitability.maxGradePct}% · カーブ密度 ${suitability.curveDensity.toFixed(1)} 回/km`,
+        `人通りの少なさ推定 ${suitability.quietnessScore.toFixed(1)} / 5`,
       ],
       validation: { ...validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
@@ -387,8 +427,9 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
     if (elevation.source !== '国土地理院 標高API') return null
     const suitability = assessTougeSuitability(item.route, elevation.values, item.tags)
     if (!suitability.eligible) return null
-    const gradeBonus = Math.min(3, suitability.elevationRangeM / 180 + suitability.maxGradePct / 4)
-    const score = item.score + gradeBonus
+    const mountainBonus = suitability.elevationRangeM / 130 + suitability.totalAscentM / 260
+      + suitability.highPointM / 420 + suitability.averageElevationM / 650
+    const score = item.score + mountainBonus + suitability.quietnessScore * 1.15
     const name = item.tags.name || item.tags.ref || `${Math.round(request.radiusKm)}km圏の峠道`
     const tollStatus = tollFromTags(item.tags)
     return {
@@ -409,8 +450,10 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       reasons: [
         '峠適格判定を通過した山間道路',
         `高低差 ${suitability.elevationRangeM}m · 累積上り ${suitability.totalAscentM}m`,
+        `最高標高 ${suitability.highPointM}m · 平均標高 ${suitability.averageElevationM}m`,
         `最大勾配 ${suitability.maxGradePct}% · カーブ密度 ${suitability.curveDensity.toFixed(1)} 回/km`,
         `推定道幅スコア ${item.width.toFixed(1)} / 5`,
+        `人通りの少なさ推定 ${suitability.quietnessScore.toFixed(1)} / 5`,
         item.housingRisk <= 1 ? '生活道路・市街地要素が少ない区間を優先' : '市街地要素を減点して選定',
       ],
       validation: { ...item.validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },

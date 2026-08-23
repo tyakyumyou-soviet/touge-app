@@ -113,15 +113,6 @@ export default defineConfig({
             }
           },
           {
-            urlPattern: /^https:\/\/s3\.amazonaws\.com\/elevation-tiles-prod\//,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'terrain-tiles',
-              cacheableResponse: { statuses: [0, 200] },
-              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 7 }
-            }
-          },
-          {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
             handler: 'StaleWhileRevalidate',
             options: {
