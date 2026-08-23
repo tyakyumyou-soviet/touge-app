@@ -13,6 +13,7 @@ interface MapViewProps {
   courses: Course[]
   selected: Course | null
   previewCourseIds: string[]
+  previewFocusRequest?: number
   is3d: boolean
   drawing: boolean
   draftRoute: Coordinate[]
@@ -86,7 +87,7 @@ const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number 
   }],
 })
 
-export function MapView({ courses, selected, previewCourseIds, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, focusRoute, pendingSearchPoint, pendingSearchLabel, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, previewCourseIds, previewFocusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, focusRoute, pendingSearchPoint, pendingSearchLabel, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -418,6 +419,31 @@ export function MapView({ courses, selected, previewCourseIds, is3d, drawing, dr
     const settleTimer = compact ? window.setTimeout(() => fitSelectedRoute(900), 460) : 0
     return () => { window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
   }, [selected, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const container = containerRef.current
+    // The builder and preview sheet animate separately. A final camera pass
+    // after both transitions guarantees that the proposal remains visible.
+    if (!map || !container || !previewFocusRequest || selected?.authorId !== '__proposal_preview__' || selected.route.length < 2) return
+    const bounds = selected.route.reduce(
+      (value, point) => value.extend(point),
+      new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
+    )
+    const fitPreview = (duration: number) => {
+      map.stop()
+      map.resize()
+      map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration, essential: true })
+    }
+    const first = window.requestAnimationFrame(() => fitPreview(0))
+    const afterSheetReset = window.setTimeout(() => fitPreview(500), 240)
+    const afterDetailAnimation = window.setTimeout(() => fitPreview(850), 680)
+    return () => {
+      window.cancelAnimationFrame(first)
+      window.clearTimeout(afterSheetReset)
+      window.clearTimeout(afterDetailAnimation)
+    }
+  }, [previewFocusRequest, selected, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
