@@ -462,6 +462,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .maplibregl-ctrl-top-right { top: 59px; right: 10px; }
   .explore-panel { inset: auto 8px 8px; width: auto; max-height: 68%; padding: 0 12px 0; transform: translateY(calc(100% + 20px)); transition: max-height .22s ease, transform .25s ease; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 15px 50px #101d1760; }
   .explore-panel.open { transform: translateY(0); }
+  /* A detail sheet replaces discovery while it is open. Leaving the collapsed
+     tray visible underneath made the two sheets look stacked and gave the map
+     an accidental second interaction target. */
+  .explore-panel.covered-by-detail { transform: translateY(calc(100% + 20px)) !important; pointer-events: none; }
   .explore-panel.expanded { max-height: calc(100dvh - 76px); }
   .explore-panel.dragging { transition: none; }
   .explore-panel.collapsed { overflow: hidden; }
@@ -475,7 +479,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .course-card h3 { margin-bottom: 7px; }
   .map-tools { left: 10px; top: 10px; }
   .map-tools button { height: 38px; }
-  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 71%; border-radius: 18px; animation: detailUp .24s ease-out; transition: max-height .22s ease, transform .22s ease; }
+  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 62dvh; border-radius: 18px; animation: detailUp .24s ease-out; transition: max-height .22s ease, transform .22s ease; }
   .detail-panel.expanded { max-height: calc(100dvh - 76px); }
   .detail-panel.dragging { transition: none; }
   .detail-panel.collapsed { overflow: hidden; }
