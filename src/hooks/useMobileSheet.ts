@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
+import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
 
 /** Shared gesture contract for every mobile bottom sheet (機能A).
  * Attach dragProps to the sheet's entire non-interactive top region and apply
@@ -13,22 +13,24 @@ export function useMobileSheet() {
   const [offset, setOffset] = useState(0)
   const isMobile = () => window.matchMedia('(max-width: 760px)').matches
 
-  function start(event: ReactPointerEvent<HTMLDivElement>) {
+  function start(event: ReactPointerEvent<HTMLElement>) {
     if (!isMobile() || (event.target as Element).closest('button,input,select,textarea,a,label,[data-sheet-no-drag]')) return
+    const scrollSurface = (event.target as Element).closest<HTMLElement>('[data-sheet-scroll]')
+    if ((scrollSurface?.scrollTop ?? event.currentTarget.scrollTop) > 1) return
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Capture is optional in synthetic tests. */ }
     drag.current = { pointerId: event.pointerId, y: event.clientY, moved: false }
     setDragging(true)
   }
 
-  function move(event: ReactPointerEvent<HTMLDivElement>) {
+  function move(event: ReactPointerEvent<HTMLElement>) {
     const active = drag.current
     if (!active || active.pointerId !== event.pointerId) return
     const distance = event.clientY - active.y
     if (Math.abs(distance) > 8) active.moved = true
-    setOffset(collapsed ? Math.min(0, distance) : Math.max(0, distance))
+    setOffset(collapsed ? Math.min(0, distance) : expanded ? Math.max(0, distance) : Math.max(-180, distance))
   }
 
-  function end(event: ReactPointerEvent<HTMLDivElement>) {
+  function end(event: ReactPointerEvent<HTMLElement>) {
     const active = drag.current
     if (!active || active.pointerId !== event.pointerId) return
     const distance = event.clientY - active.y
@@ -54,12 +56,12 @@ export function useMobileSheet() {
    * Lets a scrollable sheet body hand a downward pull to the sheet once it has
    * reached its top. This keeps the native scroll behaviour everywhere else.
    */
-  function startScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
+  function startScrollDrag(event: ReactTouchEvent<HTMLElement>) {
     if (!isMobile() || event.touches.length !== 1 || event.currentTarget.scrollTop > 1) return
     scrollDrag.current = { y: event.touches[0].clientY, active: false }
   }
 
-  function moveScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
+  function moveScrollDrag(event: ReactTouchEvent<HTMLElement>) {
     const active = scrollDrag.current
     if (!active || event.touches.length !== 1) return
     const distance = event.touches[0].clientY - active.y
@@ -77,7 +79,7 @@ export function useMobileSheet() {
     setOffset(Math.max(0, distance))
   }
 
-  function endScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
+  function endScrollDrag(event: ReactTouchEvent<HTMLElement>) {
     const active = scrollDrag.current
     if (!active) return
     const endY = event.changedTouches[0]?.clientY ?? active.y
@@ -89,7 +91,7 @@ export function useMobileSheet() {
     settle(distance)
   }
 
-  function tap(event: ReactPointerEvent<HTMLDivElement>) {
+  function tap(event: ReactMouseEvent<HTMLElement>) {
     if (!isMobile() || ignoreTap.current || !collapsed || (event.target as Element).closest('button,input,select,textarea,a,label,[data-sheet-no-drag]')) return
     setCollapsed(false)
     setExpanded(false)
@@ -115,6 +117,8 @@ export function useMobileSheet() {
     className,
     style,
     reset,
+    // Attach to the full sheet surface. Interactive controls and a scrolled
+    // body are excluded above, so form/list operation remains native.
     dragProps: { onPointerDown: start, onPointerMove: move, onPointerUp: end, onPointerCancel: end, onClick: tap },
     scrollProps: { onTouchStart: startScrollDrag, onTouchMove: moveScrollDrag, onTouchEnd: endScrollDrag, onTouchCancel: endScrollDrag },
   }

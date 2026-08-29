@@ -1,11 +1,18 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, TouchEvent as ReactTouchEvent } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, overallRating, userRatingCountFor } from '../lib/course'
 import { courseTollStatus, tollStatusLabels } from '../lib/toll'
 
-export function CourseList({ courses, selectedId, onSelect, header }: { courses: Course[]; selectedId?: string; onSelect: (course: Course) => void; header?: ReactNode }) {
+type ScrollProps = {
+  onTouchStart: (event: ReactTouchEvent<HTMLDivElement>) => void
+  onTouchMove: (event: ReactTouchEvent<HTMLDivElement>) => void
+  onTouchEnd: (event: ReactTouchEvent<HTMLDivElement>) => void
+  onTouchCancel: (event: ReactTouchEvent<HTMLDivElement>) => void
+}
+
+export function CourseList({ courses, selectedId, onSelect, header, scrollProps }: { courses: Course[]; selectedId?: string; onSelect: (course: Course) => void; header?: ReactNode; scrollProps?: ScrollProps }) {
   return (
-    <div className="course-list" aria-live="polite">
+    <div className="course-list" data-sheet-scroll aria-live="polite" {...scrollProps}>
       {header}
       {courses.length === 0 && <div className="empty-state"><strong>条件に合うコースがありません</strong><span>フィルターを変更してみてください。</span></div>}
       {courses.map((course) => (

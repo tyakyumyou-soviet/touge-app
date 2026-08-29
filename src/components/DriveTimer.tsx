@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Coordinate, Course } from '../types'
+import { useMobileSheet } from '../hooks/useMobileSheet'
 
 const STORAGE_KEY = 'touge-drive-times-v1'
 interface DriveTime { id: string; courseId: string; durationMs: number; mode: 'manual' | 'auto'; finishedAt: string }
@@ -19,6 +20,7 @@ function readTimes(courseId: string): DriveTime[] {
 interface Props { course: Course; onClose: () => void }
 
 export function DriveTimer({ course, onClose }: Props) {
+  const sheet = useMobileSheet()
   const [mode, setMode] = useState<'manual' | 'auto'>('manual')
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -86,5 +88,5 @@ export function DriveTimer({ course, onClose }: Props) {
   }
   const format = (value: number) => { const seconds = Math.floor(value / 1000); return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}` }
 
-  return <div className="modal-backdrop" role="presentation"><section className="modal drive-timer" role="dialog" aria-modal="true" aria-labelledby="drive-timer-title"><header><div><p className="eyebrow">DRIVE TIMER</p><h2 id="drive-timer-title">{course.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></header><div className="timer-value" aria-live="off">{format(elapsed)}</div><div className="timer-mode"><button className={mode === 'manual' ? 'active' : ''} onClick={() => changeMode('manual')}>手動</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => changeMode('auto')}>位置情報で自動</button></div><p role="status">{status}</p><div className="timer-actions"><button className="button secondary" onClick={reset}>リセット</button><button className="button primary" onClick={() => running ? stop() : mode === 'auto' ? startAutomatic() : begin()}>{running ? '停止して記録' : mode === 'auto' ? '自動計測を待機' : '開始'}</button></div>{history.length > 0 && <section className="timer-history"><h3>このコースの最近の記録</h3>{history.map((item) => <div key={item.id}><strong>{format(item.durationMs)}</strong><span>{item.mode === 'auto' ? '自動' : '手動'} · {new Date(item.finishedAt).toLocaleDateString('ja-JP')}</span></div>)}</section>}<small>記録は端末に保存されるためオフラインでも利用できます。位置共有とは独立しており、他のユーザーには公開されません。</small></section></div>
+  return <div className="modal-backdrop" role="presentation"><section className={`modal drive-timer ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="drive-timer-title" {...sheet.dragProps}><div className="mobile-sheet-drag-region"><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">DRIVE TIMER</p><h2 id="drive-timer-title">{course.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></header></div><div className="timer-value" aria-live="off">{format(elapsed)}</div><div className="timer-mode"><button className={mode === 'manual' ? 'active' : ''} onClick={() => changeMode('manual')}>手動</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => changeMode('auto')}>位置情報で自動</button></div><p role="status">{status}</p><div className="timer-actions"><button className="button secondary" onClick={reset}>リセット</button><button className="button primary" onClick={() => running ? stop() : mode === 'auto' ? startAutomatic() : begin()}>{running ? '停止して記録' : mode === 'auto' ? '自動計測を待機' : '開始'}</button></div>{history.length > 0 && <section className="timer-history"><h3>このコースの最近の記録</h3>{history.map((item) => <div key={item.id}><strong>{format(item.durationMs)}</strong><span>{item.mode === 'auto' ? '自動' : '手動'} · {new Date(item.finishedAt).toLocaleDateString('ja-JP')}</span></div>)}</section>}<small>記録は端末に保存されるためオフラインでも利用できます。位置共有とは独立しており、他のユーザーには公開されません。</small></section></div>
 }

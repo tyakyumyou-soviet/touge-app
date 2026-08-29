@@ -406,7 +406,12 @@ async function fetchOverpass(query: string): Promise<OverpassResult> {
     // Never fall back to a browser-to-Overpass request in production. Public
     // mirrors generally reject that with CORS, which both fails discovery and
     // pollutes the console. The Netlify relay owns mirror retries instead.
-    const response = await fetch(`${ROAD_DISCOVERY_RELAY}?data=${data}`, { method: 'GET', signal: controller.signal, cache: 'no-store' })
+    // Production uses POST so a long Overpass query does not exceed proxy/CDN
+    // URL limits or flood the browser console. The Vite relay intentionally
+    // keeps GET support for local development without a request-body parser.
+    const response = import.meta.env.DEV
+      ? await fetch(`${ROAD_DISCOVERY_RELAY}?data=${data}`, { method: 'GET', signal: controller.signal, cache: 'no-store' })
+      : await fetch(ROAD_DISCOVERY_RELAY, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }), signal: controller.signal, cache: 'no-store' })
     if (!response.ok) {
       const failure = await response.json().catch(() => null) as { error?: unknown } | null
       const detail = typeof failure?.error === 'string' ? failure.error : `道路データ取得エラー (${response.status})`

@@ -216,8 +216,8 @@ export async function updateCourse(courseId: string, changes: Pick<Course, 'name
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 
-/** Persist a verified elevation repair as one atomic course update. Estimated
- * profiles are intentionally never written through this path. */
+/** Replace a saved profile with newly verified elevation data as one atomic
+ * update. Initial estimated profiles remain saved until this repair succeeds. */
 export async function updateCourseElevation(courseId: string, changes: Pick<Course, 'elevationProfile' | 'elevationSource' | 'minElevation' | 'maxElevation' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt'>): Promise<void> {
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }

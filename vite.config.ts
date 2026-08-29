@@ -3,10 +3,21 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const LOCAL_OVERPASS_ENDPOINTS = [
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
+
+function compactDiscoveryQuery(query: string) {
+  const radiusMatch = query.match(/way\(around:(\d+),/)
+  const originalRadius = Number(radiusMatch?.[1])
+  if (!Number.isFinite(originalRadius) || originalRadius <= 4500) return query
+  const compactRadius = Math.max(4500, Math.round(originalRadius * .58))
+  return query
+    .replace(/way\(around:\d+,/, `way(around:${compactRadius},`)
+    .replace(/out tags geom \d+;/, 'out tags geom 28;')
+    .replace('[timeout:20]', '[timeout:14]')
+}
 
 /** Keep local discovery behaviour aligned with the production Netlify relay. */
 function localRoadDiscoveryRelay() {
@@ -21,13 +32,13 @@ function localRoadDiscoveryRelay() {
           response.end(JSON.stringify({ error: '道路探索クエリが不正です' }))
           return
         }
-        const attempts = LOCAL_OVERPASS_ENDPOINTS.map(async (endpoint) => {
+        const requestUpstream = async (endpoint: string, requestQuery: string) => {
           const controller = new AbortController()
           const timer = setTimeout(() => controller.abort(), 18_000)
           try {
             const upstream = await fetch(endpoint, {
               method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-              body: new URLSearchParams({ data: query }), signal: controller.signal,
+              body: new URLSearchParams({ data: requestQuery }), signal: controller.signal,
             })
             if (!upstream.ok) throw new Error(`Overpass API ${upstream.status}`)
             const body = await upstream.text()
@@ -35,7 +46,12 @@ function localRoadDiscoveryRelay() {
             if (!Array.isArray(parsed.elements)) throw new Error('Overpass APIの応答形式が不正です')
             return body
           } finally { clearTimeout(timer) }
-        })
+        }
+        const compactQuery = compactDiscoveryQuery(query)
+        const attempts = [
+          ...LOCAL_OVERPASS_ENDPOINTS.map((endpoint) => requestUpstream(endpoint, query)),
+          ...(compactQuery === query ? [] : [requestUpstream(LOCAL_OVERPASS_ENDPOINTS[0], compactQuery)]),
+        ]
         try {
           const body = await Promise.any(attempts)
           response.statusCode = 200

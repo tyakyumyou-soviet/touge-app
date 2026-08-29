@@ -198,9 +198,12 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     const defaultProjection = [...left, ...right].map((point) => projectPoint(point, defaultYaw, 49))
     const xExtent = Math.max(...defaultProjection.map(([x]) => x)) - Math.min(...defaultProjection.map(([x]) => x))
     const yExtent = Math.max(...defaultProjection.map(([, y]) => y)) - Math.min(...defaultProjection.map(([, y]) => y))
-    // Never enlarge a short route merely to fill the canvas.  The fit only prevents
-    // a long / tall route from being clipped, retaining meaningful distance scaling.
-    const autoFit = Math.min(1, .96 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
+    // Fill the available viewport without clipping. The old upper bound of 1
+    // left short or north-south routes as a tiny model in a mostly empty canvas.
+    // Distance is still represented by sceneScale; this bounded presentation
+    // fit only makes the selected course legible on the current screen.
+    const maximumPresentationFit = compactModel ? 1.6 : 1.25
+    const autoFit = Math.min(maximumPresentationFit, .94 * Math.min(830 / Math.max(1, xExtent), 310 / Math.max(1, yExtent)))
     return { centers, elevations: sampled.map(({ elevation }) => elevation), autoFit, defaultYaw, sceneScale, centerLng, centerLat, kmPerLongitude, elevationMin, verticalCompression, verticalScale }
   }, [compactModel, course.distanceKm, course.route, exaggeration, profile, terrainGrid])
   const effectiveZoom = model.autoFit * modelZoom
@@ -221,7 +224,7 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
   }, [course, needsElevationRepair, onElevationRepaired])
 
   useEffect(() => {
-    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: compactModel ? 1.75 : 1.35, pan: [0, 0] }, true)
+    applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: compactModel ? 2.15 : 1.45, pan: [0, 0] }, true)
   }, [compactModel, course.id, model.defaultYaw])
 
   useEffect(() => {
@@ -362,13 +365,16 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
   }, [effectiveZoom, modelLandmarks])
   const distanceMarkers = useMemo(() => {
     const markers: { distance: number; x: number; y: number; point: Point3; depth: number }[] = []
-    for (let distance = 5; distance < course.distanceKm; distance += 5) {
+    // Long routes used to place a label every 5 km even on a narrow phone,
+    // obscuring the IC/place labels that are more useful to the driver.
+    const interval = compactModel && course.distanceKm > 25 ? 10 : 5
+    for (let distance = interval; distance < course.distanceKm; distance += interval) {
       const point = model.centers[Math.round((distance / course.distanceKm) * (model.centers.length - 1))]
       const [x, y] = projectPoint(point, modelYaw, modelPitch, effectiveZoom, modelPan)
       markers.push({ distance, x, y, point, depth: viewDepth(point, modelYaw, modelPitch) - 9 })
     }
     return markers
-  }, [course.distanceKm, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
+  }, [compactModel, course.distanceKm, effectiveZoom, model.centers, modelPan, modelPitch, modelYaw])
   const gradeSegments = useMemo(() => model.centers.slice(1).map((point, index) => {
     const before = model.centers[index]
     const horizontalMetres = (Math.hypot(point[0] - before[0], point[1] - before[1]) / model.sceneScale) * 1000
@@ -639,7 +645,7 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
       </nav>
       {mode === 'preview' && <section className="preview-panel" aria-label="走行プレビュー操作"><div><strong>{Math.round(progress * 100)}%</strong><span>{currentElevation}m · 残り {((1 - progress) * course.distanceKm).toFixed(1)}km</span></div><input aria-label="走行プレビュー位置" type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => selectProgress(Number(event.target.value))} /><button onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '一時停止' : progress >= 1 ? '最初から' : '再生'}</button></section>}
       {mode === 'model' && <section className={`route-model-panel ${repairingProfile ? 'profile-repairing' : ''}`} aria-label="3Dルート模型" aria-busy={repairingProfile}>
-        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: compactModel ? 1.75 : 1.35, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: compactModel ? 1.9 : 1.5, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: compactModel ? 1.8 : 1.4, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: compactModel ? 1.85 : 1.45, pan: [0, 0] })}>カーブ</button></div></div>
+        <div className="model-tools"><div className="model-preset-buttons"><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 49, zoom: compactModel ? 2.15 : 1.45, pan: [0, 0] })}>全体</button><button onClick={() => applyModelView({ yaw: model.defaultYaw, pitch: 8, zoom: compactModel ? 2.3 : 1.6, pan: [0, 0] })}>横から</button><button onClick={() => applyModelView({ yaw: model.defaultYaw + 35, pitch: 62, zoom: compactModel ? 2.2 : 1.5, pan: [0, 0] })}>進行方向</button><button onClick={() => applyModelView({ yaw: model.defaultYaw - 55, pitch: 72, zoom: compactModel ? 2.25 : 1.55, pan: [0, 0] })}>カーブ</button></div></div>
         {repairingProfile && <div className="model-profile-loading" role="status"><span aria-hidden="true" /><strong>標高データを再計算中</strong><small>このコースの古い異常波形を修復しています</small></div>}
         {terrainStatus === 'loading' && <div className="model-terrain-status" role="status"><span aria-hidden="true" />周辺地形を読み込み中</div>}
         {terrainStatus === 'fallback' && <div className="model-terrain-status fallback" role="status">地形データを取得できないため簡易地形を表示中</div>}

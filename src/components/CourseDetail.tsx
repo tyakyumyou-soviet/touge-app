@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useState } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
 import { courseTollStatus, tollStatusLabels } from '../lib/toll'
@@ -7,6 +7,7 @@ import { fetchCurrentWeather, type CurrentWeather } from '../lib/liveWeather'
 import type { LiveRoadInfo } from '../types'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
+import { useMobileSheet } from '../hooks/useMobileSheet'
 
 interface Props {
   course: Course
@@ -29,11 +30,7 @@ interface Props {
 }
 
 export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, previewNavigation }: Props) {
-  const sheetDrag = useRef<{ pointerId: number; y: number } | null>(null)
-  const [sheetOffset, setSheetOffset] = useState(0)
-  const [sheetDragging, setSheetDragging] = useState(false)
-  const [sheetExpanded, setSheetExpanded] = useState(false)
-  const [sheetCollapsed, setSheetCollapsed] = useState(false)
+  const sheet = useMobileSheet()
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
@@ -51,47 +48,12 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
     return () => { cancelled = true }
   }, [course.id, course.route])
 
-  function startSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    event.currentTarget.setPointerCapture(event.pointerId)
-    sheetDrag.current = { pointerId: event.pointerId, y: event.clientY }
-    setSheetDragging(true)
-  }
-  function moveSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    const drag = sheetDrag.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const distance = event.clientY - drag.y
-    setSheetOffset(sheetCollapsed ? Math.min(0, distance) : Math.max(0, distance))
-  }
-  function endSheetDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    const drag = sheetDrag.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const distance = event.clientY - drag.y
-    sheetDrag.current = null
-    setSheetDragging(false)
-    setSheetOffset(0)
-    if (sheetCollapsed) {
-      if (distance < -24) setSheetCollapsed(false)
-      return
-    }
-    if (distance > 82) setSheetCollapsed(true)
-    else if (distance < -42) setSheetExpanded(true)
-    else if (distance > 24) setSheetExpanded(false)
-  }
-
-  function tapSheetHandle() {
-    if (sheetCollapsed) {
-      setSheetCollapsed(false)
-      setSheetExpanded(false)
-      setSheetOffset(0)
-    }
-  }
-
   return (
-    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${isPreview ? 'proposal-preview-detail' : ''} ${sheetExpanded ? 'expanded' : ''} ${sheetCollapsed ? 'collapsed' : ''} ${sheetDragging ? 'dragging' : ''}`} style={{ transform: sheetCollapsed ? `translateY(calc(100% - 54px + ${sheetOffset}px))` : sheetOffset ? `translateY(${sheetOffset}px)` : undefined }} aria-label={`${course.name}の詳細`}>
-      <div className="detail-sheet-top" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}>
+    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${isPreview ? 'proposal-preview-detail' : ''} ${sheet.className}`} style={sheet.style} aria-label={`${course.name}の詳細`} {...sheet.dragProps}>
+      <div className="detail-sheet-top">
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
       </div>
-      <div className="detail-scroll">
+      <div className="detail-scroll" data-sheet-scroll {...sheet.scrollProps}>
         <header className="detail-header">
           <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
           <div className="detail-header-actions">
@@ -154,7 +116,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         <div className="navigation-direction"><span>{navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => setNavigationReversed((value) => !value)}>⇄ 始点とゴールを入れ替える</button></div>
         <div className="navigation-links"><a className="button secondary" href={googleMapsUrl(course, false, navigationReversed)} target="_blank" rel="noreferrer">コースだけ開く</a><a className="button primary" href={googleMapsUrl(course, true, navigationReversed)} target="_blank" rel="noreferrer">現在地から案内</a></div>
       </footer>
-      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" onPointerDown={startSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={tapSheetHandle}><span>{course.name}</span></div>
+      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示"><span>{course.name}</span></div>
     </article>
   )
 }
