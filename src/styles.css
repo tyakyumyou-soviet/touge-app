@@ -502,7 +502,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .nav-actions { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
   .modal-backdrop { padding: 7px; place-items: end center; }
   .modal-backdrop:has(.mobile-sheet.collapsed) { pointer-events: none; background: transparent; backdrop-filter: none; }
-  .mobile-sheet { position: relative; pointer-events: auto; transition: max-height .22s ease, transform .25s ease; }
+  /* Detail is an absolutely positioned map sheet. Restrict the generic
+     positioning rule so it cannot turn CourseDetail into normal document
+     flow and make it appear from the top of the page. */
+  .mobile-sheet:not(.detail-panel) { position: relative; }
+  .mobile-sheet { pointer-events: auto; transition: max-height .22s ease, transform .25s ease; }
   .mobile-sheet.expanded { max-height: calc(100dvh - 14px); }
   .mobile-sheet.dragging { transition: none; }
   .mobile-sheet.collapsed { overflow: hidden; }
