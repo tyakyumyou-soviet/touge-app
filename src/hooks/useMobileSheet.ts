@@ -98,6 +98,14 @@ export function useMobileSheet() {
     setOffset(0)
   }
 
+  /** Expand only from an explicit tap on a component's designated top area. */
+  function expandOnTap(event: ReactMouseEvent<HTMLElement>) {
+    if (!isMobile() || ignoreTap.current || (event.target as Element).closest('button,input,select,textarea,a,label,[data-sheet-no-drag]')) return
+    setCollapsed(false)
+    setExpanded(true)
+    setOffset(0)
+  }
+
   function reset() {
     drag.current = null
     scrollDrag.current = null
@@ -117,6 +125,7 @@ export function useMobileSheet() {
     className,
     style,
     reset,
+    expandOnTap,
     // Attach to the full sheet surface. Interactive controls and a scrolled
     // body are excluded above, so form/list operation remains native.
     dragProps: { onPointerDown: start, onPointerMove: move, onPointerUp: end, onPointerCancel: end, onClick: tap },

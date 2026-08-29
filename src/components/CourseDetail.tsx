@@ -49,8 +49,8 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   }, [course.id, course.route])
 
   return (
-    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${isPreview ? 'proposal-preview-detail' : ''} ${sheet.className}`} style={sheet.style} aria-label={`${course.name}の詳細`} {...sheet.dragProps}>
-      <div className="detail-sheet-top">
+    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${isPreview ? 'proposal-preview-detail' : ''} ${sheet.className}`} style={sheet.style} aria-label={`${course.name}の詳細`}>
+      <div className="detail-sheet-top" {...sheet.dragProps} onClick={sheet.expandOnTap}>
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
       </div>
       <div className="detail-scroll" data-sheet-scroll {...sheet.scrollProps}>
@@ -116,7 +116,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         <div className="navigation-direction"><span>{navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => setNavigationReversed((value) => !value)}>⇄ 始点とゴールを入れ替える</button></div>
         <div className="navigation-links"><a className="button secondary" href={googleMapsUrl(course, false, navigationReversed)} target="_blank" rel="noreferrer">コースだけ開く</a><a className="button primary" href={googleMapsUrl(course, true, navigationReversed)} target="_blank" rel="noreferrer">現在地から案内</a></div>
       </footer>
-      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示"><span>{course.name}</span></div>
+      <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" {...sheet.dragProps}><span>{course.name}</span></div>
     </article>
   )
 }
