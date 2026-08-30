@@ -202,7 +202,10 @@ export function assessTougeSuitability(route: Coordinate[], elevations: number[]
   if (highPointM < 220 * compactFactor) reasons.push('山地として十分な標高に達していません')
   if (maxGradePct < Math.max(2.2, 3.5 * compactFactor)) reasons.push('勾配が峠道の基準に達しません')
   if (density < Math.max(.14, .25 * compactFactor)) reasons.push('峠らしい連続カーブが不足しています')
-  if (settlementRisk > 2.1) reasons.push('生活道路・市街地らしさが強すぎます')
+  // Short pass sections often have more bends/junctions per kilometre than a
+  // long tour. Keep the no-residential preference, but do not reject every
+  // 4–6km mountain climb merely because its step density is high.
+  if (settlementRisk > 2.1 + (1 - compactFactor) * .6) reasons.push('生活道路・市街地らしさが強すぎます')
   return {
     eligible: reasons.length === 0,
     elevationRangeM: Math.round(elevationRangeM),
@@ -249,18 +252,23 @@ function sampled(route: Coordinate[], max = 14): Coordinate[] {
   return Array.from({ length: max }, (_, index) => route[Math.round(index * (route.length - 1) / (max - 1))])
 }
 
-function routeCandidateTargets(center: Coordinate, radiusKm: number, maxDistanceKm: number, count: number, startPoint?: Coordinate | null, goalPoint?: Coordinate | null): Array<{ start: Coordinate, goal: Coordinate }> {
+export function routeCandidateTargets(center: Coordinate, radiusKm: number, maxDistanceKm: number, count: number, startPoint?: Coordinate | null, goalPoint?: Coordinate | null): Array<{ start: Coordinate, goal: Coordinate, targetDistanceKm: number }> {
   // Probe beyond the immediate urban core.  The finder subsequently applies
   // the strict elevation/curve/quietness gate, so this wider radial probe is
   // what lets a town-centre search find the surrounding mountain pass rather
   // than repeatedly testing only flat connector roads.
   // Keep the radial probes inside the requested maximum. The previous 4km
   // floor made 2km/3km searches impossible before any road was evaluated.
-  const distance = Math.min(12, Math.max(.7, Math.min(radiusKm, maxDistanceKm) * .42))
-  const latitudeScale = distance / 111
-  const longitudeScale = distance / (111 * Math.max(.35, Math.cos(center[1] * Math.PI / 180)))
+  const maximum = Math.min(radiusKm, maxDistanceKm)
   const bearings = [0, 45, 90, 135, 180, 225, 270, 315]
   return bearings.slice(0, count).map((bearing) => {
+    // Mix compact and near-limit probes. This is especially important for a
+    // 4/6km search: one fixed probe length either misses a short pass or
+    // produces a road-network detour above the selected maximum.
+    const factor = maxDistanceKm <= 8 ? [.31, .40, .36, .47, .34, .43, .38, .45][bearing / 45] : .42
+    const distance = Math.min(12, Math.max(.7, maximum * factor))
+    const latitudeScale = distance / 111
+    const longitudeScale = distance / (111 * Math.max(.35, Math.cos(center[1] * Math.PI / 180)))
     const radians = bearing * Math.PI / 180
     const lng = Math.sin(radians) * longitudeScale
     const lat = Math.cos(radians) * latitudeScale
@@ -270,6 +278,7 @@ function routeCandidateTargets(center: Coordinate, radiusKm: number, maxDistance
     return {
       start: startPoint ?? [center[0] - lng * .65, center[1] - lat * .65],
       goal: goalPoint ?? [center[0] + lng, center[1] + lat],
+      targetDistanceKm: Math.min(maxDistanceKm, distance * 1.65),
     }
   })
 }
@@ -301,7 +310,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   // can lie on only one side of the selected place; returning the first router
   // line was the reason a city connector could win over a real mountain road.
   const targets = routeCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, 8, request.startPoint?.coordinate, request.goalPoint?.coordinate)
-  const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
+  const settled = await Promise.allSettled(targets.map(async ({ start, goal, targetDistanceKm }, index) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
     const mandatoryStops = request.requiredPoints.map((point) => point.coordinate)
@@ -327,11 +336,12 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     const mountainBonus = suitability.elevationRangeM / 130 + suitability.totalAscentM / 260
       + suitability.highPointM / 420 + suitability.averageElevationM / 650
     const quietnessBonus = suitability.quietnessScore * 1.15
-    const styleScore = request.style === 'winding'
+    const distanceFit = Math.max(0, 2 - Math.abs(routed.distanceKm - targetDistanceKm) / Math.max(1, request.maxDistanceKm) * 3)
+    const styleScore = (request.style === 'winding'
       ? suitability.curveDensity * 7 + mountainBonus + quietnessBonus
       : request.style === 'easy'
         ? width * 1.6 - suitability.curveDensity * .35 + mountainBonus + quietnessBonus
-        : suitability.curveDensity * 4 + width + mountainBonus + quietnessBonus
+        : suitability.curveDensity * 4 + width + mountainBonus + quietnessBonus) + distanceFit
     return {
       id: `router-${Math.round(request.center[0] * 10000)}-${Math.round(request.center[1] * 10000)}-${index}`,
       source: 'openstreetmap' as const,
