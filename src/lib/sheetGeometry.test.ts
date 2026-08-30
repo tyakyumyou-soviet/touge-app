@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { raisedSheetHeight } from './sheetGeometry'
+import { nextSheetSnap, raisedSheetHeight, type SheetSnap } from './sheetGeometry'
 
 describe('bottom-anchored sheet expansion', () => {
   it('grows continuously by the upward drag distance', () => {
@@ -18,5 +18,19 @@ describe('bottom-anchored sheet expansion', () => {
   })
   it.each([210, 300, 423, 430])('supports different content heights (%i px)', height => {
     expect(raisedSheetHeight(height, -80, 617)).toBe(height + 80)
+  })
+})
+
+describe('three-step bottom sheet snapping', () => {
+  it.each<[SheetSnap, number, SheetSnap]>([
+    ['full', 180, 'middle'],
+    ['middle', 180, 'minimized'],
+    ['minimized', -180, 'middle'],
+    ['middle', -180, 'full'],
+    ['full', -180, 'full'],
+    ['minimized', 180, 'minimized'],
+    ['middle', 20, 'middle'],
+  ])('moves %s with drag %i to %s', (current, drag, next) => {
+    expect(nextSheetSnap(current, drag)).toBe(next)
   })
 })

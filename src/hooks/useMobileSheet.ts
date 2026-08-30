@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
-import { raisedSheetHeight } from '../lib/sheetGeometry'
+import { nextSheetSnap, raisedSheetHeight, type SheetSnap } from '../lib/sheetGeometry'
 
 const handleSelector = '.mobile-sheet-drag-region,.detail-sheet-top,.detail-peek-handle,.explore-panel-top,.course-list-drag-area'
 const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-drag]'
@@ -105,13 +105,10 @@ export function useMobileSheet() {
   }
 
   function settle(distance: number) {
-    if (collapsed) {
-      if (distance < -42) { setCollapsed(false); setExpanded(true) }
-      return
-    }
-    if (distance > 52) { setCollapsed(true); setExpanded(false) }
-    else if (distance < -52) setExpanded(true)
-    else if (distance > 24) setExpanded(false)
+    const current: SheetSnap = collapsed ? 'minimized' : expanded ? 'full' : 'middle'
+    const next = nextSheetSnap(current, distance)
+    setCollapsed(next === 'minimized')
+    setExpanded(next === 'full')
   }
 
   /**
