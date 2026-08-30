@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, validateDiscoveredRoad } from './externalDiscovery'
+import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, splitRoadCorridor, validateDiscoveredRoad } from './externalDiscovery'
 
 describe('external road discovery', () => {
   it('uses a bounded Overpass around query and excludes private road classes', () => {
@@ -23,6 +23,14 @@ describe('external road discovery', () => {
     expect(targets).toHaveLength(8)
     expect(Math.max(...targets.map((item) => item.targetDistanceKm))).toBeLessThanOrEqual(4)
     expect(new Set(targets.map((item) => item.targetDistanceKm.toFixed(2))).size).toBeGreaterThan(2)
+  })
+
+  it('splits a long mountain road into uninterrupted short-course candidates', () => {
+    const route = Array.from({ length: 25 }, (_, index) => [139 + index * .002, 35 + Math.sin(index / 2) * .001] as [number, number])
+    const segments = splitRoadCorridor(route, 4)
+    expect(segments.length).toBeGreaterThan(1)
+    expect(segments.every((segment) => segment.length >= 3)).toBe(true)
+    expect(segments.every((segment) => validateDiscoveredRoad(segment).roadLengthKm <= 4)).toBe(true)
   })
 
   it('rejects geometries with a large discontinuity', () => {

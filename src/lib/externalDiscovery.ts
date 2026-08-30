@@ -247,6 +247,32 @@ export function validateDiscoveredRoad(route: Coordinate[]) {
   return { checked: true, roadLengthKm: Number(length.toFixed(1)), curveDensity: Number(curveDensity(route).toFixed(2)), maxGapKm: Number(maxGapKm.toFixed(2)), warnings }
 }
 
+/**
+ * A named pass road commonly spans 15–40km. For a short-course request we
+ * must evaluate its mountain sections, rather than discard the whole road for
+ * exceeding the maximum distance. Each result remains an uninterrupted OSM
+ * geometry, never a straight-line approximation.
+ */
+export function splitRoadCorridor(route: Coordinate[], maxDistanceKm: number): Coordinate[][] {
+  const total = routeDistanceKm(route)
+  const minimum = Math.max(1.1, Math.min(4, maxDistanceKm * .58))
+  if (route.length < 3 || total <= maxDistanceKm) return [route]
+  const cumulative = [0]
+  for (let index = 1; index < route.length; index += 1) cumulative.push(cumulative[index - 1] + distanceKm(route[index - 1], route[index]))
+  const target = Math.max(minimum, maxDistanceKm * .9)
+  const stride = Math.max(.55, target * .52)
+  const segments: Coordinate[][] = []
+  for (let startDistance = 0; startDistance < total - minimum && segments.length < 10; startDistance += stride) {
+    const start = cumulative.findIndex((distance) => distance >= startDistance)
+    if (start < 0 || start >= route.length - 2) break
+    let end = start + 1
+    while (end < route.length - 1 && cumulative[end + 1] - cumulative[start] <= maxDistanceKm) end += 1
+    const segment = route.slice(start, end + 1)
+    if (segment.length >= 3 && routeDistanceKm(segment) >= minimum) segments.push(segment)
+  }
+  return segments.length ? segments : [route]
+}
+
 function sampled(route: Coordinate[], max = 14): Coordinate[] {
   if (route.length <= max) return route
   return Array.from({ length: max }, (_, index) => route[Math.round(index * (route.length - 1) / (max - 1))])
@@ -396,7 +422,7 @@ export function proposalWaypoints(route: Coordinate[], requiredPoints: Coordinat
 }
 
 function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) {
-  return chainRoadWays(ways).map((chain) => {
+  return chainRoadWays(ways).flatMap((chain) => splitRoadCorridor(chain.route, request.maxDistanceKm).map((route) => ({ ...chain, route }))).map((chain) => {
     const { tags, route } = chain
     const validation = validateDiscoveredRoad(route)
     const width = highwayWidthScore(tags)
@@ -408,15 +434,14 @@ function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) 
         : validation.curveDensity * 4 + width
     return { chain, tags, route, validation, width, housingRisk, score: styleScore - housingRisk * 1.8 }
   })
-    .filter((item) => item.validation.warnings.length === 0)
+    .filter((item) => item.validation.warnings.every((warning) => warning === '候補区間が短すぎます'))
     .filter((item) => item.validation.roadLengthKm >= Math.max(1.1, Math.min(4, request.maxDistanceKm * .58)))
     .filter((item) => item.validation.roadLengthKm <= request.maxDistanceKm)
     .filter((item) => request.toll === 'all' || tollFromTags(item.tags) === request.toll)
     .sort((a, b) => b.score - a.score)
-    // One road often occurs in multiple adjacent way fragments. Keep a compact
-    // representative set while preferring different named/ref'd roads.
-    .filter((item, index, items) => items.findIndex((other) => (other.tags.name || other.tags.ref || other.chain.wayIds[0]) === (item.tags.name || item.tags.ref || item.chain.wayIds[0])) === index)
-    .slice(0, 8)
+    // Retain several sections of a long named pass: one may be flat while a
+    // different 4–6km section is exactly the compact climb being requested.
+    .slice(0, 16)
 }
 
 async function fetchOverpass(query: string): Promise<OverpassResult> {
