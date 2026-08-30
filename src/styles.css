@@ -466,7 +466,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
      tray visible underneath made the two sheets look stacked and gave the map
      an accidental second interaction target. */
   .explore-panel.covered-by-detail { transform: translateY(calc(100% + 20px)) !important; pointer-events: none; }
-  .explore-panel.expanded { max-height: calc(100dvh - 76px); }
+  .explore-panel.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .explore-panel.dragging { transition: none; }
   .explore-panel.collapsed { overflow: hidden; }
   .explore-drag-handle { position: relative; display: block; flex: 0 0 32px; width: 144px; height: 32px; margin: 0 auto; background: transparent; cursor: grab; touch-action: none; }
@@ -502,12 +502,15 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .nav-actions { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
   .modal-backdrop { padding: 7px; place-items: end center; }
   .modal-backdrop:has(.mobile-sheet.collapsed) { pointer-events: none; background: transparent; backdrop-filter: none; }
-  /* Detail is an absolutely positioned map sheet. Restrict the generic
-     positioning rule so it cannot turn CourseDetail into normal document
-     flow and make it appear from the top of the page. */
-  .mobile-sheet:not(.detail-panel) { position: relative; }
-  .mobile-sheet { pointer-events: auto; transition: max-height .22s ease, transform .25s ease; }
-  .mobile-sheet.expanded { max-height: calc(100dvh - 14px); }
+  /* Map sheets own their positioning. Keep modal defaults at low specificity
+     so they cannot override the detail's absolute or builder's fixed anchor. */
+  :where(.mobile-sheet:not(.detail-panel):not(.course-form):not(.explore-panel)) { position: relative; }
+  .mobile-sheet { pointer-events: auto; transition: height .22s ease, max-height .22s ease, transform .25s ease; }
+  /* Numeric resting heights let release/tap animate from the dragged height,
+     rather than jumping between an auto height and the expanded size. */
+  .detail-panel.mobile-sheet { height: 62dvh; }
+  .explore-panel.mobile-sheet { height: calc((100dvh - 62px) * .68); }
+  .mobile-sheet.expanded, .explore-panel.mobile-sheet.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   /* Keep the expanded detail below the fixed application header. The generic
      mobile-sheet rule above otherwise wins by source order and lifts it to 7px. */
   .detail-panel.mobile-sheet.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
@@ -517,9 +520,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .mobile-sheet-drag-region:active { cursor: grabbing; }
   .mobile-sheet-handle { position: relative; display: block; width: 100%; height: 28px; }
   .mobile-sheet-handle::after { content: ''; position: absolute; top: 11px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
-  .modal { max-height: 88dvh; border-radius: 18px 18px 8px 8px; }
-  .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; max-height: 61dvh; }
-  .course-form.mobile-sheet.expanded { max-height: calc(100dvh - 14px); }
+  .modal { max-height: min(88dvh, calc(100dvh - 76px)); border-radius: 18px 18px 8px 8px; }
+  .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; height: 61dvh; max-height: 61dvh; }
+  .course-form.mobile-sheet.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .course-form-scroll { padding: 0 1px 8px; touch-action: pan-y; }
   .modal footer, .route-builder-stage footer, .route-details-stage footer { flex-wrap: wrap; }
   .modal footer > .button, .route-builder-stage footer > .button, .route-details-stage footer > .button { flex: 1 1 150px; }

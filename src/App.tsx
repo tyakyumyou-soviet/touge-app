@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { MapView } from './components/MapView'
 import { CourseList } from './components/CourseList'
@@ -89,13 +89,8 @@ export default function App() {
   const [roadReportOpen, setRoadReportOpen] = useState(false)
   const [adminOpen, setAdminOpen] = useState(false)
   const [notice, setNotice] = useState('')
-  const [listCollapsed, setListCollapsed] = useState(false)
-  const [listExpanded, setListExpanded] = useState(false)
-  const [listOffset, setListOffset] = useState(0)
-  const [listDragging, setListDragging] = useState(false)
-  const listDrag = useRef<{ pointerId: number; y: number; moved: boolean } | null>(null)
-  const listScrollDrag = useRef<{ y: number; active: boolean } | null>(null)
-  const ignoreListTap = useRef(false)
+  const listSheet = useMobileSheet()
+  const collapseList = listSheet.collapse
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
   const [courseManagerOpen, setCourseManagerOpen] = useState(false)
@@ -243,8 +238,8 @@ export default function App() {
     // Cloning intentionally creates a fresh camera request when the same
     // course is opened again after the sheet layout has changed.
     setProposalFocusRoute([...course.route])
-    setListCollapsed(true)
-  }, [])
+    collapseList()
+  }, [collapseList])
   const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
     // Keep all three parallel arrays in the same operation. A new via point is
     // placed before an existing goal; choosing a new goal promotes the old one
@@ -312,7 +307,7 @@ export default function App() {
     setDraftViaInsertAfter(null)
   }, [draftRoute.length])
   function resetListSheet() {
-    setListCollapsed(false); setListExpanded(false); setListOffset(0); setListDragging(false)
+    listSheet.reset()
   }
 
   function finishSurfaceMotion(next: 'list' | 'form', resolve?: () => void) {
@@ -336,81 +331,6 @@ export default function App() {
     finishSurfaceMotion('list')
   }
 
-  function startListDrag(event: ReactPointerEvent<HTMLElement>) {
-    // The whole header zone is a sheet handle, except for controls that must
-    // keep their native tap/select/input behaviour.
-    if (event.target instanceof Element && event.target.closest('button, input, select, textarea, a, label')) return
-    const scrollSurface = event.target instanceof Element ? event.target.closest<HTMLElement>('.course-list') : null
-    if ((scrollSurface?.scrollTop ?? 0) > 1) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    listDrag.current = { pointerId: event.pointerId, y: event.clientY, moved: false }
-    setListDragging(true)
-  }
-  function moveListDrag(event: ReactPointerEvent<HTMLElement>) {
-    const drag = listDrag.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const distance = event.clientY - drag.y
-    if (Math.abs(distance) > 8) drag.moved = true
-    setListOffset(listCollapsed ? Math.min(0, distance) : listExpanded ? Math.max(0, distance) : Math.max(-180, distance))
-  }
-  function settleListSheet(distance: number) {
-    if (listCollapsed) {
-      if (distance < -42) { setListCollapsed(false); setListExpanded(true) }
-      return
-    }
-    if (distance > 52) { setListCollapsed(true); setListExpanded(false) }
-    else if (distance < -52) setListExpanded(true)
-    else if (distance > 24) setListExpanded(false)
-  }
-  function endListDrag(event: ReactPointerEvent<HTMLElement>) {
-    const drag = listDrag.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const distance = event.clientY - drag.y
-    listDrag.current = null
-    setListDragging(false)
-    setListOffset(0)
-    ignoreListTap.current = drag.moved
-    if (drag.moved) window.setTimeout(() => { ignoreListTap.current = false }, 0)
-    settleListSheet(distance)
-  }
-  // A scrollable body owns its gesture until it reaches scrollTop=0. From
-  // there, a downward pull anywhere in the list becomes the same sheet-close
-  // gesture as pulling the fixed handle.
-  function startListScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
-    if (event.touches.length !== 1 || event.currentTarget.scrollTop > 1) return
-    listScrollDrag.current = { y: event.touches[0].clientY, active: false }
-  }
-  function moveListScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
-    const active = listScrollDrag.current
-    if (!active || event.touches.length !== 1) return
-    const distance = event.touches[0].clientY - active.y
-    if (event.currentTarget.scrollTop > 1 && !active.active) { listScrollDrag.current = null; return }
-    if (distance <= 8 && !active.active) return
-    if (distance <= 0) return
-    active.active = true
-    event.preventDefault()
-    setListDragging(true)
-    setListOffset(Math.max(0, distance))
-  }
-  function endListScrollDrag(event: ReactTouchEvent<HTMLDivElement>) {
-    const active = listScrollDrag.current
-    if (!active) return
-    const distance = (event.changedTouches[0]?.clientY ?? active.y) - active.y
-    listScrollDrag.current = null
-    if (!active.active) return
-    setListDragging(false)
-    setListOffset(0)
-    ignoreListTap.current = true
-    window.setTimeout(() => { ignoreListTap.current = false }, 0)
-    settleListSheet(distance)
-  }
-  function tapListHandle() {
-    if (ignoreListTap.current || !listCollapsed) return
-    // A tap opens the normal resting panel; only an upward swipe fully expands it.
-    setListCollapsed(false)
-    setListExpanded(false)
-    setListOffset(0)
-  }
 
   async function findNearbyCourses(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -638,11 +558,11 @@ export default function App() {
 
       <main>
         <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} previewFocusRequest={proposalPreviewFocusRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} focusRoute={proposalFocusRoute} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
-        <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${listCollapsed ? 'collapsed' : ''} ${listExpanded ? 'expanded' : ''} ${listDragging ? 'dragging' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={{ transform: drawing ? undefined : listCollapsed ? `translateY(calc(100% - 54px + ${listOffset}px))` : listOffset ? `translateY(${listOffset}px)` : undefined }} aria-label="コースを探す" onPointerDown={startListDrag} onPointerMove={moveListDrag} onPointerUp={endListDrag} onPointerCancel={endListDrag} onClick={tapListHandle}>
+        <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={drawing ? undefined : listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
           <div className="explore-panel-top">
-            <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') tapListHandle() }} />
+            <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); listSheet.openResting() } }} />
           </div>
-          <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} scrollProps={{ onTouchStart: startListScrollDrag, onTouchMove: moveListScrollDrag, onTouchEnd: endListScrollDrag, onTouchCancel: endListScrollDrag }} header={<div className="course-list-drag-area">
+          <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} scrollProps={listSheet.scrollProps} header={<div className="course-list-drag-area">
             <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
             <div className="list-toolbar">
               <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="personalized">パーソナライズ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
