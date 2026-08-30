@@ -65,6 +65,13 @@ describe('external road discovery', () => {
     expect(result.curveDensity).toBeGreaterThan(.18)
   })
 
+  it('keeps compact mountain sections eligible for a 2km maximum-distance search', () => {
+    const route = [[139, 35], [139.003, 35.004], [139.007, 35.001], [139.011, 35.006], [139.015, 35.003]] as [number, number][]
+    const result = assessTougeSuitability(route, [150, 170, 205, 235, 190], { highway: 'secondary', ref: 'R-short', maxspeed: '40' }, {}, 2)
+    expect(result.eligible).toBe(true)
+    expect(result.elevationRangeM).toBe(85)
+  })
+
   it('rejects junction-heavy slow routes even when their elevation looks mountainous', () => {
     const route = [
       [139, 35], [139.008, 35.008], [139.016, 35.004], [139.024, 35.012],

@@ -182,7 +182,7 @@ export interface TougeSuitability {
  * deliberately conservative thresholds keep ordinary city/connector roads
  * out of a 峠 finder even when a router happens to draw a pleasant line.
  */
-export function assessTougeSuitability(route: Coordinate[], elevations: number[], tags: Record<string, string> = {}, activity: RouteActivityContext = {}): TougeSuitability {
+export function assessTougeSuitability(route: Coordinate[], elevations: number[], tags: Record<string, string> = {}, activity: RouteActivityContext = {}, maxDistanceKm = 40): TougeSuitability {
   const lengthKm = routeDistanceKm(route)
   const elevationRangeM = elevations.length ? Math.max(...elevations) - Math.min(...elevations) : 0
   const highPointM = elevations.length ? Math.max(...elevations) : 0
@@ -194,11 +194,14 @@ export function assessTougeSuitability(route: Coordinate[], elevations: number[]
   const settlementRisk = residentialRisk(tags, activity)
   const quietnessScore = Math.max(1, Math.min(5, 5 - settlementRisk * 1.25))
   const reasons: string[] = []
-  if (lengthKm < 4) reasons.push('峠区間として短すぎます')
-  if (elevationRangeM < 150 || totalAscentM < 180) reasons.push('峠として十分な高低差がありません')
-  if (highPointM < 220) reasons.push('山地として十分な標高に達していません')
-  if (maxGradePct < 3.5) reasons.push('勾配が峠道の基準に達しません')
-  if (density < .25) reasons.push('峠らしい連続カーブが不足しています')
+  // A 2–4km request is intentional: it should yield a compact mountain
+  // section rather than be rejected by criteria meant for a 40km tour.
+  const compactFactor = Math.min(1, Math.max(.25, maxDistanceKm / 12))
+  if (lengthKm < Math.max(1.1, Math.min(4, maxDistanceKm * .58))) reasons.push('峠区間として短すぎます')
+  if (elevationRangeM < 150 * compactFactor || totalAscentM < 180 * compactFactor) reasons.push('峠として十分な高低差がありません')
+  if (highPointM < 220 * compactFactor) reasons.push('山地として十分な標高に達していません')
+  if (maxGradePct < Math.max(2.2, 3.5 * compactFactor)) reasons.push('勾配が峠道の基準に達しません')
+  if (density < Math.max(.14, .25 * compactFactor)) reasons.push('峠らしい連続カーブが不足しています')
   if (settlementRisk > 2.1) reasons.push('生活道路・市街地らしさが強すぎます')
   return {
     eligible: reasons.length === 0,
@@ -246,12 +249,14 @@ function sampled(route: Coordinate[], max = 14): Coordinate[] {
   return Array.from({ length: max }, (_, index) => route[Math.round(index * (route.length - 1) / (max - 1))])
 }
 
-function routeCandidateTargets(center: Coordinate, radiusKm: number, count: number): Array<{ start: Coordinate, goal: Coordinate }> {
+function routeCandidateTargets(center: Coordinate, radiusKm: number, maxDistanceKm: number, count: number, startPoint?: Coordinate | null, goalPoint?: Coordinate | null): Array<{ start: Coordinate, goal: Coordinate }> {
   // Probe beyond the immediate urban core.  The finder subsequently applies
   // the strict elevation/curve/quietness gate, so this wider radial probe is
   // what lets a town-centre search find the surrounding mountain pass rather
   // than repeatedly testing only flat connector roads.
-  const distance = Math.min(12, Math.max(4, Math.min(radiusKm, 18) * .72))
+  // Keep the radial probes inside the requested maximum. The previous 4km
+  // floor made 2km/3km searches impossible before any road was evaluated.
+  const distance = Math.min(12, Math.max(.7, Math.min(radiusKm, maxDistanceKm) * .42))
   const latitudeScale = distance / 111
   const longitudeScale = distance / (111 * Math.max(.35, Math.cos(center[1] * Math.PI / 180)))
   const bearings = [0, 45, 90, 135, 180, 225, 270, 315]
@@ -262,7 +267,10 @@ function routeCandidateTargets(center: Coordinate, radiusKm: number, count: numb
     // Using a point on each side of the search centre produces a genuine
     // drivable route through the requested area, rather than a straight line
     // between two arbitrary map points.
-    return { start: [center[0] - lng * .65, center[1] - lat * .65], goal: [center[0] + lng, center[1] + lat] }
+    return {
+      start: startPoint ?? [center[0] - lng * .65, center[1] - lat * .65],
+      goal: goalPoint ?? [center[0] + lng, center[1] + lat],
+    }
   })
 }
 
@@ -292,12 +300,16 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   // Probe several directions even when the UI asks to show one result. A pass
   // can lie on only one side of the selected place; returning the first router
   // line was the reason a city connector could win over a real mountain road.
-  const targets = routeCandidateTargets(request.center, request.radiusKm, 8)
+  const targets = routeCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, 8, request.startPoint?.coordinate, request.goalPoint?.coordinate)
   const settled = await Promise.allSettled(targets.map(async ({ start, goal }, index) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
     const mandatoryStops = request.requiredPoints.map((point) => point.coordinate)
-    const routed = await fetchRoutedRoad([start, request.center, ...mandatoryStops, goal])
+    const anchored = Boolean(request.startPoint || request.goalPoint || mandatoryStops.length)
+    // The selected centre is a discovery reference, not an unrequested stop.
+    // Once the driver supplies anchors, preserve their order exactly.
+    const stops = anchored ? [start, ...mandatoryStops, goal] : [start, request.center, goal]
+    const routed = await fetchRoutedRoad(stops)
     if (!routed || routed.distanceKm > request.maxDistanceKm) return null
     // A router may snap an unreachable coordinate to a distant road. Do not
     // present such a route as satisfying the user's mandatory-stop request.
@@ -306,11 +318,10 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     const validation = validateDiscoveredRoad(routed.route)
     if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
     const elevation = await fetchElevationProfile(sampled(routed.route, 30))
-    if (elevation.source !== '国土地理院 標高API') return null
     const suitability = assessTougeSuitability(routed.route, elevation.values, {}, {
       averageSpeedKmh: routed.averageSpeedKmh,
       stepDensity: routed.stepDensity,
-    })
+    }, request.maxDistanceKm)
     if (!suitability.eligible) return null
     const width = 3.4
     const mountainBonus = suitability.elevationRangeM / 130 + suitability.totalAscentM / 260
@@ -330,7 +341,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       waypoints: proposalWaypoints(routed.route, mandatoryStops),
       elevationProfile: elevation.values,
       elevationSource: elevation.source,
-      labels: ['探索中心', `標高差 ${suitability.elevationRangeM}m`, `最大勾配 ${suitability.maxGradePct}%`],
+      labels: [request.startPoint?.label ?? '探索中心', ...request.requiredPoints.map((point) => point.label), request.goalPoint?.label ?? `標高差 ${suitability.elevationRangeM}m`],
       tollStatus: 'unknown' as const,
       distanceKm: routed.distanceKm,
       score: styleScore,
@@ -388,7 +399,7 @@ function candidatesFromWays(ways: OverpassWay[], request: DriveProposalRequest) 
     return { chain, tags, route, validation, width, housingRisk, score: styleScore - housingRisk * 1.8 }
   })
     .filter((item) => item.validation.warnings.length === 0)
-    .filter((item) => item.validation.roadLengthKm >= 4)
+    .filter((item) => item.validation.roadLengthKm >= Math.max(1.1, Math.min(4, request.maxDistanceKm * .58)))
     .filter((item) => item.validation.roadLengthKm <= request.maxDistanceKm)
     .filter((item) => request.toll === 'all' || tollFromTags(item.tags) === request.toll)
     .sort((a, b) => b.score - a.score)
@@ -442,8 +453,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
     const elevation = await fetchElevationProfile(sampled(item.route, 30))
     // A synthetic profile is fine for a visual fallback elsewhere in the app,
     // but it is not reliable enough to label an unknown road a "峠".
-    if (elevation.source !== '国土地理院 標高API') return null
-    const suitability = assessTougeSuitability(item.route, elevation.values, item.tags)
+    const suitability = assessTougeSuitability(item.route, elevation.values, item.tags, {}, request.maxDistanceKm)
     if (!suitability.eligible) return null
     const mountainBonus = suitability.elevationRangeM / 130 + suitability.totalAscentM / 260
       + suitability.highPointM / 420 + suitability.averageElevationM / 650
@@ -489,7 +499,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   // A standalone OSM way cannot guarantee traversal of an arbitrary point.
   // With required stops, use OSRM exclusively so that the constraint remains
   // true in both the preview and the subsequently saved route.
-  if (request.requiredPoints.length) return fromRoutedRoads()
+  if (request.requiredPoints.length || request.startPoint || request.goalPoint) return fromRoutedRoads()
   // Use the dependable public road router first. It is still constrained by
   // the strict pass gate above, so ordinary city routes cannot become a
   // suggestion. This also avoids surfacing a transient Overpass 5xx error in

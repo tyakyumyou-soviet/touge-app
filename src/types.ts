@@ -3,6 +3,28 @@ export type Coordinate = [number, number]
 /** The intended role of a stop while building a route. */
 export type DraftPointRole = 'start' | 'via' | 'goal'
 
+/** A temporary point used only while finding a recommended drive route. */
+export interface RecommendationPoint {
+  coordinate: Coordinate
+  label: string
+}
+
+/** Map-visible constraints for the route recommendation finder. */
+export interface RecommendationMapState {
+  active: boolean
+  start: RecommendationPoint | null
+  goal: RecommendationPoint | null
+  vias: RecommendationPoint[]
+}
+
+export interface RecommendationMapAction {
+  id: number
+  point: Coordinate
+  action: 'start' | 'via' | 'goal' | 'remove'
+  role?: 'start' | 'via' | 'goal'
+  index?: number
+}
+
 /** A recognised landmark placed along a published route. progress is 0–1 from START. */
 export interface RouteLandmark {
   name: string

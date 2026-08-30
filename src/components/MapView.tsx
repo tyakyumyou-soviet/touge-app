@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { Coordinate, Course, DraftPointRole } from '../types'
+import type { Coordinate, Course, DraftPointRole, RecommendationMapAction, RecommendationMapState } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
@@ -24,11 +24,13 @@ interface MapViewProps {
   focusRoute: Coordinate[] | null
   pendingSearchPoint: Coordinate | null
   pendingSearchLabel: string
+  recommendationMapState: RecommendationMapState
   currentLocation: Coordinate | null
   searchCenter?: Coordinate | null
   searchRadiusKm?: number
   onCurrentLocationChange: (point: Coordinate) => void
   onSelect: (course: Course) => void
+  onRecommendationMapAction: (action: Omit<RecommendationMapAction, 'id'>) => void
   onAddPoint: (point: Coordinate, label?: string, role?: 'via' | 'goal', insertAfter?: number | null) => void
   onMovePoint: (index: number, point: Coordinate) => void
 }
@@ -64,6 +66,19 @@ const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
   }] : [],
 })
 
+const toRecommendationPointCollection = (state: RecommendationMapState) => ({
+  type: 'FeatureCollection' as const,
+  features: !state.active ? [] : [
+    ...(state.start ? [{ point: state.start, role: 'start', index: 0 }] : []),
+    ...state.vias.map((point, index) => ({ point, role: 'via', index })),
+    ...(state.goal ? [{ point: state.goal, role: 'goal', index: 0 }] : []),
+  ].map(({ point, role, index }) => ({
+    type: 'Feature' as const,
+    properties: { role, index, label: point.label, marker: role === 'start' ? 'S' : role === 'goal' ? 'G' : '経' },
+    geometry: { type: 'Point' as const, coordinates: point.coordinate },
+  })),
+})
+
 const toCurrentLocation = (point: Coordinate | null) => ({
   type: 'FeatureCollection' as const,
   features: point ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: point } }] : [],
@@ -87,7 +102,7 @@ const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number 
   }],
 })
 
-export function MapView({ courses, selected, previewCourseIds, previewFocusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, focusRoute, pendingSearchPoint, pendingSearchLabel, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, previewCourseIds, previewFocusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, focusRoute, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -101,6 +116,8 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
   const draftLabelsRef = useRef(draftLabels)
   const draftRolesRef = useRef(draftRoles)
   const viaInsertAfterRef = useRef(viaInsertAfter)
+  const recommendationMapStateRef = useRef(recommendationMapState)
+  const onRecommendationMapActionRef = useRef(onRecommendationMapAction)
   const [mapError, setMapError] = useState('')
   const [mapReady, setMapReady] = useState(false)
   const courseColors = useMemo(() => assignCourseColors(courses), [courses])
@@ -115,6 +132,8 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
   useEffect(() => { draftLabelsRef.current = draftLabels }, [draftLabels])
   useEffect(() => { draftRolesRef.current = draftRoles }, [draftRoles])
   useEffect(() => { viaInsertAfterRef.current = viaInsertAfter }, [viaInsertAfter])
+  useEffect(() => { recommendationMapStateRef.current = recommendationMapState }, [recommendationMapState])
+  useEffect(() => { onRecommendationMapActionRef.current = onRecommendationMapAction }, [onRecommendationMapAction])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -225,6 +244,10 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
       map.addLayer({ id: 'pending-search-pin-tip', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': '▼', 'text-size': 23, 'text-offset': [0, .74], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#e76f51' } })
       map.addLayer({ id: 'pending-search-pin', type: 'circle', source: 'pending-search-point', paint: { 'circle-radius': 15, 'circle-color': '#e76f51', 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
       map.addLayer({ id: 'pending-search-label', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': ['concat', '仮  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.35], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#7f2f27', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
+      map.addSource('recommendation-points', { type: 'geojson', data: toRecommendationPointCollection({ active: false, start: null, goal: null, vias: [] }) })
+      map.addLayer({ id: 'recommendation-point-tip', type: 'symbol', source: 'recommendation-points', layout: { 'text-field': '▼', 'text-size': 20, 'text-offset': [0, .72], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['match', ['get', 'role'], 'start', '#287e5a', 'goal', '#d35a46', '#e1ac3d'] } })
+      map.addLayer({ id: 'recommendation-points', type: 'circle', source: 'recommendation-points', paint: { 'circle-radius': 14, 'circle-color': ['match', ['get', 'role'], 'start', '#287e5a', 'goal', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'recommendation-point-labels', type: 'symbol', source: 'recommendation-points', layout: { 'text-field': ['concat', ['get', 'marker'], '  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
       map.addSource('current-location', { type: 'geojson', data: toCurrentLocation(null) })
       map.addLayer({ id: 'current-location-halo', type: 'circle', source: 'current-location', paint: { 'circle-radius': 14, 'circle-color': '#287bdc', 'circle-opacity': .18, 'circle-stroke-color': '#287bdc', 'circle-stroke-width': 1, 'circle-stroke-opacity': .38 } })
       map.addLayer({ id: 'current-location-dot', type: 'circle', source: 'current-location', paint: { 'circle-radius': 7, 'circle-color': '#287bdc', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
@@ -264,6 +287,24 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
       onMovePointRef.current(movingPointIndex, [event.lngLat.lng, event.lngLat.lat])
     })
     map.on('touchend', () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); touchPressTimer = undefined; finishPointMove() })
+    map.on('mouseenter', 'recommendation-points', () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', 'recommendation-points', () => { map.getCanvas().style.cursor = drawingRef.current ? 'crosshair' : '' })
+    map.on('click', 'recommendation-points', (event) => {
+      if (!recommendationMapStateRef.current.active) return
+      suppressNextMapClick = true
+      draftPopupRef.current?.remove()
+      const feature = event.features?.[0]
+      const role = feature?.properties?.role as 'start' | 'via' | 'goal' | undefined
+      const index = Number(feature?.properties?.index)
+      const content = document.createElement('div'); content.className = 'draft-point-popup'
+      const message = document.createElement('strong'); message.textContent = `${feature?.properties?.label ?? 'この地点'}を削除しますか？`
+      const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '削除する'
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
+      remove.addEventListener('click', () => { if (role) onRecommendationMapActionRef.current({ point: [event.lngLat.lng, event.lngLat.lat], action: 'remove', role, index: Number.isFinite(index) ? index : 0 }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
+      content.append(message, remove, cancel)
+      draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
+    })
     map.on('click', (event) => {
       if (suppressNextMapClick) { suppressNextMapClick = false; return }
       if (!drawingRef.current || movingPointIndex !== null) return
@@ -271,6 +312,20 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
       const coordinate: Coordinate = [event.lngLat.lng, event.lngLat.lat]
       const content = document.createElement('div')
       content.className = 'draft-point-popup'
+      if (recommendationMapStateRef.current.active) {
+        const message = document.createElement('strong'); message.textContent = 'この位置をコース提案の条件に追加しますか？'
+        const start = document.createElement('button'); start.type = 'button'; start.textContent = 'スタートに設定'
+        const via = document.createElement('button'); via.type = 'button'; via.textContent = '必ず通る地点に追加'
+        const goal = document.createElement('button'); goal.type = 'button'; goal.textContent = 'ゴールに設定'
+        const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
+        start.addEventListener('click', () => { onRecommendationMapActionRef.current({ point: coordinate, action: 'start' }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+        via.addEventListener('click', () => { onRecommendationMapActionRef.current({ point: coordinate, action: 'via' }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+        goal.addEventListener('click', () => { onRecommendationMapActionRef.current({ point: coordinate, action: 'goal' }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
+        cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
+        content.append(message, start, via, goal, cancel)
+        draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
+        return
+      }
       const isFirstStop = draftRolesRef.current.length === 0
       const message = document.createElement('strong'); message.textContent = isFirstStop ? '最初の地点を始点として追加しますか？' : 'この位置を経由地またはゴールとして追加しますか？'
       const via = document.createElement('button'); via.type = 'button'; via.textContent = isFirstStop ? '始点として追加' : '経由地として追加'
@@ -328,6 +383,12 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
     if (!mapReady || !map?.isStyleLoaded()) return
     ;(map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(pendingSearchPoint, pendingSearchLabel))
   }, [mapReady, pendingSearchPoint, pendingSearchLabel])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    ;(map.getSource('recommendation-points') as GeoJSONSource | undefined)?.setData(toRecommendationPointCollection(recommendationMapState))
+  }, [mapReady, recommendationMapState])
 
   useEffect(() => {
     const map = mapRef.current

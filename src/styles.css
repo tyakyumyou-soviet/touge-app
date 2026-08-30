@@ -617,6 +617,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .proposal-grid label, .proposal-via label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .proposal-via { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
 .proposal-via .button { min-height: 42px; }
+.proposal-anchor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.proposal-map-point-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .proposal-via-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .proposal-via-tags span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 999px; color: #175e45; background: #e3f1e9; font-size: 12px; font-weight: 700; }
 .proposal-via-tags button { padding: 0; border: 0; color: inherit; background: transparent; font-size: 15px; cursor: pointer; }
@@ -722,6 +724,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .route-builder-intro { align-items: stretch; flex-direction: column; }
   .proposal-launch { justify-content: space-between; width: 100%; }
   .proposal-grid { grid-template-columns: 1fr; }
+  .proposal-anchor-grid { grid-template-columns: 1fr; }
   .community-panel { width: calc(100% - 16px); max-height: 92dvh; padding: 16px; }
   .profile-editor { grid-template-columns: 1fr; }
   .profile-avatar { width: 52px; height: 52px; font-size: 23px; }

@@ -1,12 +1,12 @@
-import { useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
-import type { Coordinate, Course, CourseDraft, DraftPointRole, UserProfile } from '../types'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import type { Coordinate, Course, CourseDraft, DraftPointRole, RecommendationMapAction, RecommendationMapState, UserProfile } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
 import { type DriveProposal, type DriveStyle } from '../lib/recommendations'
-import { discoverExternalDriveProposals, RoadDiscoveryUnavailableError } from '../lib/externalDiscovery'
+import { discoverExternalDriveProposals } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
 import { auth } from '../lib/firebase'
@@ -26,6 +26,8 @@ interface Props {
   onFocusPoint: (point: Coordinate) => void
   onCurrentLocationChange: (point: Coordinate) => void
   onPendingPointChange: (point: Coordinate | null, label?: string) => void
+  recommendationMapAction?: RecommendationMapAction | null
+  onRecommendationMapStateChange: (state: RecommendationMapState) => void
   onUseProposal: (proposal: DriveProposal, placement?: 'replace' | 'append', insertAfter?: number | null) => void
   onUndoProposalEdit: () => void
   onSetProposalPreviews: (proposals: DriveProposal[]) => void
@@ -54,7 +56,7 @@ interface DetailsValues {
   blockedViewerIds: string[]
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
@@ -74,18 +76,41 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
   const [proposalQuery, setProposalQuery] = useState('')
   const [proposalCenter, setProposalCenter] = useState<GeocodedPoint | null>(null)
   const [proposalRadiusKm, setProposalRadiusKm] = useState(25)
-  const [proposalMaxDistanceKm, setProposalMaxDistanceKm] = useState(60)
+  const [proposalMaxDistanceKm, setProposalMaxDistanceKm] = useState(10)
   const [proposalCount, setProposalCount] = useState(1)
   const [proposalStyle, setProposalStyle] = useState<DriveStyle>('balanced')
   const [proposalToll, setProposalToll] = useState<'all' | TollStatus>('all')
   const [proposalViaQuery, setProposalViaQuery] = useState('')
   const [proposalVias, setProposalVias] = useState<GeocodedPoint[]>([])
+  const [proposalStartQuery, setProposalStartQuery] = useState('')
+  const [proposalGoalQuery, setProposalGoalQuery] = useState('')
+  const [proposalStart, setProposalStart] = useState<GeocodedPoint | null>(null)
+  const [proposalGoal, setProposalGoal] = useState<GeocodedPoint | null>(null)
   const [proposalSettingsOpen, setProposalSettingsOpen] = useState(false)
   const [proposals, setProposals] = useState<DriveProposal[]>([])
   const [proposalError, setProposalError] = useState('')
   const [proposalProgress, setProposalProgress] = useState('')
   const proposalSearchTimer = useRef<number | null>(null)
   const proposalSearchRevision = useRef(0)
+  const handledRecommendationAction = useRef(0)
+
+  useEffect(() => {
+    onRecommendationMapStateChange({ active: proposalOpen, start: proposalStart, goal: proposalGoal, vias: proposalVias })
+  }, [onRecommendationMapStateChange, proposalGoal, proposalOpen, proposalStart, proposalVias])
+
+  useEffect(() => {
+    if (!recommendationMapAction || recommendationMapAction.id === handledRecommendationAction.current) return
+    handledRecommendationAction.current = recommendationMapAction.id
+    const point = { coordinate: recommendationMapAction.point, label: '地図指定' }
+    if (recommendationMapAction.action === 'start') setProposalStart(point)
+    if (recommendationMapAction.action === 'goal') setProposalGoal(point)
+    if (recommendationMapAction.action === 'via') setProposalVias((items) => [...items, point])
+    if (recommendationMapAction.action === 'remove') {
+      if (recommendationMapAction.role === 'start') setProposalStart(null)
+      else if (recommendationMapAction.role === 'goal') setProposalGoal(null)
+      else if (recommendationMapAction.role === 'via') setProposalVias((items) => items.filter((_, index) => index !== recommendationMapAction.index))
+    }
+  }, [recommendationMapAction])
 
   const [courseLibraryOpen, setCourseLibraryOpen] = useState(false)
   const [courseLibraryQuery, setCourseLibraryQuery] = useState('')
@@ -227,12 +252,25 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     finally { setBusy(false) }
   }
 
+  async function setProposalAnchor(kind: 'start' | 'goal') {
+    const queryValue = kind === 'start' ? proposalStartQuery : proposalGoalQuery
+    if (!queryValue.trim()) return
+    setBusy(true); setProposalError('')
+    try {
+      const result = await geocodeJapanesePlace(queryValue)
+      if (kind === 'start') { setProposalStart(result); setProposalStartQuery('') }
+      else { setProposalGoal(result); setProposalGoalQuery('') }
+      onFocusPoint(result.coordinate)
+    } catch (caught) { setProposalError(caught instanceof Error ? caught.message : `${kind === 'start' ? 'スタート' : 'ゴール'}地点を検索できませんでした`) }
+    finally { setBusy(false) }
+  }
+
   async function generateProposals() {
     if (!proposalCenter) { setProposalError('まず探索するエリアを指定してください'); return }
     setBusy(true); setProposalError(''); setProposals([]); onSetProposalPreviews([]); setProposalProgress('OpenStreetMapから道路形状を取得しています…')
     const request = {
       center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
-      proposalCount, toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias,
+      proposalCount, toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias, startPoint: proposalStart, goalPoint: proposalGoal,
     } as const
     try {
       const external = await discoverExternalDriveProposals(request)
@@ -243,11 +281,9 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     } catch (caught) {
       setProposals([]); onSetProposalPreviews([])
       const message = caught instanceof Error ? caught.message : ''
-      setProposalError(caught instanceof RoadDiscoveryUnavailableError
-        ? `道路データを取得できませんでした。${message}`
-        : message
-        ? `峠候補を見つけられませんでした。${message}`
-        : 'この範囲に峠として提案できる道路が見つかりませんでした。探索範囲を広げるか、別のエリアを指定してください。')
+      setProposalError(message.includes('条件に合う') || message.includes('見つけられませんでした')
+        ? '指定した条件に合う峠道を見つけられませんでした。必ず通る地点や始点・ゴールの距離条件を確認してください。'
+        : '峠道の探索を完了できませんでした。少し待ってから、もう一度お試しください。')
     } finally { setBusy(false); setProposalProgress('') }
   }
 
@@ -294,13 +330,18 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
         <div id="proposal-settings" className={`proposal-settings ${proposalSettingsOpen ? 'open' : ''}`} aria-hidden={!proposalSettingsOpen} inert={!proposalSettingsOpen}><div className="proposal-settings-inner">
           <div className="proposal-grid">
             <label>探索半径<select value={proposalRadiusKm} onChange={(event) => setProposalRadiusKm(Number(event.target.value))}><option value={5}>5km</option><option value={10}>10km</option><option value={25}>25km</option><option value={50}>50km</option><option value={100}>100km</option></select></label>
-            <label>最大距離<select value={proposalMaxDistanceKm} onChange={(event) => setProposalMaxDistanceKm(Number(event.target.value))}><option value={20}>20km</option><option value={40}>40km</option><option value={60}>60km</option><option value={100}>100km</option><option value={200}>200km</option></select></label>
+            <label>最大距離<select value={proposalMaxDistanceKm} onChange={(event) => setProposalMaxDistanceKm(Number(event.target.value))}>{[2, 3, 4, 5, 6, 8, 10, 15, 20, 40].map((distance) => <option key={distance} value={distance}>{distance}km</option>)}</select></label>
             <label>提案数<select value={proposalCount} onChange={(event) => setProposalCount(Number(event.target.value))}><option value={1}>1案</option><option value={2}>2案</option><option value={3}>3案</option><option value={4}>4案</option><option value={5}>5案</option></select></label>
             <label>走り方<select value={proposalStyle} onChange={(event) => setProposalStyle(event.target.value as DriveStyle)}><option value="winding">ワインディング重視</option><option value="balanced">バランス</option><option value="easy">走りやすさ重視</option></select></label>
             <label>料金<select value={proposalToll} onChange={(event) => setProposalToll(event.target.value as 'all' | TollStatus)}><option value="all">指定なし</option><option value="free">無料のみ</option><option value="toll">有料道路</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label>
           </div>
-          <div className="proposal-via"><label>必ず通りたい地点<input value={proposalViaQuery} onChange={(event) => setProposalViaQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addProposalVia() } }} placeholder="例: 大観山、三国峠" /></label><button type="button" className="button secondary" onClick={() => void addProposalVia()} disabled={busy}>追加</button></div>
-          {proposalVias.length > 0 && <div className="proposal-via-tags">{proposalVias.map((point) => <span key={point.label}>{point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((item) => item.label !== point.label))} aria-label={`${point.label}を除外`}>×</button></span>)}</div>}
+          <div className="proposal-anchor-grid">
+            <div className="proposal-via"><label>スタート地点（任意）<input value={proposalStartQuery} onChange={(event) => setProposalStartQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void setProposalAnchor('start') } }} placeholder="地名・住所・地図タップ" /></label><button type="button" className="button secondary" onClick={() => void setProposalAnchor('start')} disabled={busy}>設定</button></div>
+            <div className="proposal-via"><label>ゴール地点（任意）<input value={proposalGoalQuery} onChange={(event) => setProposalGoalQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void setProposalAnchor('goal') } }} placeholder="地名・住所・地図タップ" /></label><button type="button" className="button secondary" onClick={() => void setProposalAnchor('goal')} disabled={busy}>設定</button></div>
+          </div>
+          <div className="proposal-via"><label>必ず通りたい地点<input value={proposalViaQuery} onChange={(event) => setProposalViaQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addProposalVia() } }} placeholder="例: 大観山、三国峠。地図タップでも追加できます" /></label><button type="button" className="button secondary" onClick={() => void addProposalVia()} disabled={busy}>追加</button></div>
+          <p className="proposal-map-point-help">地図をタップすると、必須地点・スタート・ゴールを選んで追加できます。追加済みのピンをタップすると削除できます。</p>
+          {(proposalStart || proposalGoal || proposalVias.length > 0) && <div className="proposal-via-tags">{proposalStart && <span>START: {proposalStart.label}<button type="button" onClick={() => setProposalStart(null)} aria-label="スタート地点を削除">×</button></span>}{proposalVias.map((point, index) => <span key={`${point.label}-${index}`}>経由: {point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((_, itemIndex) => itemIndex !== index))} aria-label={`${point.label}を除外`}>×</button></span>)}{proposalGoal && <span>GOAL: {proposalGoal.label}<button type="button" onClick={() => setProposalGoal(null)} aria-label="ゴール地点を削除">×</button></span>}</div>}
         </div></div>
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
         <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '峠道を検証中…' : `この条件で${proposalCount}案を見る`}</button>

@@ -14,6 +14,9 @@ export interface DriveProposalRequest {
   toll: 'all' | TollStatus
   style: DriveStyle
   requiredPoints: Array<{ coordinate: Coordinate; label: string }>
+  /** Optional anchors. When set, the generated road route starts/ends here. */
+  startPoint?: { coordinate: Coordinate; label: string } | null
+  goalPoint?: { coordinate: Coordinate; label: string } | null
 }
 
 export function proposalCountFor(request: Pick<DriveProposalRequest, 'proposalCount'>): number {
