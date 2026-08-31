@@ -319,6 +319,19 @@ export function routeCandidateTargets(center: Coordinate, radiusKm: number, maxD
   })
 }
 
+/** Search radius is independent of course length: find short passes outside the town centre too. */
+export function surroundingRouteCandidateTargets(center: Coordinate, radiusKm: number, maxDistanceKm: number) {
+  const latitudeScale = radiusKm * .55 / 111
+  const longitudeScale = latitudeScale / Math.max(.35, Math.cos(center[1] * Math.PI / 180))
+  return Array.from({ length: 8 }, (_, index) => {
+    const bearing = index * Math.PI / 4
+    const probeCenter: Coordinate = [center[0] + Math.sin(bearing) * longitudeScale, center[1] + Math.cos(bearing) * latitudeScale]
+    // Leave a margin inside the requested radius for both ends of the probe.
+    // Tangential probes avoid bringing every route back through the origin.
+    return routeCandidateTargets(probeCenter, radiusKm, Math.min(maxDistanceKm, radiusKm * .6), 8)[(index + 2) % 8]
+  })
+}
+
 /** Build router stops without turning the search-area centre into a via. */
 export function routedStopsFor(start: Coordinate, requiredPoints: Coordinate[], goal: Coordinate): Coordinate[] {
   return [start, ...requiredPoints, goal]
@@ -359,7 +372,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   // can lie on only one side of the selected place; returning the first router
   // line was the reason a city connector could win over a real mountain road.
   const targets = routeCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, 8, request.startPoint?.coordinate, request.goalPoint?.coordinate)
-  const settled = await settleDiscoveryTasks(targets, async ({ start, goal, targetDistanceKm }, index) => {
+  const evaluate = async ({ start, goal, targetDistanceKm }: typeof targets[number], index: number) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
     const mandatoryStops = request.requiredPoints.map((point) => point.coordinate)
@@ -370,6 +383,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     const stops = routedStopsFor(start, mandatoryStops, goal)
     const routed = await fetchRoutedRoad(stops)
     if (!routed || routed.distanceKm > request.maxDistanceKm) return null
+    if (routed.route.every((point) => distanceKm(request.center, point) > request.radiusKm)) return null
     // A router may snap an unreachable coordinate to a distant road. Do not
     // present such a route as satisfying the user's mandatory-stop request.
     if (mandatoryStops.some((point) => distanceToRouteKm(point, routed.route) > .25)) return null
@@ -421,7 +435,16 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       ],
       validation: { ...validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
-  })
+  }
+  const settled = await settleDiscoveryTasks(targets, evaluate)
+  const hasExplicitStops = Boolean(request.startPoint || request.goalPoint || request.requiredPoints.length)
+  if (!hasExplicitStops && !settled.some((result) => result.status === 'fulfilled' && result.value)
+    && settled.some((result) => result.status === 'fulfilled')) {
+    // Only widen spatial coverage after successful nearby probes found no
+    // passes. A total service outage must not generate another request burst.
+    const surrounding = surroundingRouteCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm)
+    settled.push(...await settleDiscoveryTasks(surrounding, (target, index) => evaluate(target, index + targets.length)))
+  }
   const proposals = settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
     .sort((a, b) => b.score - a.score)
     .slice(0, count)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, routedStopsFor, splitRoadCorridor, validateDiscoveredRoad } from './externalDiscovery'
+import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, routedStopsFor, splitRoadCorridor, surroundingRouteCandidateTargets, validateDiscoveredRoad } from './externalDiscovery'
+import { distanceKm } from './course'
 
 describe('external road discovery', () => {
   it('uses a bounded Overpass around query and excludes private road classes', () => {
@@ -23,6 +24,19 @@ describe('external road discovery', () => {
     expect(targets).toHaveLength(8)
     expect(Math.max(...targets.map((item) => item.targetDistanceKm))).toBeLessThanOrEqual(4)
     expect(new Set(targets.map((item) => item.targetDistanceKm.toFixed(2))).size).toBeGreaterThan(2)
+  })
+
+  it.each([2, 4, 6, 10, 40])('searches farther within the radius for a %ikm course without lengthening the course', (maxDistance) => {
+    const center: [number, number] = [138.95, 35.04]
+    const probes = surroundingRouteCandidateTargets(center, 25, maxDistance)
+    expect(probes).toHaveLength(8)
+    for (const probe of probes) {
+      expect(distanceKm(center, probe.start)).toBeGreaterThan(8)
+      expect(distanceKm(center, probe.start)).toBeLessThan(25)
+      expect(distanceKm(center, probe.goal)).toBeLessThan(25)
+      expect(probe.targetDistanceKm).toBeLessThanOrEqual(maxDistance)
+      expect(distanceKm(probe.start, probe.goal)).toBeLessThanOrEqual(maxDistance)
+    }
   })
 
   it('uses the selected place only as a search centre, never as an implicit via point', () => {

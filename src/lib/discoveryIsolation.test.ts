@@ -60,6 +60,24 @@ describe('finder inputs are independent of the route being composed', () => {
 })
 
 describe('discovery failure reporting and load', () => {
+  it('finds a surrounding pass when all immediate city-centre probes have no route', async () => {
+    let calls = 0
+    const fetchMock = vi.fn(async () => {
+      calls += 1
+      return calls <= 8 ? Response.json({ code: 'NoRoute' }) : response()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await discoverExternalDriveProposals(settings)).toHaveLength(1)
+    expect(calls).toBe(16)
+  })
+
+  it('does not replace explicit start/via/goal with unconstrained surrounding probes', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ code: 'NoRoute' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(discoverExternalDriveProposals({ ...settings, startPoint: { coordinate: road[0], label: '始点' } })).rejects.toThrow('条件に合う')
+    expect(fetchMock).toHaveBeenCalledTimes(8)
+  })
+
   it('reports a data outage rather than no matches even if the fallback returns zero ways', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/route/v1/')
       ? new Response('', { status: 503 }) : Response.json({ elements: [] })))
