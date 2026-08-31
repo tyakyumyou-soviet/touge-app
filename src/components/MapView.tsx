@@ -13,7 +13,7 @@ interface MapViewProps {
   courses: Course[]
   selected: Course | null
   previewCourseIds: string[]
-  previewFocusRequest?: number
+  focusRequest?: number
   is3d: boolean
   drawing: boolean
   draftRoute: Coordinate[]
@@ -21,7 +21,6 @@ interface MapViewProps {
   draftRoles: DraftPointRole[]
   viaInsertAfter: number | null
   focusPoint: Coordinate | null
-  focusRoute: Coordinate[] | null
   pendingSearchPoint: Coordinate | null
   pendingSearchLabel: string
   recommendationMapState: RecommendationMapState
@@ -102,7 +101,7 @@ const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number 
   }],
 })
 
-export function MapView({ courses, selected, previewCourseIds, previewFocusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, focusRoute, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, previewCourseIds, focusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -426,85 +425,137 @@ export function MapView({ courses, selected, previewCourseIds, previewFocusReque
   useEffect(() => {
     const map = mapRef.current
     const container = containerRef.current
-    if (!map || !container || !focusRoute || focusRoute.length < 2) return
-    const bounds = focusRoute.reduce(
-      (value, point) => value.extend(point),
-      new maplibregl.LngLatBounds(focusRoute[0], focusRoute[0]),
-    )
-    // A preview opens its detail sheet in the same render. Defer this camera
-    // request until that sheet has its final size, so its fitBounds call wins
-    // over an earlier point-focus animation and lands in the visible map area.
-    const fitPreviewRoute = (duration: number) => {
-      map.stop()
-      map.resize()
-      map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration, essential: true })
-    }
-    const compact = window.matchMedia('(max-width: 760px)').matches
-    // The detail sheet and builder animate independently from the map. Run the
-    // fit once in the next frame and once after the mobile sheet transition;
-    // the latter observes the final visible-map area instead of the old,
-    // maximized builder height. This also makes reopening a preview reliable.
-    const frame = window.requestAnimationFrame(() => fitPreviewRoute(0))
-    const settleTimer = compact ? window.setTimeout(() => fitPreviewRoute(900), 460) : 0
-    return () => { window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
-  }, [focusRoute, mapReady])
-
-  useEffect(() => {
-    const map = mapRef.current
-    const container = containerRef.current
     if (!map?.isStyleLoaded() || !container) return
     const source = map.getSource('selected-course') as GeoJSONSource | undefined
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected?.route ?? [] } })
     ;(map.getSource('selected-contours') as GeoJSONSource | undefined)?.setData(toContourFeatureCollection(selected))
     ;(map.getSource('course-annotations') as GeoJSONSource | undefined)?.setData(toCourseAnnotationCollection(selected))
-    if (!selected || selected.route.length < 2) return
-    const bounds = selected.route.reduce(
-      (value, point) => value.extend(point),
-      new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
-    )
-    const fitSelectedRoute = (duration: number) => {
-      map.stop()
-      map.resize()
-      map.fitBounds(bounds, {
-        padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }),
-        maxZoom: 12.5,
-        duration,
-        essential: true,
-      })
-    }
-    // Do not treat proposal previews as an exception. Both regular courses
-    // and previews use the same camera guarantee; the delayed pass accounts
-    // for the sheet changing from the builder to the detail view on mobile.
-    const frame = window.requestAnimationFrame(() => fitSelectedRoute(0))
-    const compact = window.matchMedia('(max-width: 760px)').matches
-    const settleTimer = compact ? window.setTimeout(() => fitSelectedRoute(900), 460) : 0
-    return () => { window.cancelAnimationFrame(frame); if (settleTimer) window.clearTimeout(settleTimer) }
   }, [selected, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
     const container = containerRef.current
-    // The builder and preview sheet animate separately. A final camera pass
-    // after both transitions guarantees that the proposal remains visible.
-    if (!map || !container || !previewFocusRequest || selected?.authorId !== '__proposal_preview__' || selected.route.length < 2) return
+    // A selected course can replace one bottom sheet with another during the
+    // same render. Keep camera work in this single effect and refit after the
+    // animation settles; competing fitBounds calls were cancelling each other
+    // and made the preview button appear to do nothing on mobile.
+    if (!map || !container || !focusRequest || !selected || selected.route.length < 2) return
     const bounds = selected.route.reduce(
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
     )
-    const fitPreview = (duration: number) => {
+    const centreRouteInVisibleMap = () => {
+      const rect = container.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) return
+      const occlusionPadding = visibleMapCameraPadding(container)
+      const visibleHeight = Math.max(120, rect.height - occlusionPadding.bottom)
+      const target = { x: rect.width / 2, y: Math.min(rect.height - 32, Math.max(32, visibleHeight / 2)) }
+      const current = map.project(bounds.getCenter())
+      const offset: [number, number] = [target.x - current.x, target.y - current.y]
+      if (Math.abs(offset[0]) < 0.5 && Math.abs(offset[1]) < 0.5) return
+      map.panBy([-offset[0], -offset[1]], { duration: 0, essential: true })
+    }
+    const fitSelected = (animate: boolean) => {
+      const rect = container.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) {
+        return
+      }
+      // Do not feed a nearly full-height sheet inset into cameraForBounds.
+      // MapLibre returns `undefined` in that case (there is technically too
+      // little canvas left), so no movement occurs at all. Fit horizontally
+      // first, then place that fitted route in the centre of the actually
+      // visible map area above the sheet.
+      const fitPadding = { top: 16, right: 40, bottom: 16, left: 40 }
       map.stop()
       map.resize()
-      map.fitBounds(bounds, { padding: visibleMapCameraPadding(container, { top: 48, right: 40, bottom: 48, left: 40 }), maxZoom: 12.5, duration, essential: true })
+      // Calculate the target camera explicitly before moving it. On mobile a
+      // bottom sheet can leave a narrow, but valid, visible map strip. Calling
+      // fitBounds directly while that strip is being animated can be ignored
+      // by MapLibre; jumpTo guarantees a real center/zoom update first.
+      const camera = map.cameraForBounds(bounds, { padding: fitPadding, maxZoom: 12.5 })
+      if (camera?.center && Number.isFinite(camera.zoom)) {
+        // Obtain a centre that puts the route centre in the visible top part
+        // of the canvas instead of behind the detail sheet.
+        map.jumpTo({ center: camera.center, zoom: camera.zoom, padding: fitPadding })
+        const target = { center: camera.center, zoom: camera.zoom, padding: fitPadding }
+        if (animate) map.easeTo({ ...target, duration: 520, essential: true })
+        else map.jumpTo(target)
+        // A map fit uses the whole canvas. Shift the fitted route afterwards
+        // so it sits in the centre of the portion that remains above the sheet.
+        if (animate) window.setTimeout(centreRouteInVisibleMap, 540)
+        else centreRouteInVisibleMap()
+        return
+      }
+      // Keep a defensive fallback for map styles that cannot calculate a
+      // camera before all terrain resources are ready.
+      map.fitBounds(bounds, { padding: fitPadding, maxZoom: 12.5, duration: animate ? 520 : 0, essential: true })
     }
-    const first = window.requestAnimationFrame(() => fitPreview(0))
-    const afterSheetReset = window.setTimeout(() => fitPreview(500), 240)
-    const afterDetailAnimation = window.setTimeout(() => fitPreview(850), 680)
+    const first = window.requestAnimationFrame(() => fitSelected(false))
+    // The first pass makes a desktop selection immediate. The later passes
+    // use the final sheet bounds on iOS/Android, including a maximized builder
+    // collapsing into the preview detail sheet.
+    const settleTimers = [180, 520, 920].map((delay, index) => window.setTimeout(() => fitSelected(index === 2), delay))
     return () => {
       window.cancelAnimationFrame(first)
-      window.clearTimeout(afterSheetReset)
-      window.clearTimeout(afterDetailAnimation)
+      settleTimers.forEach((timer) => window.clearTimeout(timer))
     }
-  }, [previewFocusRequest, selected, mapReady])
+  }, [focusRequest, selected, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const container = containerRef.current
+    if (!map || !container || !selected || selected.route.length < 2) return
+    const bounds = selected.route.reduce(
+      (value, point) => value.extend(point),
+      new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
+    )
+    let frame = 0
+    const alignToVisibleMap = () => {
+      frame = 0
+      const rect = container.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) return
+      const occlusionPadding = visibleMapCameraPadding(container)
+      const visibleHeight = Math.max(120, rect.height - occlusionPadding.bottom)
+      const target = { x: rect.width / 2, y: Math.min(rect.height - 32, Math.max(32, visibleHeight / 2)) }
+      const current = map.project(bounds.getCenter())
+      const offset: [number, number] = [target.x - current.x, target.y - current.y]
+      if (Math.abs(offset[0]) < 0.5 && Math.abs(offset[1]) < 0.5) return
+      map.panBy([-offset[0], -offset[1]], { duration: 0, essential: true })
+    }
+    const scheduleAlignment = () => {
+      if (!frame) frame = window.requestAnimationFrame(alignToVisibleMap)
+    }
+    // All sheets use the same occlusion marker. Observing their class/style
+    // changes covers snapping, drag movement, iOS visual-viewport settling,
+    // and sheets mounted after a route has been selected.
+    const observedSheets = new Set<HTMLElement>()
+    const observeSheets = () => {
+      document.querySelectorAll<HTMLElement>('[data-map-occlusion="bottom-sheet"]').forEach((sheet) => {
+        if (observedSheets.has(sheet)) return
+        observedSheets.add(sheet)
+        mutations.observe(sheet, { attributes: true, attributeFilter: ['class', 'style'] })
+        resize.observe(sheet)
+      })
+    }
+    // Only sheet attributes are relevant. Watching every style change in the
+    // map canvas creates a feedback loop because panBy itself updates canvas
+    // transforms while a route is being aligned.
+    const mutations = new MutationObserver((records) => {
+      if (records.some((record) => record.type === 'attributes')) scheduleAlignment()
+      if (records.some((record) => record.type === 'childList')) { observeSheets(); scheduleAlignment() }
+    })
+    mutations.observe(document.body, { childList: true, subtree: true })
+    const resize = new ResizeObserver(scheduleAlignment)
+    resize.observe(container)
+    observeSheets()
+    const settleTimers = [0, 240, 620].map((delay) => window.setTimeout(scheduleAlignment, delay))
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      mutations.disconnect()
+      resize.disconnect()
+      settleTimers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [selected, mapReady])
 
   useEffect(() => {
     const map = mapRef.current

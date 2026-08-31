@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
-import { nextSheetSnap, raisedSheetHeight, type SheetSnap } from '../lib/sheetGeometry'
+import { boundedDownwardSheetOffset, nextSheetSnap, raisedSheetHeight, type SheetSnap } from '../lib/sheetGeometry'
 
 const handleSelector = '.mobile-sheet-drag-region,.detail-sheet-top,.detail-peek-handle,.explore-panel-top,.course-list-drag-area'
 const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-drag]'
@@ -9,7 +9,7 @@ const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-dra
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet() {
   const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; height: number; maximumHeight: number } | null>(null)
-  const scrollDrag = useRef<{ y: number; active: boolean } | null>(null)
+  const scrollDrag = useRef<{ y: number; active: boolean; height: number } | null>(null)
   const ignoreTap = useRef(false)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -38,7 +38,9 @@ export function useMobileSheet() {
       return
     }
     setDragHeight(undefined)
-    setOffset(collapsed ? Math.min(0, distance) : expanded ? Math.max(0, distance) : Math.max(-180, distance))
+    if (collapsed) { setOffset(Math.min(0, distance)); return }
+    const downward = boundedDownwardSheetOffset(distance, active.height)
+    setOffset(expanded ? downward : distance < 0 ? Math.max(-180, distance) : downward)
   }
 
   function endGesture(id: number, y: number) {
@@ -119,7 +121,8 @@ export function useMobileSheet() {
     // Header pointer handling and body scrolling must never own the same touch.
     if (drag.current || (event.target as Element).closest(handleSelector + ',input,select,textarea,[data-sheet-no-drag]')) return
     if (!isMobile() || event.touches.length !== 1 || event.currentTarget.scrollTop > 1) return
-    scrollDrag.current = { y: event.touches[0].clientY, active: false }
+    const sheet = event.currentTarget.closest<HTMLElement>('.mobile-sheet')
+    scrollDrag.current = { y: event.touches[0].clientY, active: false, height: sheet?.getBoundingClientRect().height ?? 54 }
   }
 
   function moveScrollDrag(event: ReactTouchEvent<HTMLElement>) {
@@ -137,7 +140,7 @@ export function useMobileSheet() {
     // behave exactly like pulling the sheet by its fixed handle.
     event.preventDefault()
     setDragging(true)
-    setOffset(Math.max(0, distance))
+    setOffset(boundedDownwardSheetOffset(distance, active.height))
   }
 
   function endScrollDrag(event: ReactTouchEvent<HTMLElement>) {

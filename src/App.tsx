@@ -82,8 +82,10 @@ export default function App() {
   const [recommendationMapAction, setRecommendationMapAction] = useState<RecommendationMapAction | null>(null)
   const [proposalPreviews, setProposalPreviews] = useState<Course[]>([])
   const [proposalDefinitions, setProposalDefinitions] = useState<DriveProposal[]>([])
-  const [proposalFocusRoute, setProposalFocusRoute] = useState<Coordinate[] | null>(null)
-  const [proposalPreviewFocusRequest, setProposalPreviewFocusRequest] = useState(0)
+  // A monotonically increasing request is deliberately used instead of tying
+  // camera focus to the selected object identity.  Previewing the same
+  // candidate twice must still refit the map after its bottom sheet changes.
+  const [mapFocusRequest, setMapFocusRequest] = useState(0)
   const [proposalEditSnapshot, setProposalEditSnapshot] = useState<{ route: Coordinate[]; labels: string[]; roles: DraftPointRole[]; viaInsertAfter: number | null } | null>(null)
   const [ratingOpen, setRatingOpen] = useState(false)
   const [course3dOpen, setCourse3dOpen] = useState(false)
@@ -235,11 +237,9 @@ export default function App() {
 
   const selectCourse = useCallback((course: Course) => {
     setSelected(course)
-    if (course.authorId === '__proposal_preview__') setProposalPreviewFocusRequest((request) => request + 1)
-    // Use one focus path for list routes, shared routes, and proposal previews.
-    // Cloning intentionally creates a fresh camera request when the same
-    // course is opened again after the sheet layout has changed.
-    setProposalFocusRoute([...course.route])
+    // Every selection—including reopening the same proposal—gets a fresh map
+    // camera request. This is also used by ordinary courses for consistency.
+    setMapFocusRequest((request) => request + 1)
     collapseList()
   }, [collapseList])
   const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
@@ -360,7 +360,6 @@ export default function App() {
     // Preview geometry and editable stops have different jobs. Rendering uses
     // every road vertex; the builder exposes only a compact set of anchors.
     const proposalRoute = proposal.waypoints ?? proposal.route
-    setProposalFocusRoute([...proposal.route])
     const proposalLabels = proposalRoute.map((_, index) => proposal.labels[index] ?? (index === 0 ? `${proposal.name} 始点` : index === proposalRoute.length - 1 ? `${proposal.name} 終点` : `${proposal.name} 経由地`))
     if (placement === 'replace') {
       setProposalEditSnapshot((snapshot) => snapshot ?? {
@@ -428,7 +427,7 @@ export default function App() {
     setSurfaceMotion('leaving-list')
     return new Promise<void>((resolve) => {
       finishSurfaceMotion('form', resolve)
-      setSelected(null); setProposalPreviews([]); setProposalDefinitions([]); setProposalFocusRoute(null); setProposalEditSnapshot(null); setRecommendationMapState({ active: false, start: null, goal: null, vias: [] }); setRecommendationMapAction(null); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
+      setSelected(null); setProposalPreviews([]); setProposalDefinitions([]); setProposalEditSnapshot(null); setRecommendationMapState({ active: false, start: null, goal: null, vias: [] }); setRecommendationMapAction(null); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
     })
   }
 
@@ -559,7 +558,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} previewFocusRequest={proposalPreviewFocusRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} focusRoute={proposalFocusRoute} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => setRecommendationMapAction({ ...action, id: Date.now() })} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => setRecommendationMapAction({ ...action, id: Date.now() })} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={drawing ? undefined : listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
           <div className="explore-panel-top">
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); listSheet.openResting() } }} />
