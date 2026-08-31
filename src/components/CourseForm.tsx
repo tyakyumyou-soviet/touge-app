@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { RouteOrderEditor, type RouteOrderBlock } from './RouteOrderEditor'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RecommendationMapAction, RecommendationMapState, UserProfile } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
@@ -124,7 +125,6 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
 
   const [courseLibraryOpen, setCourseLibraryOpen] = useState(false)
   const [courseLibraryQuery, setCourseLibraryQuery] = useState('')
-  const [draggedBlockStart, setDraggedBlockStart] = useState<number | null>(null)
   const hasGoal = pointRoles.includes('goal')
   const courseMatches = useMemo(() => {
     const value = query.trim().toLocaleLowerCase('ja')
@@ -144,28 +144,27 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
     return courses.filter((course) => `${course.name}${course.area}${course.tags.join('')}`.toLocaleLowerCase('ja').includes(value)).slice(0, 12)
   }, [courseLibraryQuery, courses])
   const routeBlocks = useMemo(() => {
-    const blocks: Array<{ start: number; count: number; title: string; subtitle: string }> = []
+    const blocks: RouteOrderBlock[] = []
+    const occurrences = new Map<string, number>()
     for (let index = 0; index < route.length; index += 1) {
       const label = pointLabels[index] ?? '地図指定'
+      const identity = `${route[index].join(',')}:${label}`
+      const occurrence = occurrences.get(identity) ?? 0
+      occurrences.set(identity, occurrence + 1)
+      const id = `${identity}:${occurrence}`
       const courseStart = label.match(/^(.*)・始点$/)
       if (courseStart) {
         const endLabel = `${courseStart[1]}・終点`
-        const end = pointLabels.findIndex((item, candidate) => candidate >= index && item === endLabel)
-        if (end >= index) { blocks.push({ start: index, count: end - index + 1, title: courseStart[1], subtitle: '既存コース' }); index = end; continue }
+        let end = index
+        while (end + 1 < route.length && pointLabels[end] !== endLabel
+          && pointLabels[end + 1]?.startsWith(`${courseStart[1]}・`) && !pointLabels[end + 1]?.endsWith('・始点')) end += 1
+        blocks.push({ id, start: index, count: end - index + 1, title: courseStart[1], subtitle: 'コース区間' }); index = end; continue
       }
       const role = pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via')
-      blocks.push({ start: index, count: 1, title: label, subtitle: role === 'start' ? '始点' : role === 'goal' ? 'ゴール' : '経由地' })
+      blocks.push({ id, start: index, count: 1, title: label, subtitle: role === 'start' ? '始点' : role === 'goal' ? 'ゴール' : '経由地' })
     }
     return blocks
-  }, [pointLabels, pointRoles, route.length])
-
-  function handleBlockDrop(event: DragEvent<HTMLLIElement>, target: { start: number; count: number }) {
-    event.preventDefault()
-    if (draggedBlockStart === null || draggedBlockStart === target.start) return
-    const source = routeBlocks.find((block) => block.start === draggedBlockStart)
-    if (source) onMoveRouteBlock(source.start, source.count, target.start)
-    setDraggedBlockStart(null)
-  }
+  }, [pointLabels, pointRoles, route])
 
   function openDetails() {
     const defaults = buildCourseDraftDefaults(pointLabels, route)
@@ -327,9 +326,6 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
   function chooseProposal(proposal: DriveProposal) {
     const append = route.length > 0
     onUseProposal(proposal, append ? 'append' : 'replace', append ? viaInsertAfter : null)
-    setProposalOpen(false)
-    setPendingSearchPoint(null); onPendingPointChange(null)
-    setSearchNotice(append ? `「${proposal.name}」を現在のルートへ組み込みました。必要なら地点の順番を調整できます。` : `「${proposal.name}」をコースのベースにしました。地点を追加・削除して仕上げられます。`)
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -409,7 +405,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
       {pendingSearchPoint && <section className="address-match-confirm" aria-label="検索結果の確認"><strong>検索結果を確認</strong><span>{pendingSearchPoint.label}</span><small>{pendingSearchPoint.level ? `住所レベル ${pendingSearchPoint.level} の位置です。建物の入口ではなく、住所代表点の場合があります。` : '地図上の赤い仮ピンを確認してから追加してください。'}</small><div><button type="button" className="button secondary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'via', viaInsertAfter); setSearchNotice(route.length ? '経由地として追加しました。必要なら地図上のピンを長押しして調整できます。' : '始点として追加しました。次に経由地またはゴールを追加してください。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>{route.length ? '経由地として追加' : '始点として追加'}</button>{route.length > 0 && <button type="button" className="button primary" onClick={() => { onAddPoint(pendingSearchPoint.coordinate, pendingSearchPoint.label, 'goal'); setSearchNotice('ゴールとして追加しました。'); setPendingSearchPoint(null); onPendingPointChange(null) }}>ゴールとして追加</button>}<button type="button" className="text-button" onClick={() => { setPendingSearchPoint(null); onPendingPointChange(null) }}>追加しない</button></div></section>}
       {courseMatches.length > 0 && <div className="route-search-results">{courseMatches.map((course) => <button key={course.id} type="button" onClick={() => { onIncorporateCourse(course, viaInsertAfter); setQuery(''); setSearchNotice(`「${course.name}」をルートに組み込みました。必要なら地点の順番を調整できます。`) }}><strong>{course.name}</strong><small>{course.area} · コース全体を組み込む</small></button>)}</div>}
       <p className="route-builder-help">最初の地点が始点になります。次の地点は「経由地」か「ゴール」を選べます。途中へ追加する場合は地点一覧の「＋」で追加先を指定できます。</p>
-      {routeBlocks.length > 1 && <section className="route-order-editor" aria-label="ルートの順番を変更"><div><strong>ルートの順番</strong><small>ドラッグ＆ドロップで入れ替え</small></div><ol>{routeBlocks.map((block, index) => <li key={`${block.start}-${block.title}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedBlockStart(block.start) }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleBlockDrop(event, block)} onDragEnd={() => setDraggedBlockStart(null)} className={draggedBlockStart === block.start ? 'dragging' : ''}><span aria-hidden="true">⠿</span><div><strong>{block.title}</strong><small>{block.subtitle}{block.count > 1 ? ` · ${block.count}地点` : ''}</small></div><button type="button" onClick={() => { const target = routeBlocks[index - 1]; if (target) onMoveRouteBlock(block.start, block.count, target.start) }} disabled={index === 0} aria-label={`${block.title}を前へ`}>↑</button><button type="button" onClick={() => { const target = routeBlocks[index + 1]; if (target) onMoveRouteBlock(block.start, block.count, target.start + target.count) }} disabled={index === routeBlocks.length - 1} aria-label={`${block.title}を後へ`}>↓</button></li>)}</ol></section>}
+      <RouteOrderEditor blocks={routeBlocks} onMove={onMoveRouteBlock} />
       <div className="route-stop-list">{route.length ? route.map((point, index) => { const role = pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'); const roleText = role === 'start' ? 'START' : role === 'goal' ? 'GOAL' : `経由 ${pointRoles.slice(0, index + 1).filter((item) => item === 'via').length || index}`; return <div key={`${point[0]}-${point[1]}-${index}`}><b>{roleText}</b><span><strong>{pointLabels[index] || '地図指定'}</strong><small>{point[1].toFixed(5)}, {point[0].toFixed(5)}</small></span>{role !== 'goal' && <button type="button" className={`insert-stop ${viaInsertAfter === index ? 'active' : ''}`} onClick={() => onChooseViaInsertion(viaInsertAfter === index ? null : index)} aria-label={`${roleText}の直後に経由地を追加`}>{viaInsertAfter === index ? '追加先' : '＋'}</button>}<button type="button" onClick={() => onRemovePoint(index)} aria-label={`${roleText}を削除`}>×</button></div> }) : <p>まだ地点がありません</p>}</div>
       {route.length >= 2 && !hasGoal && <button type="button" className="set-goal-button" onClick={onSetFinalPointAsGoal}>現在の最後の地点をゴールに設定</button>}
       {route.length >= 2 && hasGoal && <button type="button" className="reverse-route-button" onClick={onReverseRoute}>⇄ 始点とゴールを入れ替える</button>}

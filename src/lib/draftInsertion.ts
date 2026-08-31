@@ -15,7 +15,7 @@ export function insertDraftStops(current: DraftStops, points: Coordinate[], labe
   const roles = mode === 'goal' ? current.roles.map((role) => role === 'goal' ? 'via' as const : role) : current.roles
   const insertedRoles: DraftPointRole[] = points.map((_, index) => {
     if (!current.route.length && index === 0) return 'start'
-    if (index === points.length - 1 && (mode === 'goal' || (mode === 'proposal' && goal < 0) || (mode === 'course' && !current.route.length))) return 'goal'
+    if (index === points.length - 1 && (mode === 'goal' || (mode === 'course' && !current.route.length))) return 'goal'
     return 'via'
   })
   return {

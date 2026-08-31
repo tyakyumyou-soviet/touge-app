@@ -43,9 +43,22 @@ describe('pure draft insertion', () => {
   })
 
   it('allows adding ordinary vias after a recommended course without losing its goal', () => {
-    const proposal = insertDraftStops(empty, points, labels, 'proposal')
+    const proposal = insertDraftStops(empty, points, labels, 'goal')
     const next = insertDraftStops(proposal, [[138, 34]], ['後から追加'], 'via')
     expect(next.labels).toEqual(['始点', '途中', '後から追加', '終点'])
     expect(next.roles).toEqual(['start', 'via', 'via', 'goal'])
+  })
+
+  it('does not automatically designate a proposal endpoint as goal', () => {
+    expect(insertDraftStops(empty, points, labels, 'proposal').roles).toEqual(['start', 'via', 'via'])
+    const start = insertDraftStops(empty, [[138, 34]], ['先に置いた始点'], 'via')
+    expect(insertDraftStops(start, points, labels, 'proposal').roles).toEqual(['start', 'via', 'via', 'via'])
+  })
+
+  it('can explicitly use the proposal endpoint as goal without deleting the previous goal', () => {
+    const current = insertDraftStops(empty, points, labels, 'course')
+    const next = insertDraftStops(current, [[138, 34], [138.1, 34.1]], ['提案始点', '提案終点'], 'goal', 0)
+    expect(next.labels).toEqual([...labels, '提案始点', '提案終点'])
+    expect(next.roles).toEqual(['start', 'via', 'via', 'via', 'goal'])
   })
 })

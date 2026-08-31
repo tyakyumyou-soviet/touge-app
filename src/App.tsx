@@ -26,6 +26,8 @@ import { courseMatchesSearch } from './lib/courseSearch'
 import { geocodeJapanesePlace } from './lib/location'
 import type { DriveProposal } from './lib/recommendations'
 import { insertDraftStops } from './lib/draftInsertion'
+import { moveDraftBlock } from './lib/draftReorder'
+import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | Course['prefecture']
@@ -88,6 +90,7 @@ export default function App() {
   // candidate twice must still refit the map after its bottom sheet changes.
   const [mapFocusRequest, setMapFocusRequest] = useState(0)
   const [proposalEditSnapshot, setProposalEditSnapshot] = useState<{ route: Coordinate[]; labels: string[]; roles: DraftPointRole[]; viaInsertAfter: number | null } | null>(null)
+  const [pendingProposalAddition, setPendingProposalAddition] = useState<{ proposal: DriveProposal; placement: 'replace' | 'append'; after: number | null } | null>(null)
   const [ratingOpen, setRatingOpen] = useState(false)
   const [course3dOpen, setCourse3dOpen] = useState(false)
   const [tollReportOpen, setTollReportOpen] = useState(false)
@@ -276,18 +279,12 @@ export default function App() {
     setDraftPendingSearch(null)
   }, [])
   const moveRouteBlock = useCallback((from: number, count: number, to: number) => {
-    if (count < 1 || from < 0 || from + count > draftRoute.length || to < 0 || to > draftRoute.length || (to >= from && to <= from + count)) return
-    const move = <T,>(items: T[]) => {
-      const block = items.slice(from, from + count)
-      const rest = [...items.slice(0, from), ...items.slice(from + count)]
-      const insertAt = to > from ? to - count : to
-      return [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)]
-    }
-    setDraftRoute((items) => move(items))
-    setDraftPointLabels((items) => move(items))
-    setDraftPointRoles((items) => move(items).map((_, index, reordered) => index === 0 ? 'start' : index === reordered.length - 1 ? 'goal' : 'via'))
+    const next = moveDraftBlock({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles }, from, count, to)
+    setDraftRoute(next.route)
+    setDraftPointLabels(next.labels)
+    setDraftPointRoles(next.roles)
     setDraftViaInsertAfter(null)
-  }, [draftRoute.length])
+  }, [draftRoute, draftPointLabels, draftPointRoles])
   function resetListSheet() {
     listSheet.reset()
   }
@@ -336,11 +333,17 @@ export default function App() {
     }, () => { setNearbyError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setNearbyBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
   }
 
-  function handleUseProposal(proposal: DriveProposal, placement: 'replace' | 'append' = 'replace', requestedInsertAfter: number | null = null) {
+  function handleUseProposal(proposal: DriveProposal, placement: 'replace' | 'append' = draftRoute.length ? 'append' : 'replace', requestedInsertAfter: number | null = null) {
+    setPendingProposalAddition({ proposal, placement, after: requestedInsertAfter })
+  }
+
+  function confirmProposalAddition(makeGoal: boolean) {
+    if (!pendingProposalAddition) return
+    const { proposal, placement, after: requestedInsertAfter } = pendingProposalAddition
     // Preview geometry and editable stops have different jobs. Rendering uses
     // every road vertex; the builder exposes only a compact set of anchors.
     const proposalRoute = proposal.waypoints ?? proposal.route
-    const proposalLabels = proposalRoute.map((_, index) => proposal.labels[index] ?? (index === 0 ? `${proposal.name} 始点` : index === proposalRoute.length - 1 ? `${proposal.name} 終点` : `${proposal.name} 経由地`))
+    const proposalLabels = proposalRoute.map((_, index) => index === 0 ? `${proposal.name}・始点` : index === proposalRoute.length - 1 ? `${proposal.name}・終点` : `${proposal.name}・経由地${proposal.labels[index] ? `（${proposal.labels[index]}）` : ''}`)
     if (placement === 'replace') {
       setProposalEditSnapshot((snapshot) => snapshot ?? {
         route: draftRoute,
@@ -350,14 +353,18 @@ export default function App() {
       })
       setDraftRoute(proposalRoute)
       setDraftPointLabels(proposalLabels)
-      setDraftPointRoles(proposalRoute.map((_, index) => index === 0 ? 'start' : index === proposalRoute.length - 1 ? 'goal' : 'via'))
+      setDraftPointRoles(proposalRoute.map((_, index) => index === 0 ? 'start' : makeGoal && index === proposalRoute.length - 1 ? 'goal' : 'via'))
     } else {
-      const next = insertDraftStops({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles }, proposalRoute, proposalLabels, 'proposal', requestedInsertAfter)
+      setProposalEditSnapshot({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles, viaInsertAfter: draftViaInsertAfter })
+      const next = insertDraftStops({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles }, proposalRoute, proposalLabels, makeGoal ? 'goal' : 'proposal', requestedInsertAfter)
       setDraftRoute(next.route); setDraftPointLabels(next.labels); setDraftPointRoles(next.roles)
     }
     setDraftViaInsertAfter(null)
     setDraftFocus(proposalRoute.at(-1) ?? null)
     setDraftPendingSearch(null)
+    setPendingProposalAddition(null)
+    setSelected(null)
+    setNotice(makeGoal ? '提案区間を追加し、その終点をゴールにしました。' : '提案区間を経由地として追加しました。ゴール設定は変更していません。')
   }
 
   function undoProposalEdit() {
@@ -579,7 +586,7 @@ export default function App() {
           } : undefined}
           isPreview={selected.authorId === '__proposal_preview__'}
           previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) selectCourse(next) }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) selectCourse(next) }, onReturn: () => setSelected(null) } : undefined}
-          onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) { handleUseProposal(proposal); setSelected(null) } }}
+          onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) handleUseProposal(proposal) }}
         />}
         {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
@@ -588,6 +595,7 @@ export default function App() {
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
         {roadReportOpen && selected && <RoadConditionReportForm courseName={selected.name} onCancel={() => setRoadReportOpen(false)} onSave={handleRoadConditionReport} />}
       </main>
+      {pendingProposalAddition && <ProposalGoalDialog name={pendingProposalAddition.proposal.name} hasGoal={draftPointRoles.includes('goal')} onChoose={confirmProposalAddition} onCancel={() => setPendingProposalAddition(null)} />}
       {notice && <div className="notice" role="status">{notice}</div>}
       {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation">
         <section className={`modal logout-dialog ${logoutSheet.className}`} style={logoutSheet.style} role="dialog" aria-modal="true" aria-labelledby="logout-title" {...logoutSheet.dragProps}>
