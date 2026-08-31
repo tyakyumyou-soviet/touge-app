@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, splitRoadCorridor, validateDiscoveredRoad } from './externalDiscovery'
+import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, routedStopsFor, splitRoadCorridor, validateDiscoveredRoad } from './externalDiscovery'
 
 describe('external road discovery', () => {
   it('uses a bounded Overpass around query and excludes private road classes', () => {
@@ -23,6 +23,15 @@ describe('external road discovery', () => {
     expect(targets).toHaveLength(8)
     expect(Math.max(...targets.map((item) => item.targetDistanceKm))).toBeLessThanOrEqual(4)
     expect(new Set(targets.map((item) => item.targetDistanceKm.toFixed(2))).size).toBeGreaterThan(2)
+  })
+
+  it('uses the selected place only as a search centre, never as an implicit via point', () => {
+    const start: [number, number] = [139, 35]
+    const searchCentre: [number, number] = [139.1, 35.1]
+    const required: [number, number] = [139.02, 35.02]
+    const goal: [number, number] = [139.04, 35.04]
+    expect(routedStopsFor(start, [required], goal)).toEqual([start, required, goal])
+    expect(routedStopsFor(start, [required], goal)).not.toContainEqual(searchCentre)
   })
 
   it('splits a long mountain road into uninterrupted short-course candidates', () => {

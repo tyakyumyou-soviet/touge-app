@@ -309,6 +309,11 @@ export function routeCandidateTargets(center: Coordinate, radiusKm: number, maxD
   })
 }
 
+/** Build router stops without turning the search-area centre into a via. */
+export function routedStopsFor(start: Coordinate, requiredPoints: Coordinate[], goal: Coordinate): Coordinate[] {
+  return [start, ...requiredPoints, goal]
+}
+
 async function fetchRoutedRoad(stops: Coordinate[]): Promise<{ route: Coordinate[], distanceKm: number, averageSpeedKmh: number, stepDensity: number } | null> {
   const coordinates = stops.map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
   const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`, { cache: 'no-store' })
@@ -340,10 +345,11 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
     const mandatoryStops = request.requiredPoints.map((point) => point.coordinate)
-    const anchored = Boolean(request.startPoint || request.goalPoint || mandatoryStops.length)
-    // The selected centre is a discovery reference, not an unrequested stop.
-    // Once the driver supplies anchors, preserve their order exactly.
-    const stops = anchored ? [start, ...mandatoryStops, goal] : [start, request.center, goal]
+    // The selected centre is *only* the area to search around. It must never
+    // become an implicit via point; the driver has a dedicated required-stop
+    // control for that. Start/goal and explicit required points are the only
+    // route constraints, in the exact order the driver selected.
+    const stops = routedStopsFor(start, mandatoryStops, goal)
     const routed = await fetchRoutedRoad(stops)
     if (!routed || routed.distanceKm > request.maxDistanceKm) return null
     // A router may snap an unreachable coordinate to a distant road. Do not
