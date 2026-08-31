@@ -19,6 +19,20 @@ export interface DriveProposalRequest {
   goalPoint?: { coordinate: Coordinate; label: string } | null
 }
 
+/** Only explicit finder inputs may constrain discovery; never inherit builder stops. */
+export function buildDriveProposalRequest(settings: DriveProposalRequest): DriveProposalRequest {
+  const copyPoint = (point: NonNullable<DriveProposalRequest['startPoint']>) => ({
+    coordinate: [...point.coordinate] as Coordinate, label: point.label,
+  })
+  return {
+    center: [...settings.center], radiusKm: settings.radiusKm, maxDistanceKm: settings.maxDistanceKm,
+    proposalCount: settings.proposalCount, toll: settings.toll, style: settings.style,
+    requiredPoints: settings.requiredPoints.map(copyPoint),
+    startPoint: settings.startPoint ? copyPoint(settings.startPoint) : null,
+    goalPoint: settings.goalPoint ? copyPoint(settings.goalPoint) : null,
+  }
+}
+
 export function proposalCountFor(request: Pick<DriveProposalRequest, 'proposalCount'>): number {
   // Callers from the course builder always pass an explicit value (initially
   // one). Preserve the previous three-item API behaviour for older callers.

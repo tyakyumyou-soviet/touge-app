@@ -5,8 +5,8 @@ import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
-import { type DriveProposal, type DriveStyle } from '../lib/recommendations'
-import { discoverExternalDriveProposals } from '../lib/externalDiscovery'
+import { buildDriveProposalRequest, type DriveProposal, type DriveStyle } from '../lib/recommendations'
+import { discoverExternalDriveProposals, RoadDiscoveryUnavailableError } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
 import { auth } from '../lib/firebase'
@@ -93,11 +93,18 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
   const [proposalProgress, setProposalProgress] = useState('')
   const proposalSearchTimer = useRef<number | null>(null)
   const proposalSearchRevision = useRef(0)
-  const handledRecommendationAction = useRef(0)
+  const proposalGenerationRevision = useRef(0)
+  const handledRecommendationAction = useRef(recommendationMapAction?.id ?? 0)
 
   useEffect(() => {
-    onRecommendationMapStateChange({ active: proposalOpen, start: proposalStart, goal: proposalGoal, vias: proposalVias })
-  }, [onRecommendationMapStateChange, proposalGoal, proposalOpen, proposalStart, proposalVias])
+    onRecommendationMapStateChange({ active: proposalOpen && stage === 'route' && !previewActive, center: proposalCenter, start: proposalStart, goal: proposalGoal, vias: proposalVias })
+  }, [onRecommendationMapStateChange, previewActive, stage, proposalCenter, proposalGoal, proposalOpen, proposalStart, proposalVias])
+
+  useEffect(() => () => {
+    if (proposalSearchTimer.current !== null) window.clearTimeout(proposalSearchTimer.current)
+    proposalSearchRevision.current += 1
+    proposalGenerationRevision.current += 1
+  }, [])
 
   useEffect(() => {
     if (!recommendationMapAction || recommendationMapAction.id === handledRecommendationAction.current) return
@@ -184,24 +191,27 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
     } catch (caught) { setSearchError(caught instanceof Error ? caught.message : '場所を検索できませんでした') } finally { setBusy(false) }
   }
 
-  async function resolveProposalArea(value: string, revision?: number) {
+  async function resolveProposalArea(value: string, revision = proposalSearchRevision.current) {
     if (!value.trim()) return
     if (value.trim() === '現在地' && proposalCenter?.label.startsWith('現在地')) {
       setProposalError('')
       onFocusPoint(proposalCenter.coordinate)
       return
     }
-    setBusy(true); setProposalError(''); setProposals([])
+    proposalGenerationRevision.current += 1
+    setProposalProgress('')
+    setBusy(true); setProposalError(''); setProposals([]); onSetProposalPreviews([])
     try {
       const result = await geocodeJapanesePlace(value)
-      if (revision !== undefined && revision !== proposalSearchRevision.current) return
+      if (revision !== proposalSearchRevision.current) return
       setProposalCenter(result)
       onFocusPoint(result.coordinate)
-      onPendingPointChange(result.coordinate, result.label)
+      // An area search is not a request to add a builder stop.
+      onPendingPointChange(null)
     } catch (caught) {
-      if (revision === undefined || revision === proposalSearchRevision.current) setProposalError(caught instanceof Error ? caught.message : '探索エリアを検索できませんでした')
+      if (revision === proposalSearchRevision.current) setProposalError(caught instanceof Error ? caught.message : '探索エリアを検索できませんでした')
     } finally {
-      if (revision === undefined || revision === proposalSearchRevision.current) setBusy(false)
+      if (revision === proposalSearchRevision.current) setBusy(false)
     }
   }
 
@@ -213,7 +223,15 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
   }
 
   function scheduleProposalAreaSearch(value: string) {
+    proposalGenerationRevision.current += 1
+    setProposalProgress('')
     setProposalQuery(value)
+    setProposalCenter(null)
+    setProposalError('')
+    setProposals([])
+    onSetProposalPreviews([])
+    onPendingPointChange(null)
+    setBusy(false)
     if (proposalSearchTimer.current !== null) window.clearTimeout(proposalSearchTimer.current)
     const revision = proposalSearchRevision.current + 1
     proposalSearchRevision.current = revision
@@ -225,8 +243,12 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
     if (!navigator.geolocation) { setProposalError('この端末では現在地を取得できません'); return }
     if (proposalSearchTimer.current !== null) window.clearTimeout(proposalSearchTimer.current)
     proposalSearchRevision.current += 1
+    const revision = proposalSearchRevision.current
+    proposalGenerationRevision.current += 1
+    setProposalProgress('')
     setBusy(true); setProposalError('')
     navigator.geolocation.getCurrentPosition((position) => {
+      if (revision !== proposalSearchRevision.current) return
       const longitude = position.coords.longitude
       const latitude = position.coords.latitude
       const result = { coordinate: [longitude, latitude] as Coordinate, label: `現在地（${latitude.toFixed(5)}, ${longitude.toFixed(5)}）` }
@@ -237,7 +259,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
       onFocusPoint(result.coordinate)
       onPendingPointChange(null)
       setBusy(false)
-    }, () => { setProposalError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
+    }, () => { if (revision === proposalSearchRevision.current) { setProposalError('現在地を取得できませんでした。位置情報の許可を確認してください。'); setBusy(false) } }, { enableHighAccuracy: true, timeout: 10000 })
   }
 
   async function addProposalVia() {
@@ -248,7 +270,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
       setProposalVias((items) => items.some((item) => item.label === result.label) ? items : [...items, result])
       setProposalViaQuery('')
       onFocusPoint(result.coordinate)
-      onPendingPointChange(result.coordinate, result.label)
+      onPendingPointChange(null)
     } catch (caught) { setProposalError(caught instanceof Error ? caught.message : '経由地を検索できませんでした') }
     finally { setBusy(false) }
   }
@@ -268,24 +290,29 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
 
   async function generateProposals() {
     if (!proposalCenter) { setProposalError('まず探索するエリアを指定してください'); return }
+    const revision = ++proposalGenerationRevision.current
     setBusy(true); setProposalError(''); setProposals([]); onSetProposalPreviews([]); setProposalProgress('OpenStreetMapから道路形状を取得しています…')
-    const request = {
+    const request = buildDriveProposalRequest({
       center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
       proposalCount, toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias, startPoint: proposalStart, goalPoint: proposalGoal,
-    } as const
+    })
     try {
       const external = await discoverExternalDriveProposals(request)
+      if (revision !== proposalGenerationRevision.current) return
       setProposalProgress('道路のカーブ・標高・通行条件を確認しています…')
       if (!external.length) { setProposalError('この条件では新しいコースを見つけられませんでした。探索範囲・距離・料金条件を変えて再試行してください。'); return }
       setProposals(external)
       onSetProposalPreviews(external)
     } catch (caught) {
+      if (revision !== proposalGenerationRevision.current) return
       setProposals([]); onSetProposalPreviews([])
       const message = caught instanceof Error ? caught.message : ''
-      setProposalError(message.includes('条件に合う') || message.includes('見つけられませんでした')
+      setProposalError(caught instanceof RoadDiscoveryUnavailableError
+        ? '道路・標高データを取得できず、探索を完了できませんでした。コースがないという意味ではありません。通信状態を確認して再試行してください。'
+        : message.includes('条件に合う') || message.includes('見つけられませんでした')
         ? '指定した条件に合う峠道を見つけられませんでした。必ず通る地点や始点・ゴールの距離条件を確認してください。'
         : '峠道の探索を完了できませんでした。少し待ってから、もう一度お試しください。')
-    } finally { setBusy(false); setProposalProgress('') }
+    } finally { if (revision === proposalGenerationRevision.current) { setBusy(false); setProposalProgress('') } }
   }
 
   function chooseProposal(proposal: DriveProposal) {
@@ -328,6 +355,13 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
         <form className="route-search proposal-area-search" onSubmit={findProposalArea}><input value={proposalQuery} onChange={(event) => scheduleProposalAreaSearch(event.target.value)} placeholder="地名・住所・IC・峠を入力すると自動で探索地点に設定" aria-label="走りたい場所を検索" />{busy && <span className="proposal-area-status" role="status">検索中…</span>}</form>
         <div className="proposal-current-location"><button type="button" className="text-button" onClick={useCurrentLocationForProposal}>◎ 現在地を使う</button>{proposalCenter && <strong>探索地点: {proposalCenter.label}</strong>}</div>
         <button type="button" className={`proposal-settings-toggle ${proposalSettingsOpen ? 'open' : ''}`} onClick={() => setProposalSettingsOpen((value) => !value)} aria-expanded={proposalSettingsOpen} aria-controls="proposal-settings">詳細条件 <span aria-hidden="true">{proposalSettingsOpen ? '−' : '+'}</span></button>
+        <p className="proposal-map-point-help">作成中の地点は探索条件に含めません。通過地点はこの詳細条件で指定したものだけを使います。</p>
+        {(proposalStart || proposalGoal || proposalVias.length > 0) && <div className="proposal-via-tags" aria-label="探索に適用する通過条件">
+          {proposalStart && <span>START: {proposalStart.label}<button type="button" onClick={() => setProposalStart(null)} aria-label="スタート地点を削除">×</button></span>}
+          {proposalVias.map((point, index) => <span key={`${point.label}-${index}`}>経由: {point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((_, itemIndex) => itemIndex !== index))} aria-label={`${point.label}を除外`}>×</button></span>)}
+          {proposalGoal && <span>GOAL: {proposalGoal.label}<button type="button" onClick={() => setProposalGoal(null)} aria-label="ゴール地点を削除">×</button></span>}
+          <button type="button" className="button secondary" onClick={() => { setProposalStart(null); setProposalGoal(null); setProposalVias([]) }}>通過条件を解除</button>
+        </div>}
         <div id="proposal-settings" className={`proposal-settings ${proposalSettingsOpen ? 'open' : ''}`} aria-hidden={!proposalSettingsOpen} inert={!proposalSettingsOpen}><div className="proposal-settings-inner">
           <div className="proposal-grid">
             <label>探索半径<select value={proposalRadiusKm} onChange={(event) => setProposalRadiusKm(Number(event.target.value))}><option value={5}>5km</option><option value={10}>10km</option><option value={25}>25km</option><option value={50}>50km</option><option value={100}>100km</option></select></label>
@@ -342,7 +376,6 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
           </div>
           <div className="proposal-via"><label>必ず通りたい地点<input value={proposalViaQuery} onChange={(event) => setProposalViaQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addProposalVia() } }} placeholder="例: 大観山、三国峠。地図タップでも追加できます" /></label><button type="button" className="button secondary" onClick={() => void addProposalVia()} disabled={busy}>追加</button></div>
           <p className="proposal-map-point-help">地図をタップすると、必須地点・スタート・ゴールを選んで追加できます。追加済みのピンをタップすると削除できます。</p>
-          {(proposalStart || proposalGoal || proposalVias.length > 0) && <div className="proposal-via-tags">{proposalStart && <span>START: {proposalStart.label}<button type="button" onClick={() => setProposalStart(null)} aria-label="スタート地点を削除">×</button></span>}{proposalVias.map((point, index) => <span key={`${point.label}-${index}`}>経由: {point.label}<button type="button" onClick={() => setProposalVias((items) => items.filter((_, itemIndex) => itemIndex !== index))} aria-label={`${point.label}を除外`}>×</button></span>)}{proposalGoal && <span>GOAL: {proposalGoal.label}<button type="button" onClick={() => setProposalGoal(null)} aria-label="ゴール地点を削除">×</button></span>}</div>}
         </div></div>
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
         <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy}>{busy ? '峠道を検証中…' : `この条件で${proposalCount}案を見る`}</button>

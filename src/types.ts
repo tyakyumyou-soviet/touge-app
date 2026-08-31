@@ -12,6 +12,8 @@ export interface RecommendationPoint {
 /** Map-visible constraints for the route recommendation finder. */
 export interface RecommendationMapState {
   active: boolean
+  /** Search-area marker only; never a routing stop. */
+  center?: RecommendationPoint | null
   start: RecommendationPoint | null
   goal: RecommendationPoint | null
   vias: RecommendationPoint[]

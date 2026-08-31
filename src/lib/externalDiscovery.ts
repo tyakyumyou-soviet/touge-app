@@ -65,6 +65,16 @@ export class RoadDiscoveryUnavailableError extends Error {
   }
 }
 
+// Each elevation profile already issues several requests. Avoid multiplying
+// that burst by every probe, especially while the builder also routes stops.
+async function settleDiscoveryTasks<T, R>(items: T[], task: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = []
+  for (let index = 0; index < items.length; index += 2) {
+    results.push(...await Promise.allSettled(items.slice(index, index + 2).map((item, offset) => task(item, index + offset))))
+  }
+  return results
+}
+
 function asRoute(geometry: OverpassWay['geometry']): Coordinate[] {
   return (geometry ?? []).map((item) => [item.lon, item.lat] as Coordinate)
     .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
@@ -316,9 +326,17 @@ export function routedStopsFor(start: Coordinate, requiredPoints: Coordinate[], 
 
 async function fetchRoutedRoad(stops: Coordinate[]): Promise<{ route: Coordinate[], distanceKm: number, averageSpeedKmh: number, stepDensity: number } | null> {
   const coordinates = stops.map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
-  const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`, { cache: 'no-store' })
-  if (!response.ok) throw new Error(`公開道路ルーティングエラー (${response.status})`)
-  const data = await response.json() as OsrmRouteResponse
+  const controller = new AbortController()
+  const timer = globalThis.setTimeout(() => controller.abort(), 15_000)
+  let data: OsrmRouteResponse
+  try {
+    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`, { cache: 'no-store', signal: controller.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    data = await response.json() as OsrmRouteResponse
+    if (data.code !== 'Ok' && data.code !== 'NoRoute' && data.code !== 'NoSegment') throw new Error('道路データの応答形式が不正です')
+  } catch (error) {
+    throw new RoadDiscoveryUnavailableError(`道路データを取得できませんでした: ${error instanceof Error ? error.message : '通信エラー'}`)
+  } finally { globalThis.clearTimeout(timer) }
   const candidate = data.routes?.[0]
   const route = (candidate?.geometry?.coordinates ?? []).map(([lng, lat]) => [lng, lat] as Coordinate)
   const distanceMeters = candidate?.distance
@@ -341,7 +359,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   // can lie on only one side of the selected place; returning the first router
   // line was the reason a city connector could win over a real mountain road.
   const targets = routeCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, 8, request.startPoint?.coordinate, request.goalPoint?.coordinate)
-  const settled = await Promise.allSettled(targets.map(async ({ start, goal, targetDistanceKm }, index) => {
+  const settled = await settleDiscoveryTasks(targets, async ({ start, goal, targetDistanceKm }, index) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
     const mandatoryStops = request.requiredPoints.map((point) => point.coordinate)
@@ -359,6 +377,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     const validation = validateDiscoveredRoad(routed.route)
     if (validation.warnings.some((warning) => warning !== '候補区間が短すぎます')) return null
     const elevation = await fetchElevationProfile(sampled(routed.route, 30))
+    if (elevation.source === '地形傾向による推定') throw new RoadDiscoveryUnavailableError('標高を確認できませんでした')
     const suitability = assessTougeSuitability(routed.route, elevation.values, {}, {
       averageSpeedKmh: routed.averageSpeedKmh,
       stepDensity: routed.stepDensity,
@@ -374,16 +393,21 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       : request.style === 'easy'
         ? width * 1.6 - suitability.curveDensity * .35 + mountainBonus + quietnessBonus
         : suitability.curveDensity * 4 + width + mountainBonus + quietnessBonus) + distanceFit
+    const waypoints = proposalWaypoints(routed.route, mandatoryStops)
     return {
       id: `router-${Math.round(request.center[0] * 10000)}-${Math.round(request.center[1] * 10000)}-${index}`,
       source: 'openstreetmap' as const,
       name: `${Math.round(request.radiusKm)}km圏の峠候補 ${index + 1}`,
       area: request.requiredPoints.length ? '必須地点を経由する山間ルート' : '公開道路データから検証した山間ルート',
       route: routed.route,
-      waypoints: proposalWaypoints(routed.route, mandatoryStops),
+      waypoints,
       elevationProfile: elevation.values,
       elevationSource: elevation.source,
-      labels: [request.startPoint?.label ?? '探索中心', ...request.requiredPoints.map((point) => point.label), request.goalPoint?.label ?? `標高差 ${suitability.elevationRangeM}m`],
+      // Labels describe editor stops, not search metadata. The old "探索中心"
+      // label incorrectly implied that discovery made the area centre a stop.
+      labels: waypoints.map((point, at) => at === 0 ? request.startPoint?.label ?? '候補の始点'
+        : at === waypoints.length - 1 ? request.goalPoint?.label ?? '候補の終点'
+          : request.requiredPoints.find((required) => distanceKm(required.coordinate, point) < .001)?.label ?? '候補の経由地'),
       tollStatus: 'unknown' as const,
       distanceKm: routed.distanceKm,
       score: styleScore,
@@ -397,10 +421,15 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
       ],
       validation: { ...validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
-  }))
-  return settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
+  })
+  const proposals = settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
     .sort((a, b) => b.score - a.score)
     .slice(0, count)
+  // A failed request is not evidence that the requested area has no passes.
+  if (!proposals.length && settled.some((result) => result.status === 'rejected')) {
+    throw new RoadDiscoveryUnavailableError()
+  }
+  return proposals
 }
 
 /**
@@ -490,8 +519,9 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
   const fromOverpass = async () => {
     const result = await fetchOverpass(buildRoadDiscoveryQuery(request.center, request.radiusKm, Math.max(40, count * 24)))
     const raw = candidatesFromWays((result.elements ?? []).filter((item) => item.type === 'way'), request)
-    const enriched = await Promise.all(raw.slice(0, Math.max(count * 4, 12)).map(async (item) => {
+    const enriched = await settleDiscoveryTasks(raw.slice(0, Math.max(count * 4, 12)), async (item) => {
     const elevation = await fetchElevationProfile(sampled(item.route, 30))
+    if (elevation.source === '地形傾向による推定') throw new RoadDiscoveryUnavailableError('標高を確認できませんでした')
     // A synthetic profile is fine for a visual fallback elsewhere in the app,
     // but it is not reliable enough to label an unknown road a "峠".
     const suitability = assessTougeSuitability(item.route, elevation.values, item.tags, {}, request.maxDistanceKm)
@@ -527,8 +557,9 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       ],
       validation: { ...item.validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
-    }))
-    const next = enriched.flatMap((item): DriveProposal[] => item ? [item] : []).sort((a, b) => b.score - a.score).slice(0, count)
+    })
+    const next = enriched.flatMap((item): DriveProposal[] => item.status === 'fulfilled' && item.value ? [item.value] : []).sort((a, b) => b.score - a.score).slice(0, count)
+    if (!next.length && enriched.some((item) => item.status === 'rejected')) throw new RoadDiscoveryUnavailableError('標高を確認できませんでした')
     if (!next.length) throw new Error('この範囲に峠として提案できる道路が見つかりませんでした')
     return next
   }
@@ -551,6 +582,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       try { return await fromOverpass() }
       catch (overpassError) {
         if (overpassError instanceof RoadDiscoveryUnavailableError) throw overpassError
+        if (routingError instanceof RoadDiscoveryUnavailableError) throw routingError
         const routingMessage = routingError instanceof Error ? routingError.message : '条件に合う道路が見つかりませんでした'
         const overpassMessage = overpassError instanceof Error ? overpassError.message : '道路データを取得できませんでした'
         throw new Error(`${routingMessage}。道路属性の照合でも${overpassMessage}`)

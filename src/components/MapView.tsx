@@ -68,12 +68,13 @@ const toPendingSearchPoint = (point: Coordinate | null, label: string) => ({
 const toRecommendationPointCollection = (state: RecommendationMapState) => ({
   type: 'FeatureCollection' as const,
   features: !state.active ? [] : [
+    ...(state.center ? [{ point: state.center, role: 'center', index: 0 }] : []),
     ...(state.start ? [{ point: state.start, role: 'start', index: 0 }] : []),
     ...state.vias.map((point, index) => ({ point, role: 'via', index })),
     ...(state.goal ? [{ point: state.goal, role: 'goal', index: 0 }] : []),
   ].map(({ point, role, index }) => ({
     type: 'Feature' as const,
-    properties: { role, index, label: point.label, marker: role === 'start' ? 'S' : role === 'goal' ? 'G' : '経' },
+    properties: { role, index, label: point.label, marker: role === 'center' ? '探索中心' : role === 'start' ? 'S' : role === 'goal' ? 'G' : '経' },
     geometry: { type: 'Point' as const, coordinates: point.coordinate },
   })),
 })
@@ -293,6 +294,11 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       suppressNextMapClick = true
       draftPopupRef.current?.remove()
       const feature = event.features?.[0]
+      if (feature?.properties?.role === 'center') {
+        draftPopupRef.current = new maplibregl.Popup({ offset: 14 })
+          .setLngLat(event.lngLat).setText('探索範囲の中心です。この地点を通る必要はありません。').addTo(map)
+        return
+      }
       const role = feature?.properties?.role as 'start' | 'via' | 'goal' | undefined
       const index = Number(feature?.properties?.index)
       const content = document.createElement('div'); content.className = 'draft-point-popup'

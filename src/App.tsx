@@ -25,6 +25,7 @@ import { canUseUnlimitedWaypoints, exceedsWaypointLimit, isAdministrator, WAYPOI
 import { courseMatchesSearch } from './lib/courseSearch'
 import { geocodeJapanesePlace } from './lib/location'
 import type { DriveProposal } from './lib/recommendations'
+import { insertDraftStops } from './lib/draftInsertion'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | Course['prefecture']
@@ -246,41 +247,20 @@ export default function App() {
     // Keep all three parallel arrays in the same operation. A new via point is
     // placed before an existing goal; choosing a new goal promotes the old one
     // to a via point and makes the newly selected location the route endpoint.
-    setDraftPointRoles((roles) => {
-      const goalIndex = roles.indexOf('goal')
-      const automaticInsertAt = goalIndex >= 0 ? goalIndex : roles.length
-      const insertAt = requestedRole === 'via' && requestedInsertAfter !== null
-        ? Math.min(Math.max(1, requestedInsertAfter + 1), goalIndex >= 0 ? goalIndex : roles.length)
-        : requestedRole === 'via' ? automaticInsertAt : roles.length
-      const nextRoles: DraftPointRole[] = roles.length === 0
-        ? ['start']
-        : requestedRole === 'goal'
-          ? [...roles.map((role) => role === 'goal' ? 'via' : role), 'goal']
-          : [...roles.slice(0, insertAt), 'via', ...roles.slice(insertAt)]
-      setDraftRoute((route) => roles.length === 0 || requestedRole === 'goal' ? [...route, point] : [...route.slice(0, insertAt), point, ...route.slice(insertAt)])
-      setDraftPointLabels((labels) => roles.length === 0 || requestedRole === 'goal' ? [...labels, label] : [...labels.slice(0, insertAt), label, ...labels.slice(insertAt)])
-      setDraftViaInsertAfter(null)
-      return nextRoles
-    })
-  }, [])
+    const next = insertDraftStops({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles }, [point], [label], requestedRole, requestedInsertAfter)
+    setDraftRoute(next.route); setDraftPointLabels(next.labels); setDraftPointRoles(next.roles)
+    setDraftViaInsertAfter(null)
+  }, [draftRoute, draftPointLabels, draftPointRoles])
   const incorporateCourse = useCallback((course: Course, requestedInsertAfter: number | null = null) => {
     const sampleCount = Math.min(12, Math.max(3, course.route.length))
     const points = Array.from({ length: sampleCount }, (_, index) => course.route[Math.round((index / Math.max(1, sampleCount - 1)) * (course.route.length - 1))])
     const labels = points.map((_, index) => index === 0 ? `${course.name}・始点` : index === points.length - 1 ? `${course.name}・終点` : `${course.name}・経由地`)
-    setDraftPointRoles((roles) => {
-      const goalIndex = roles.indexOf('goal')
-      const insertAt = requestedInsertAfter !== null
-        ? Math.min(Math.max(1, requestedInsertAfter + 1), goalIndex >= 0 ? goalIndex : roles.length)
-        : goalIndex >= 0 ? goalIndex : roles.length
-      const blockRoles: DraftPointRole[] = points.map((_, index) => roles.length === 0 && index === 0 ? 'start' : roles.length === 0 && index === points.length - 1 ? 'goal' : 'via')
-      setDraftRoute((current) => [...current.slice(0, insertAt), ...points, ...current.slice(insertAt)])
-      setDraftPointLabels((current) => [...current.slice(0, insertAt), ...labels, ...current.slice(insertAt)])
-      return [...roles.slice(0, insertAt), ...blockRoles, ...roles.slice(insertAt)]
-    })
+    const next = insertDraftStops({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles }, points, labels, 'course', requestedInsertAfter)
+    setDraftRoute(next.route); setDraftPointLabels(next.labels); setDraftPointRoles(next.roles)
     setDraftViaInsertAfter(null)
     setDraftFocus(points.at(-1) ?? null)
     setDraftPendingSearch(null)
-  }, [])
+  }, [draftRoute, draftPointLabels, draftPointRoles])
   const setFinalPointAsGoal = useCallback(() => {
     setDraftPointRoles((roles) => roles.map((role, index) => index === roles.length - 1 ? 'goal' : role === 'goal' ? 'via' : role))
   }, [])
@@ -372,16 +352,8 @@ export default function App() {
       setDraftPointLabels(proposalLabels)
       setDraftPointRoles(proposalRoute.map((_, index) => index === 0 ? 'start' : index === proposalRoute.length - 1 ? 'goal' : 'via'))
     } else {
-      setDraftPointRoles((roles) => {
-        const goalIndex = roles.indexOf('goal')
-        const insertAt = requestedInsertAfter !== null
-          ? Math.min(Math.max(1, requestedInsertAfter + 1), goalIndex >= 0 ? goalIndex : roles.length)
-          : goalIndex >= 0 ? goalIndex : roles.length
-        const proposalRoles: DraftPointRole[] = proposalRoute.map((_, index) => goalIndex < 0 && index === proposalRoute.length - 1 ? 'goal' : 'via')
-        setDraftRoute((current) => [...current.slice(0, insertAt), ...proposalRoute, ...current.slice(insertAt)])
-        setDraftPointLabels((current) => [...current.slice(0, insertAt), ...proposalLabels, ...current.slice(insertAt)])
-        return [...roles.slice(0, insertAt), ...proposalRoles, ...roles.slice(insertAt)]
-      })
+      const next = insertDraftStops({ route: draftRoute, labels: draftPointLabels, roles: draftPointRoles }, proposalRoute, proposalLabels, 'proposal', requestedInsertAfter)
+      setDraftRoute(next.route); setDraftPointLabels(next.labels); setDraftPointRoles(next.roles)
     }
     setDraftViaInsertAfter(null)
     setDraftFocus(proposalRoute.at(-1) ?? null)
