@@ -13,6 +13,7 @@ import { auth } from '../lib/firebase'
 
 interface Props {
   transitionState?: 'idle' | 'entering' | 'leaving'
+  previewActive?: boolean
   route: Coordinate[]
   canUseUnlimitedWaypoints: boolean
   pointLabels: string[]
@@ -56,7 +57,7 @@ interface DetailsValues {
   blockedViewerIds: string[]
 }
 
-export function CourseForm({ transitionState = 'idle', route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', previewActive = false, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
@@ -316,7 +317,7 @@ export function CourseForm({ transitionState = 'idle', route, pointLabels, point
     } finally { setBusy(false) }
   }
 
-  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
+  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     </div>
     <div className="course-form-scroll" data-sheet-scroll {...sheet.scrollProps}>

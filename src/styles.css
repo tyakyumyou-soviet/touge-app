@@ -466,6 +466,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
      tray visible underneath made the two sheets look stacked and gave the map
      an accidental second interaction target. */
   .explore-panel.covered-by-detail { transform: translateY(calc(100% + 20px)) !important; pointer-events: none; }
+  .course-form.covered-by-detail { transform: translateY(calc(100% + 20px)) !important; pointer-events: none; }
   .explore-panel.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .explore-panel.dragging { transition: none; }
   .explore-panel.collapsed { overflow: hidden; }
