@@ -3,7 +3,7 @@ import { blockDropBoundary } from '../lib/draftReorder'
 
 export interface RouteOrderBlock { id: string; start: number; count: number; title: string; subtitle: string }
 
-export function RouteOrderEditor({ blocks, onMove }: { blocks: RouteOrderBlock[]; onMove: (from: number, count: number, to: number) => void }) {
+export function RouteOrderEditor({ blocks, onMove, onReverse }: { blocks: RouteOrderBlock[]; onMove: (from: number, count: number, to: number) => void; onReverse: (start: number, count: number) => void }) {
   const list = useRef<HTMLOListElement>(null)
   const before = useRef(new Map<string, number>())
   const gesture = useRef<{ id: number; source: RouteOrderBlock; y: number; moved: boolean; target: RouteOrderBlock | null } | null>(null)
@@ -60,7 +60,7 @@ export function RouteOrderEditor({ blocks, onMove }: { blocks: RouteOrderBlock[]
     if (!cancelled && active.moved && active.target) move(active.source, active.target)
   }
 
-  if (blocks.length < 2) return null
+  if (blocks.length < 2 && !blocks.some((block) => block.count > 1)) return null
   return <section className="route-order-editor" aria-label="ルートの順番を変更" data-sheet-no-drag>
     <div><strong>ルートの順番</strong><small>つまみをドラッグして入れ替え</small></div>
     <ol ref={list}>{blocks.map((block, index) => <li key={block.id} data-block-id={block.id} className={`${dragged === block.id ? 'dragging' : ''} ${over === block.id && over !== dragged ? 'drop-target' : ''}`}>
@@ -73,6 +73,7 @@ export function RouteOrderEditor({ blocks, onMove }: { blocks: RouteOrderBlock[]
           setDragged(block.id)
         }} onPointerMove={dragMove} onPointerUp={(event) => finish(event)} onPointerCancel={(event) => finish(event, true)} onLostPointerCapture={(event) => finish(event, true)}>⠿</button>
       <div><strong>{block.title}</strong><small>{block.subtitle}{block.count > 1 ? ` · ${block.count}地点` : ''}</small></div>
+      {block.count > 1 && <button type="button" className="route-block-reverse" onClick={() => { onReverse(block.start, block.count); setAnnouncement(`${block.title}の始点と終点を入れ替えました`) }} aria-label={`${block.title}の始点と終点を入れ替える`}>⇄</button>}
       <button type="button" onClick={() => move(block, blocks[index - 1])} disabled={index === 0} aria-label={`${block.title}を前へ`}>↑</button>
       <button type="button" onClick={() => move(block, blocks[index + 1])} disabled={index === blocks.length - 1} aria-label={`${block.title}を後へ`}>↓</button>
     </li>)}</ol><span className="route-order-announcement" role="status">{announcement}</span>

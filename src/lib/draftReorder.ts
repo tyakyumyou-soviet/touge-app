@@ -17,3 +17,15 @@ export function moveDraftBlock(current: DraftStops, from: number, count: number,
 export function blockDropBoundary(sourceStart: number, target: { start: number; count: number }) {
   return target.start > sourceStart ? target.start + target.count : target.start
 }
+
+/** Reverse one incorporated/proposed course while preserving the draft's global START/GOAL roles. */
+export function reverseDraftBlock(current: DraftStops, start: number, count: number): DraftStops {
+  if (!Number.isInteger(start) || !Number.isInteger(count) || count < 2 || start < 0 || start + count > current.route.length) return current
+  const flipEndpointLabel = (label: string) => label.endsWith('・始点') ? `${label.slice(0, -2)}終点`
+    : label.endsWith('・終点') ? `${label.slice(0, -2)}始点` : label
+  const replace = <T,>(items: T[], block: T[]) => [...items.slice(0, start), ...block, ...items.slice(start + count)]
+  const hadGoal = current.roles.includes('goal')
+  const route = replace(current.route, [...current.route.slice(start, start + count)].reverse())
+  const labels = replace(current.labels, [...current.labels.slice(start, start + count)].reverse().map(flipEndpointLabel))
+  return { route, labels, roles: route.map((_, index) => index === 0 ? 'start' : hadGoal && index === route.length - 1 ? 'goal' : 'via') }
+}

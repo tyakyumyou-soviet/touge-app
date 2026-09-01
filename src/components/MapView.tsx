@@ -459,7 +459,10 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       const current = map.project(bounds.getCenter())
       const offset: [number, number] = [target.x - current.x, target.y - current.y]
       if (Math.abs(offset[0]) < 0.5 && Math.abs(offset[1]) < 0.5) return
-      map.panBy([-offset[0], -offset[1]], { duration: 0, essential: true })
+      // Keep the final visible-area correction animated as well.  A detail
+      // sheet can appear after the initial fit; snapping this last offset made
+      // a preview look like it teleported even though the fit itself eased.
+      map.panBy([-offset[0], -offset[1]], { duration: 280, essential: true })
     }
     const fitSelected = (animate: boolean) => {
       const rect = container.getBoundingClientRect()
@@ -475,32 +478,32 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       map.stop()
       map.resize()
       // Calculate the target camera explicitly before moving it. On mobile a
-      // bottom sheet can leave a narrow, but valid, visible map strip. Calling
-      // fitBounds directly while that strip is being animated can be ignored
-      // by MapLibre; jumpTo guarantees a real center/zoom update first.
+      // bottom sheet can leave a narrow, but valid, visible map strip.  Do
+      // not jump to this target first: that made selecting a course look like
+      // an instantaneous teleport before the easing animation began.
       const camera = map.cameraForBounds(bounds, { padding: fitPadding, maxZoom: 12.5 })
       if (camera?.center && Number.isFinite(camera.zoom)) {
         // Obtain a centre that puts the route centre in the visible top part
         // of the canvas instead of behind the detail sheet.
-        map.jumpTo({ center: camera.center, zoom: camera.zoom, padding: fitPadding })
         const target = { center: camera.center, zoom: camera.zoom, padding: fitPadding }
-        if (animate) map.easeTo({ ...target, duration: 520, essential: true })
+        if (animate) map.easeTo({ ...target, duration: 640, essential: true })
         else map.jumpTo(target)
         // A map fit uses the whole canvas. Shift the fitted route afterwards
         // so it sits in the centre of the portion that remains above the sheet.
-        if (animate) window.setTimeout(centreRouteInVisibleMap, 540)
+        if (animate) window.setTimeout(centreRouteInVisibleMap, 660)
         else centreRouteInVisibleMap()
         return
       }
       // Keep a defensive fallback for map styles that cannot calculate a
       // camera before all terrain resources are ready.
-      map.fitBounds(bounds, { padding: fitPadding, maxZoom: 12.5, duration: animate ? 520 : 0, essential: true })
+      map.fitBounds(bounds, { padding: fitPadding, maxZoom: 12.5, duration: animate ? 640 : 0, essential: true })
     }
-    const first = window.requestAnimationFrame(() => fitSelected(false))
-    // The first pass makes a desktop selection immediate. The later passes
-    // use the final sheet bounds on iOS/Android, including a maximized builder
-    // collapsing into the preview detail sheet.
-    const settleTimers = [180, 520, 920].map((delay, index) => window.setTimeout(() => fitSelected(index === 2), delay))
+    // Every selection and proposal preview uses an eased move.  The follow-up
+    // passes retain the same behaviour while accommodating the final sheet
+    // bounds on iOS/Android, including a maximized builder collapsing into the
+    // preview detail sheet.
+    const first = window.requestAnimationFrame(() => fitSelected(true))
+    const settleTimers = [220, 700].map((delay) => window.setTimeout(() => fitSelected(true), delay))
     return () => {
       window.cancelAnimationFrame(first)
       settleTimers.forEach((timer) => window.clearTimeout(timer))
@@ -526,7 +529,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       const current = map.project(bounds.getCenter())
       const offset: [number, number] = [target.x - current.x, target.y - current.y]
       if (Math.abs(offset[0]) < 0.5 && Math.abs(offset[1]) < 0.5) return
-      map.panBy([-offset[0], -offset[1]], { duration: 0, essential: true })
+      map.panBy([-offset[0], -offset[1]], { duration: 280, essential: true })
     }
     const scheduleAlignment = () => {
       if (!frame) frame = window.requestAnimationFrame(alignToVisibleMap)
