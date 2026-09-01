@@ -246,6 +246,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .join-course-picker small { color: var(--muted); font-size: 10px; }
 .route-search { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
 .route-search button { padding: 0 14px; color: var(--ink); background: var(--yellow); border: 0; border-radius: 8px; font-weight: 800; }
+.route-current-location { width: fit-content; margin-top: 7px; padding: 7px 10px; color: var(--green); background: #f0f5f1; border: 1px solid #b7d5c1; border-radius: 8px; font-weight: 800; white-space: nowrap; }
+.route-current-location:disabled { opacity: .58; }
 .route-search-results { display: grid; gap: 5px; }
 .route-search-results button { display: grid; gap: 2px; padding: 9px 11px; text-align: left; color: inherit; background: #edf3ef; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .route-search-results small, .route-builder-help { color: var(--muted); font-size: 11px; }
