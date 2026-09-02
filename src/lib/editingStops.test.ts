@@ -12,11 +12,22 @@ const course = {
 
 describe('editing stops', () => {
   it('does not expose dense road geometry as hundreds of editable stops', () => {
-    expect(editableStopsFromCourse(course)).toEqual({
-      route: [course.route[0], course.route[25], course.route[74], course.route[99]],
-      labels: ['保存済みコース・始点', '展望台', '峠', '保存済みコース・終点'],
-      roles: ['start', 'via', 'via', 'goal'],
-    })
+    const stops = editableStopsFromCourse(course)
+    expect(stops.route).toHaveLength(12)
+    expect(stops.route[0]).toEqual(course.route[0])
+    expect(stops.route.at(-1)).toEqual(course.route.at(-1))
+    expect(stops.labels).toEqual(expect.arrayContaining(['展望台', '峠']))
+    expect(stops.labels).toEqual(expect.arrayContaining(['経路維持点 1']))
+    expect(stops.roles[0]).toBe('start')
+    expect(stops.roles.at(-1)).toBe('goal')
+    expect(stops.route.every((coordinate) => course.route.some((point) => point[0] === coordinate[0] && point[1] === coordinate[1]))).toBe(true)
+  })
+
+  it('reconstructs editable anchors for a legacy course without landmarks', () => {
+    const stops = editableStopsFromCourse({ ...course, landmarks: [] })
+    expect(stops.route.length).toBeGreaterThan(2)
+    expect(stops.route.length).toBeLessThanOrEqual(12)
+    expect(stops.labels).toEqual(expect.arrayContaining(['経路維持点 1']))
   })
 
   it('restores every point the driver actually added when present', () => {
