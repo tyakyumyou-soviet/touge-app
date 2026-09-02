@@ -216,6 +216,13 @@ export async function updateCourse(courseId: string, changes: Pick<Course, 'name
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 
+/** Updates an existing course in place, including its route. Route tuples are
+ * converted at the Firestore boundary just as they are on initial creation. */
+export async function updateCourseWithRoute(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'route' | 'distanceKm' | 'durationMin' | 'minElevation' | 'maxElevation' | 'elevationProfile' | 'elevationSource' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds' | 'globalBlockedViewerIds'>): Promise<void> {
+  const { route, ...fields } = changes
+  await updateDoc(doc(db, 'courses', courseId), { ...fields, route: routeForFirestore(route), updatedAt: serverTimestamp() })
+}
+
 /** Replace a saved profile with newly verified elevation data as one atomic
  * update. Initial estimated profiles remain saved until this repair succeeds. */
 export async function updateCourseElevation(courseId: string, changes: Pick<Course, 'elevationProfile' | 'elevationSource' | 'minElevation' | 'maxElevation' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt'>): Promise<void> {

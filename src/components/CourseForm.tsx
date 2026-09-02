@@ -17,6 +17,7 @@ import { auth } from '../lib/firebase'
 interface Props {
   transitionState?: 'idle' | 'entering' | 'leaving'
   previewActive?: boolean
+  editingCourse?: Course | null
   route: Coordinate[]
   canUseUnlimitedWaypoints: boolean
   pointLabels: string[]
@@ -61,7 +62,7 @@ interface DetailsValues {
   blockedViewerIds: string[]
 }
 
-export function CourseForm({ transitionState = 'idle', previewActive = false, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
@@ -192,10 +193,16 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
 
   function openDetails() {
     const defaults = buildCourseDraftDefaults(pointLabels)
-    setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: effectiveProfile?.blockedUserIds ?? [] })
+    const values: DetailsValues = editingCourse ? {
+      name: editingCourse.name, area: editingCourse.area, prefecture: editingCourse.prefecture,
+      description: editingCourse.description, tags: editingCourse.tags.map((tag) => `#${tag}`).join(', '), cautions: editingCourse.cautions.join('\n'),
+      tollStatus: editingCourse.tollStatus ?? 'unknown', visibility: editingCourse.visibility,
+      allowedViewerIds: editingCourse.allowedViewerIds ?? [], blockedViewerIds: editingCourse.blockedViewerIds ?? effectiveProfile?.blockedUserIds ?? [],
+    } : { name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: effectiveProfile?.blockedUserIds ?? [] }
+    setDetails(values)
     setError('')
     setStage('details')
-    void enrichAdministrativeAreas(defaults)
+    if (!editingCourse) void enrichAdministrativeAreas(defaults)
   }
 
   function addRecommendedTag(tag: string) {
@@ -391,7 +398,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
   }
 
   return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
-    <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>コースを作る</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
+    <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>{editingCourse ? 'コースを編集' : 'コースを作る'}</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="閉じる">×</button></header>
     </div>
     <div className="course-form-scroll" data-sheet-scroll {...sheet.scrollProps}>
     {stage === 'route' ? <div className="route-builder-stage">

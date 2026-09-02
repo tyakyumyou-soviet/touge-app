@@ -172,6 +172,11 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-manager-summary span { color: var(--muted); font-size: 12px; }
 .course-manager-section { margin: 16px 0; padding: 16px; background: #f7f8f3; border: 1px solid #e0e2da; border-radius: 11px; }
 .course-manager-section h3, .course-manager-danger h3 { margin: 0 0 12px; font-size: 14px; }
+.course-route-edit { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.course-route-edit h3 { margin-bottom: 4px; }
+.course-route-edit p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.course-route-edit .button { flex: 0 0 auto; margin: 0; }
+.detail-edit-button { color: #1d654a; background: #edf6ef; border-color: #9ac6aa; }
 .course-manager-section .form-grid { margin: 0; }
 .course-manager-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .course-manager-danger { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 24px; padding: 14px; background: #fcf1ee; border: 1px solid #e6bbb1; border-radius: 11px; }
@@ -550,6 +555,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .course-owner-actions .button { width: 100%; }
   .course-manager-danger { align-items: flex-start; flex-direction: column; }
   .course-manager-danger .button { width: 100%; }
+  .course-route-edit { align-items: stretch; flex-direction: column; }
+  .course-route-edit .button { width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .wide { grid-column: auto; }
   .notice { width: calc(100% - 24px); bottom: 12px; text-align: center; }

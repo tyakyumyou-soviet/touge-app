@@ -114,7 +114,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         </div>}
       </div>
       <footer className="nav-actions">
-        <div className="navigation-direction"><span>{!isPreview && navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => {
+        <div className="navigation-direction"><span>{!isPreview && navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span>{canManageCourse && <button type="button" className="detail-edit-button" onClick={onManageCourse}>編集</button>}<button type="button" onClick={() => {
           if (isPreview && onReversePreview) {
             // The preview itself is reversed by the parent, so do not also
             // reverse its Google Maps URL a second time.

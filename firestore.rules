@@ -61,10 +61,10 @@ service cloud.firestore {
         && request.resource.data.name is string
         && request.resource.data.route is list
         && request.resource.data.route.size() >= 2;
-      allow update: if owns(resource.data)
+      allow update: if (owns(resource.data) || isAdmin())
         && request.resource.data.authorId == resource.data.authorId
         && validVisibility(request.resource.data.visibility);
-      allow delete: if owns(resource.data);
+      allow delete: if owns(resource.data) || isAdmin();
 
       match /ratings/{userId} {
         allow read: if true;
