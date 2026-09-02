@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, routedStopsFor, splitRoadCorridor, surroundingRouteCandidateTargets, validateDiscoveredRoad } from './externalDiscovery'
+import { assessTougeSuitability, buildRoadDiscoveryQuery, chainRoadWays, proposalWaypoints, routeCandidateTargets, routedStopsFor, splitRoadCorridor, surroundingRouteCandidateTargets, tollFromTags, validateDiscoveredRoad } from './externalDiscovery'
 import { distanceKm } from './course'
 
 describe('external road discovery', () => {
@@ -24,6 +24,19 @@ describe('external road discovery', () => {
     expect(targets).toHaveLength(8)
     expect(Math.max(...targets.map((item) => item.targetDistanceKm))).toBeLessThanOrEqual(4)
     expect(new Set(targets.map((item) => item.targetDistanceKm.toFixed(2))).size).toBeGreaterThan(2)
+  })
+
+  it('can expand the probe set when multiple recommendations are requested', () => {
+    const targets = routeCandidateTargets([139.03, 35.22], 25, 6, 12)
+    expect(targets).toHaveLength(12)
+    expect(new Set(targets.map((item) => `${item.start.join(',')}:${item.goal.join(',')}`)).size).toBe(12)
+  })
+
+  it('applies toll classification to ordinary public roads as well', () => {
+    expect(tollFromTags({ toll: 'yes' })).toBe('toll')
+    expect(tollFromTags({ toll: 'conditional' })).toBe('conditional')
+    expect(tollFromTags({ toll: 'no' })).toBe('free')
+    expect(tollFromTags({ highway: 'secondary' })).toBe('free')
   })
 
   it.each([2, 4, 6, 10, 40])('searches farther within the radius for a %ikm course without lengthening the course', (maxDistance) => {

@@ -44,6 +44,12 @@ describe('finder inputs are independent of the route being composed', () => {
     expect(fetchMock.mock.calls.map((call) => String((call as unknown[])[0]))).toEqual(baselineUrls)
   })
 
+  it('honours a requested result count when multiple valid routes are returned', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response()))
+    const proposals = await discoverExternalDriveProposals({ ...settings, proposalCount: 2 })
+    expect(proposals).toHaveLength(2)
+  })
+
   it('uses only explicit advanced start/via/goal in that order and snapshots the inputs', async () => {
     const via = { coordinate: [...road[3]] as Coordinate, label: '明示した経由地' }
     const request = buildDriveProposalRequest({ ...settings, requiredPoints: [via],

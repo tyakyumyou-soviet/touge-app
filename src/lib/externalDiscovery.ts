@@ -144,9 +144,15 @@ function highwayWidthScore(tags: Record<string, string>): number {
   return 2.8
 }
 
-function tollFromTags(tags: Record<string, string>): TollStatus {
+export function tollFromTags(tags: Record<string, string>): TollStatus {
+  // OSM only adds `toll=*` when a road has special charging behaviour in most
+  // regions. A public road with no such tag is therefore the best available
+  // free-road classification; treating it as "unknown" made the "無料のみ"
+  // filter discard almost every normal mountain road.
   if (tags.toll === 'yes') return 'toll'
-  if (tags.toll === 'no') return 'free'
+  if (tags.toll === 'conditional') return 'conditional'
+  if (tags.toll === 'mixed') return 'mixed'
+  if (tags.toll === 'no' || !tags.toll) return 'free'
   return 'unknown'
 }
 
@@ -296,12 +302,14 @@ export function routeCandidateTargets(center: Coordinate, radiusKm: number, maxD
   // Keep the radial probes inside the requested maximum. The previous 4km
   // floor made 2km/3km searches impossible before any road was evaluated.
   const maximum = Math.min(radiusKm, maxDistanceKm)
-  const bearings = [0, 45, 90, 135, 180, 225, 270, 315]
-  return bearings.slice(0, count).map((bearing) => {
+  const safeCount = Math.max(1, Math.floor(count))
+  const compactFactors = [.31, .40, .36, .47, .34, .43, .38, .45]
+  return Array.from({ length: safeCount }, (_, index) => {
+    const bearing = index * 360 / safeCount
     // Mix compact and near-limit probes. This is especially important for a
     // 4/6km search: one fixed probe length either misses a short pass or
     // produces a road-network detour above the selected maximum.
-    const factor = maxDistanceKm <= 8 ? [.31, .40, .36, .47, .34, .43, .38, .45][bearing / 45] : .42
+    const factor = maxDistanceKm <= 8 ? compactFactors[index % compactFactors.length] : .42 + (index % 3) * .035
     const distance = Math.min(12, Math.max(.7, maximum * factor))
     const latitudeScale = distance / 111
     const longitudeScale = distance / (111 * Math.max(.35, Math.cos(center[1] * Math.PI / 180)))
@@ -320,15 +328,15 @@ export function routeCandidateTargets(center: Coordinate, radiusKm: number, maxD
 }
 
 /** Search radius is independent of course length: find short passes outside the town centre too. */
-export function surroundingRouteCandidateTargets(center: Coordinate, radiusKm: number, maxDistanceKm: number) {
+export function surroundingRouteCandidateTargets(center: Coordinate, radiusKm: number, maxDistanceKm: number, count = 8) {
   const latitudeScale = radiusKm * .55 / 111
   const longitudeScale = latitudeScale / Math.max(.35, Math.cos(center[1] * Math.PI / 180))
-  return Array.from({ length: 8 }, (_, index) => {
-    const bearing = index * Math.PI / 4
+  return Array.from({ length: count }, (_, index) => {
+    const bearing = index * Math.PI * 2 / count
     const probeCenter: Coordinate = [center[0] + Math.sin(bearing) * longitudeScale, center[1] + Math.cos(bearing) * latitudeScale]
     // Leave a margin inside the requested radius for both ends of the probe.
     // Tangential probes avoid bringing every route back through the origin.
-    return routeCandidateTargets(probeCenter, radiusKm, Math.min(maxDistanceKm, radiusKm * .6), 8)[(index + 2) % 8]
+    return routeCandidateTargets(probeCenter, radiusKm, Math.min(maxDistanceKm, radiusKm * .6), count)[(index + 2) % count]
   })
 }
 
@@ -371,7 +379,11 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   // Probe several directions even when the UI asks to show one result. A pass
   // can lie on only one side of the selected place; returning the first router
   // line was the reason a city connector could win over a real mountain road.
-  const targets = routeCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, 8, request.startPoint?.coordinate, request.goalPoint?.coordinate)
+  // One result only needs an eight-way probe.  When the driver asks for more,
+  // inspect additional bearings rather than returning whichever single route
+  // happened to pass the quality gate first.
+  const targetCount = Math.max(8, count * 6)
+  const targets = routeCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, targetCount, request.startPoint?.coordinate, request.goalPoint?.coordinate)
   const evaluate = async ({ start, goal, targetDistanceKm }: typeof targets[number], index: number) => {
     // Required points are routing stops, not a ranking hint.  Keep their
     // entered order so every generated candidate physically passes each one.
@@ -438,11 +450,12 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   }
   const settled = await settleDiscoveryTasks(targets, evaluate)
   const hasExplicitStops = Boolean(request.startPoint || request.goalPoint || request.requiredPoints.length)
-  if (!hasExplicitStops && !settled.some((result) => result.status === 'fulfilled' && result.value)
-    && settled.some((result) => result.status === 'fulfilled')) {
-    // Only widen spatial coverage after successful nearby probes found no
-    // passes. A total service outage must not generate another request burst.
-    const surrounding = surroundingRouteCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm)
+  const discoveredCount = () => settled.filter((result) => result.status === 'fulfilled' && result.value).length
+  if (!hasExplicitStops && discoveredCount() < count && settled.some((result) => result.status === 'fulfilled')) {
+    // Widen spatial coverage not only when the immediate probes find nothing,
+    // but also when they do not fill the number of recommendations requested.
+    // A total service outage still does not generate another request burst.
+    const surrounding = surroundingRouteCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, targetCount)
     settled.push(...await settleDiscoveryTasks(surrounding, (target, index) => evaluate(target, index + targets.length)))
   }
   const proposals = settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
