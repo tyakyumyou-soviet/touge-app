@@ -148,11 +148,10 @@ export default function App() {
   useEffect(() => { if (user && viewerProfile) localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(viewerProfile)) }, [user, viewerProfile])
   useEffect(() => {
     if (!user || !viewerProfile) return
-    const blocked = new Set(viewerProfile.blockedUserIds ?? [])
     const audience = viewerProfile.locationSharing?.audience ?? 'friends'
     const listIds = new Set(viewerProfile.locationSharing?.listIds ?? [])
     const selectedLists = (viewerProfile.friendLists ?? []).filter((list) => listIds.has(list.id))
-    const allowedViewerIds = [...new Set((audience === 'lists' ? selectedLists.flatMap((list) => list.memberIds) : viewerProfile.followingIds).filter((id) => !blocked.has(id)))]
+    const allowedViewerIds = [...new Set(audience === 'lists' ? selectedLists.flatMap((list) => list.memberIds) : viewerProfile.followingIds)]
     const nowPlaying = viewerProfile.nowPlaying
     if (!viewerProfile.locationSharing?.enabled) {
       // Writing null is deliberate: Firestore merge writes would otherwise
@@ -165,19 +164,6 @@ export default function App() {
     const watchId = navigator.geolocation.watchPosition((position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }), () => undefined, { enableHighAccuracy: true, maximumAge: 30000 })
     return () => navigator.geolocation.clearWatch(watchId)
   }, [user, viewerProfile])
-  useEffect(() => {
-    if (!user || !viewerProfile) return
-    const globalBlocked = new Set(viewerProfile.blockedUserIds ?? [])
-    const owned = courses.filter((course) => course.authorId === user.uid)
-    for (const course of owned) {
-      const globalBlockedViewerIds = [...globalBlocked]
-      const allowedViewerIds = (course.allowedViewerIds ?? []).filter((id) => !globalBlocked.has(id))
-      if (globalBlockedViewerIds.length === (course.globalBlockedViewerIds ?? []).length && globalBlockedViewerIds.every((id) => course.globalBlockedViewerIds?.includes(id)) && allowedViewerIds.length === (course.allowedViewerIds ?? []).length) continue
-      const changes = { name: course.name, area: course.area, prefecture: course.prefecture, description: course.description, tags: course.tags, cautions: course.cautions, tollStatus: course.tollStatus, visibility: course.visibility, blockedViewerIds: course.blockedViewerIds ?? [], globalBlockedViewerIds, allowedViewerIds }
-      void updateCourse(course.id, changes)
-      setCourses((items) => items.map((item) => item.id === course.id ? { ...item, globalBlockedViewerIds, allowedViewerIds } : item))
-    }
-  }, [courses, user, viewerProfile])
   useEffect(() => {
     const courseId = new URLSearchParams(location.search).get('course')
     if (!courseId) return
@@ -488,9 +474,7 @@ export default function App() {
       systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
       authorId: activeUser.uid,
       authorName: activeUser.displayName ?? 'ドライバー',
-      blockedViewerIds: draft.blockedViewerIds ?? [],
-      globalBlockedViewerIds: viewerProfile?.blockedUserIds ?? [],
-      allowedViewerIds: (draft.allowedViewerIds ?? []).filter((id) => !(viewerProfile?.blockedUserIds ?? []).includes(id) && !(draft.blockedViewerIds ?? []).includes(id)),
+      allowedViewerIds: draft.allowedViewerIds ?? [],
       updatedAt: new Date().toISOString().slice(0, 10),
     }
     let id: string
@@ -515,14 +499,12 @@ export default function App() {
     const elevationResult = await fetchElevationProfile(routed.route)
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
-    const blocked = new Set([...(viewerProfile?.blockedUserIds ?? []), ...(draft.blockedViewerIds ?? [])])
     const changes = {
       ...draft, route: routed.route, distanceKm: routed.distanceKm, durationMin: routed.durationMin,
       minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, elevationSource: elevationResult.source,
       ratings: combinedRatings({ ...current, systemRatings, ratings: systemRatings, userRatings: current.userRatings, ratingCount: current.ratingCount }), systemRatings,
       systemRatingSource: ['道路形状・曲率（道路ルーティング）', `標高・高低差（${elevationResult.source}）`, '登録タグ・公開情報'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
-      blockedViewerIds: draft.blockedViewerIds ?? [], globalBlockedViewerIds: viewerProfile?.blockedUserIds ?? current.globalBlockedViewerIds ?? [],
-      allowedViewerIds: (draft.allowedViewerIds ?? []).filter((id) => !blocked.has(id)),
+      allowedViewerIds: draft.allowedViewerIds ?? [],
     }
     await updateCourseWithRoute(current.id, changes)
     const updated = { ...current, ...changes, updatedAt: new Date().toISOString().slice(0, 10) }
@@ -567,11 +549,10 @@ export default function App() {
     setNotice('評価を投稿しました。集計への反映には時間がかかる場合があります。')
   }
 
-  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'>) {
+  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds'>) {
     const current = courses.find((course) => course.id === courseId)
     if (!current || (current.authorId !== auth.currentUser?.uid && !isAdministrator(auth.currentUser))) throw new Error('Not authorized')
-    const blocked = new Set([...(viewerProfile?.blockedUserIds ?? []), ...(changes.blockedViewerIds ?? [])])
-    const safeChanges = { ...changes, blockedViewerIds: changes.blockedViewerIds ?? [], globalBlockedViewerIds: viewerProfile?.blockedUserIds ?? current.globalBlockedViewerIds ?? [], allowedViewerIds: (changes.allowedViewerIds ?? []).filter((id) => !blocked.has(id)) }
+    const safeChanges = { ...changes, allowedViewerIds: changes.allowedViewerIds ?? [] }
     await updateCourse(courseId, safeChanges)
     const updated = { ...current, ...safeChanges, updatedAt: new Date().toISOString().slice(0, 10) }
     setCourses((items) => items.map((course) => course.id === courseId ? updated : course))

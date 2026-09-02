@@ -220,8 +220,8 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
       name: editingCourse.name, area: editingCourse.area, prefecture: editingCourse.prefecture,
       description: editingCourse.description, tags: editingCourse.tags.map((tag) => `#${tag}`).join(', '), cautions: editingCourse.cautions.join('\n'),
       tollStatus: editingCourse.tollStatus ?? 'unknown', visibility: editingCourse.visibility,
-      allowedViewerIds: editingCourse.allowedViewerIds ?? [], blockedViewerIds: editingCourse.blockedViewerIds ?? effectiveProfile?.blockedUserIds ?? [],
-    } : { name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: effectiveProfile?.blockedUserIds ?? [] }
+      allowedViewerIds: editingCourse.allowedViewerIds ?? [], blockedViewerIds: [],
+    } : { name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: [] }
     setDetails(values)
     setError('')
     setStage('details')

@@ -678,6 +678,15 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .admin-report-list footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 .admin-report-list footer .button { min-height: 34px; padding: 7px 11px; }
 .community-panel > header, .community-panel .mobile-sheet-drag-region > header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+.community-header-actions { display: flex; gap: 8px; }
+.account-menu { display: grid; gap: 14px; }
+.account-summary { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #c9d9ce; border-radius: 14px; background: #f5f9f5; }
+.account-summary > div:last-child { display: grid; gap: 3px; }
+.account-summary small { color: var(--muted); font-size: 12px; }
+.account-menu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.account-menu-grid button { position: relative; display: grid; gap: 4px; min-height: 98px; padding: 14px; text-align: left; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: var(--panel); cursor: pointer; }
+.account-menu-grid button:hover { border-color: #5ca47f; background: #f1f8f3; }
+.account-menu-grid button strong { font-size: 15px; }.account-menu-grid button small { color: var(--muted); font-size: 11px; }.account-menu-grid button span { position: absolute; right: 13px; bottom: 11px; color: var(--green); font-size: 18px; }
 .profile-editor { display: grid; grid-template-columns: 72px 1fr; gap: 16px; align-items: start; margin-bottom: 14px; }
 .profile-avatar { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #18231f; font-size: 28px; font-weight: 800; }
 .profile-avatar img { width: 100%; height: 100%; display: block; border-radius: inherit; object-fit: cover; }

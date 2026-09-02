@@ -40,20 +40,8 @@ service cloud.firestore {
     }
 
     match /courses/{courseId} {
-      function globallyBlocked() {
-        return signedIn()
-          && get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.blockedUserIds is list
-          && request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.blockedUserIds;
-      }
-      function courseBlocked() { return signedIn() && (
-        (resource.data.blockedViewerIds is list && request.auth.uid in resource.data.blockedViewerIds)
-        || (resource.data.globalBlockedViewerIds is list && request.auth.uid in resource.data.globalBlockedViewerIds)
-      ); }
       function explicitlyAllowed() { return signedIn() && resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds; }
-      // Direct shared links enforce both blacklist levels. Collection queries
-      // must remain provable from visibility/author/share fields; the client
-      // additionally removes blocked documents from catalogue results.
-      allow get: if !globallyBlocked() && !courseBlocked() && (resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed());
+      allow get: if resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed();
       allow list: if resource.data.visibility == 'public' || owns(resource.data) || explicitlyAllowed();
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid

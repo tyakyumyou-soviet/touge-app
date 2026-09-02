@@ -1,10 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { Course, TollStatus, UserProfile } from '../types'
 import { useMobileSheet } from '../hooks/useMobileSheet'
-import { loadUserProfile } from '../lib/firebase'
 import { JAPANESE_PREFECTURES } from '../lib/administrativeAreas'
 
-export type EditableCourse = Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'>
+export type EditableCourse = Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds'>
 
 interface Props {
   course: Course
@@ -19,17 +18,12 @@ export function CourseManageForm({ course, profile, onClose, onSave, onDelete, o
   const sheet = useMobileSheet()
   const [draft, setDraft] = useState<EditableCourse>(() => ({
     name: course.name, area: course.area, prefecture: course.prefecture, description: course.description,
-    tags: course.tags, cautions: course.cautions, tollStatus: course.tollStatus ?? course.tollInfo?.type ?? 'unknown', visibility: course.visibility, allowedViewerIds: course.allowedViewerIds ?? [], blockedViewerIds: course.blockedViewerIds ?? [],
+    tags: course.tags, cautions: course.cautions, tollStatus: course.tollStatus ?? course.tollInfo?.type ?? 'unknown', visibility: course.visibility, allowedViewerIds: course.allowedViewerIds ?? [],
   }))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteArmed, setDeleteArmed] = useState(false)
   const [notice, setNotice] = useState('')
-  const [friendNames, setFriendNames] = useState<Record<string, string>>({})
-  useEffect(() => {
-    if (!profile?.followingIds.length) return
-    Promise.all(profile.followingIds.map((id) => loadUserProfile(id).then((item) => [id, item?.displayName ?? id.slice(0, 8)] as const).catch(() => [id, id.slice(0, 8)] as const))).then((items) => setFriendNames(Object.fromEntries(items)))
-  }, [profile?.followingIds])
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -54,7 +48,7 @@ export function CourseManageForm({ course, profile, onClose, onSave, onDelete, o
     <form onSubmit={save}>
       <section className="course-manager-section"><h3>基本情報</h3><div className="form-grid"><label>コース名<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>エリア（ナンバー地域など）<input required value={draft.area} onChange={(event) => setDraft({ ...draft, area: event.target.value })} /></label><label>都道府県<input value={draft.prefecture} list="course-manager-prefecture-suggestions" onChange={(event) => setDraft({ ...draft, prefecture: event.target.value })} /><small>複数ある場合は「・」で区切ります。</small></label><datalist id="course-manager-prefecture-suggestions">{JAPANESE_PREFECTURES.map((item) => <option key={item} value={item} />)}</datalist><label>公開範囲<select value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value as Course['visibility'] })}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label></div></section>
       <section className="course-manager-section"><h3>紹介と走行メモ</h3><div className="form-grid"><label className="wide">説明（任意）<textarea rows={4} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label><label>料金区分<select value={draft.tollStatus} onChange={(event) => setDraft({ ...draft, tollStatus: event.target.value as TollStatus })}><option value="unknown">料金情報未確認</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select></label><label className="wide">タグ（任意）<input value={draft.tags.join('、')} onChange={(event) => setDraft({ ...draft, tags: event.target.value.split(/[,、]/).map((item) => item.trim()).filter(Boolean) })} placeholder="ワイド、展望、高原" /></label><label className="wide">注意事項（任意）<textarea rows={3} value={draft.cautions.join('\n')} onChange={(event) => setDraft({ ...draft, cautions: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean) })} placeholder="1行に1件" /></label></div></section>
-      <section className="course-manager-section"><h3>共有先とブラックリスト</h3><p>「フレンド・リンク限定」の共有先を選べます。ブラックリストは共有先より優先されます。</p>{(profile?.followingIds ?? []).length > 0 && <label className="toggle-row"><input type="checkbox" checked={profile!.followingIds.every((id) => (draft.allowedViewerIds ?? []).includes(id))} onChange={(event) => setDraft((value) => ({ ...value, visibility: 'limited', allowedViewerIds: event.target.checked ? [...new Set([...(value.allowedViewerIds ?? []), ...profile!.followingIds])] : (value.allowedViewerIds ?? []).filter((id) => !profile!.followingIds.includes(id)) }))} /> フレンド全員に共有</label>}{(profile?.friendLists ?? []).map((list) => <label key={list.id} className="toggle-row"><input type="checkbox" checked={list.memberIds.length > 0 && list.memberIds.every((id) => (draft.allowedViewerIds ?? []).includes(id))} onChange={(event) => setDraft((value) => ({ ...value, allowedViewerIds: event.target.checked ? [...new Set([...(value.allowedViewerIds ?? []), ...list.memberIds])] : (value.allowedViewerIds ?? []).filter((id) => !list.memberIds.includes(id)), visibility: event.target.checked ? 'limited' : value.visibility }))} /> {list.name}に共有（{list.memberIds.length}人）</label>)}{(profile?.followingIds ?? []).map((id) => <label key={id} className="toggle-row"><input type="checkbox" checked={(draft.blockedViewerIds ?? []).includes(id)} onChange={(event) => setDraft((value) => ({ ...value, blockedViewerIds: event.target.checked ? [...new Set([...(value.blockedViewerIds ?? []), id])] : (value.blockedViewerIds ?? []).filter((item) => item !== id) }))} /> このコースを {friendNames[id] ?? id.slice(0, 8)} に非公開</label>)}</section>
+      <section className="course-manager-section"><h3>共有先</h3><p>「フレンド・リンク限定」の共有先を選べます。</p>{(profile?.followingIds ?? []).length > 0 && <label className="toggle-row"><input type="checkbox" checked={profile!.followingIds.every((id) => (draft.allowedViewerIds ?? []).includes(id))} onChange={(event) => setDraft((value) => ({ ...value, visibility: 'limited', allowedViewerIds: event.target.checked ? [...new Set([...(value.allowedViewerIds ?? []), ...profile!.followingIds])] : (value.allowedViewerIds ?? []).filter((id) => !profile!.followingIds.includes(id)) }))} /> フレンド全員に共有</label>}{(profile?.friendLists ?? []).map((list) => <label key={list.id} className="toggle-row"><input type="checkbox" checked={list.memberIds.length > 0 && list.memberIds.every((id) => (draft.allowedViewerIds ?? []).includes(id))} onChange={(event) => setDraft((value) => ({ ...value, allowedViewerIds: event.target.checked ? [...new Set([...(value.allowedViewerIds ?? []), ...list.memberIds])] : (value.allowedViewerIds ?? []).filter((id) => !list.memberIds.includes(id)), visibility: event.target.checked ? 'limited' : value.visibility }))} /> {list.name}に共有（{list.memberIds.length}人）</label>)}</section>
       {notice && <p className="form-success" role="status">{notice}</p>}
       <footer className="course-manager-actions"><button type="button" className="button secondary" onClick={onClose}>キャンセル</button><button className="button primary" disabled={saving}>{saving ? '保存中…' : '変更を保存'}</button></footer>
     </form>

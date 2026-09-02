@@ -215,7 +215,7 @@ export async function loadPublicCourses(userId?: string): Promise<Course[]> {
   const sharedSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId))).catch(() => null) : null
   const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? []), ...(sharedSnapshot?.docs ?? [])]
   const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
-  return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2 && (!userId || (!course.blockedViewerIds?.includes(userId) && !course.globalBlockedViewerIds?.includes(userId)))))
+  return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))
 }
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
