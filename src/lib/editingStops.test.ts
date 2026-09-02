@@ -41,4 +41,17 @@ describe('editing stops', () => {
       route: editorStops.map((stop) => stop.coordinate), labels: editorStops.map((stop) => stop.label), roles: editorStops.map((stop) => stop.role),
     })
   })
+
+  it('keeps the original labels, order, and source kind for newly saved stops', () => {
+    const editorStops = [
+      { coordinate: course.route[0], label: '自宅付近', role: 'start' as const, kind: 'point' as const },
+      { coordinate: course.route[20], label: '伊豆スカイライン・始点', role: 'via' as const, kind: 'course' as const, sourceCourseName: '伊豆スカイライン' },
+      { coordinate: course.route[40], label: '伊豆スカイライン・終点', role: 'via' as const, kind: 'course' as const, sourceCourseName: '伊豆スカイライン' },
+      { coordinate: course.route[99], label: '目的地', role: 'goal' as const, kind: 'point' as const },
+    ]
+    expect(editableStopsFromCourse({ ...course, editorStops })).toMatchObject({
+      labels: editorStops.map((stop) => stop.label),
+      roles: editorStops.map((stop) => stop.role),
+    })
+  })
 })

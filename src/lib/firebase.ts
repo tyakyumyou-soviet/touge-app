@@ -77,17 +77,24 @@ function routeFromFirestore(value: unknown): Coordinate[] {
 }
 
 function editorStopsForFirestore(stops: CourseEditorStop[] | undefined) {
-  return (stops ?? []).map((stop) => ({ lng: stop.coordinate[0], lat: stop.coordinate[1], label: stop.label, role: stop.role }))
+  return (stops ?? []).map((stop) => ({
+    lng: stop.coordinate[0], lat: stop.coordinate[1], label: stop.label, role: stop.role,
+    kind: stop.kind ?? 'point', sourceCourseName: stop.sourceCourseName ?? null,
+  }))
 }
 
 function editorStopsFromFirestore(value: unknown): CourseEditorStop[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((item): CourseEditorStop[] => {
     if (!item || typeof item !== 'object') return []
-    const stop = item as StoredCoordinate & { label?: unknown; role?: unknown }
+    const stop = item as StoredCoordinate & { label?: unknown; role?: unknown; kind?: unknown; sourceCourseName?: unknown }
     if (!Number.isFinite(stop.lng) || !Number.isFinite(stop.lat) || typeof stop.label !== 'string') return []
     const role: DraftPointRole = stop.role === 'start' || stop.role === 'goal' || stop.role === 'via' ? stop.role : 'via'
-    return [{ coordinate: [stop.lng, stop.lat], label: stop.label, role }]
+    return [{
+      coordinate: [stop.lng, stop.lat], label: stop.label, role,
+      kind: stop.kind === 'course' ? 'course' : 'point',
+      sourceCourseName: typeof stop.sourceCourseName === 'string' ? stop.sourceCourseName : undefined,
+    }]
   })
 }
 

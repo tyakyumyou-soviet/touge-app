@@ -39,6 +39,10 @@ export interface CourseEditorStop {
   coordinate: Coordinate
   label: string
   role: DraftPointRole
+  /** A manually placed point, or an anchor supplied by an incorporated course. */
+  kind?: 'point' | 'course'
+  /** Display name of the incorporated course when kind is course. */
+  sourceCourseName?: string
 }
 
 export type RatingKey =

@@ -62,6 +62,29 @@ interface DetailsValues {
   blockedViewerIds: string[]
 }
 
+function editorStopsForSave(route: Coordinate[], labels: string[], roles: DraftPointRole[]) {
+  let activeCourseName: string | null = null
+  return route.map((coordinate, index) => {
+    const label = labels[index] || '地図指定'
+    // Incorporated courses use the stable labels created by the composer:
+    // 「コース名・始点 / 経由地 / 終点」. Store the source separately so a
+    // later edit never has to guess whether this was a map point or a course.
+    const courseStart = label.match(/^(.*)・始点$/)
+    if (courseStart) activeCourseName = courseStart[1]
+    const sourceCourseName = activeCourseName && label.startsWith(`${activeCourseName}・`) ? activeCourseName : undefined
+    const courseEnd = sourceCourseName && label === `${sourceCourseName}・終点`
+    const stop = {
+      coordinate,
+      label,
+      role: roles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via'),
+      kind: sourceCourseName ? 'course' as const : 'point' as const,
+      sourceCourseName,
+    }
+    if (courseEnd) activeCourseName = null
+    return stop
+  })
+}
+
 export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const effectiveProfile = useMemo(() => {
@@ -383,7 +406,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     const defaults = buildCourseDraftDefaults(pointLabels)
     const draft: CourseDraft = {
       name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
-      editorStops: route.map((coordinate, index) => ({ coordinate, label: pointLabels[index] || '地図指定', role: pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via') })),
+      editorStops: editorStopsForSave(route, pointLabels, pointRoles),
       tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility, allowedViewerIds: details.allowedViewerIds, blockedViewerIds: details.blockedViewerIds,
     }
     setBusy(true); setError('')
