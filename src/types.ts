@@ -63,7 +63,8 @@ export interface Course {
   id: string
   name: string
   area: string
-  prefecture: '東京都' | '神奈川県' | '静岡県'
+  /** One or more prefectures, joined by ・ when a course crosses borders. */
+  prefecture: string
   description: string
   route: Coordinate[]
   landmarks?: RouteLandmark[]
@@ -142,7 +143,7 @@ export interface UserProfile {
 }
 
 export interface FriendList { id: string; name: string; memberIds: string[] }
-export interface SearchPreset { id: string; name: string; prefecture: 'すべて' | Course['prefecture']; toll: 'all' | TollStatus; radiusKm: number; sort: 'recommended' | 'curves' | 'elevation' | 'width' | 'personalized' }
+export interface SearchPreset { id: string; name: string; prefecture: string; toll: 'all' | TollStatus; radiusKm: number; sort: 'recommended' | 'curves' | 'elevation' | 'width' | 'personalized' }
 export interface PersonalizationProfile { curves: number; elevation: number; width: number; scenery: number; surface: number; traffic: number; access: number }
 export interface LocationSharingSettings { enabled: boolean; audience: 'friends' | 'lists'; listIds: string[] }
 export interface NowPlaying { title: string; artist?: string; updatedAt: string }

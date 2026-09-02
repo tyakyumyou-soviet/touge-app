@@ -18,4 +18,10 @@ describe('course search', () => {
     expect(courseMatchesSearch(course, { center: [138.9, 35], radiusKm: 1 })).toBe(true)
     expect(courseMatchesSearch(course, { toll: 'toll' })).toBe(false)
   })
+  it('matches a selected prefecture when a course crosses borders', () => {
+    const borderCourse = { ...course, prefecture: '静岡県・神奈川県' }
+    expect(courseMatchesSearch(borderCourse, { prefecture: '静岡県' })).toBe(true)
+    expect(courseMatchesSearch(borderCourse, { prefecture: '神奈川県' })).toBe(true)
+    expect(courseMatchesSearch(borderCourse, { prefecture: '東京都' })).toBe(false)
+  })
 })

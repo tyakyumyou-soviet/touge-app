@@ -5,7 +5,8 @@ import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
-import { geocodeJapanesePlace, type GeocodedPoint } from '../lib/location'
+import { geocodeJapanesePlace, resolveRouteAdministrativeAreas, type GeocodedPoint } from '../lib/location'
+import { JAPANESE_PREFECTURES } from '../lib/administrativeAreas'
 import { currentSearchLocation } from '../lib/currentLocation'
 import { buildDriveProposalRequest, type DriveProposal, type DriveStyle } from '../lib/recommendations'
 import { discoverExternalDriveProposals, RoadDiscoveryUnavailableError } from '../lib/externalDiscovery'
@@ -76,6 +77,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
   const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: [] })
+  const [administrativeLookup, setAdministrativeLookup] = useState<'idle' | 'loading' | 'failed'>('idle')
   const [proposalOpen, setProposalOpen] = useState(false)
   const [proposalQuery, setProposalQuery] = useState('')
   const [proposalCenter, setProposalCenter] = useState<GeocodedPoint | null>(null)
@@ -168,11 +170,32 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
     return blocks
   }, [pointLabels, pointRoles, route])
 
+  async function enrichAdministrativeAreas(defaults: Pick<DetailsValues, 'area' | 'prefecture'>) {
+    setAdministrativeLookup('loading')
+    try {
+      const detected = await resolveRouteAdministrativeAreas(route)
+      if (!detected) {
+        setAdministrativeLookup('failed')
+        return
+      }
+      setDetails((current) => ({
+        ...current,
+        // Do not overwrite a name the driver has already adjusted manually.
+        area: current.area === defaults.area ? detected.area : current.area,
+        prefecture: current.prefecture === defaults.prefecture || current.prefecture === '都道府県未判定' ? detected.prefecture : current.prefecture,
+      }))
+      setAdministrativeLookup('idle')
+    } catch {
+      setAdministrativeLookup('failed')
+    }
+  }
+
   function openDetails() {
-    const defaults = buildCourseDraftDefaults(pointLabels, route)
+    const defaults = buildCourseDraftDefaults(pointLabels)
     setDetails({ name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: effectiveProfile?.blockedUserIds ?? [] })
     setError('')
     setStage('details')
+    void enrichAdministrativeAreas(defaults)
   }
 
   function addRecommendedTag(tag: string) {
@@ -350,7 +373,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
     event.preventDefault()
     if (route.length < 2 || !hasGoal) { setError('地図上で始点とゴールを指定してください。'); setStage('route'); return }
     if (exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)) { setError(`地点は${WAYPOINT_LIMIT}個以下にしてください。不要な経由地を削除してから保存してください。`); setStage('route'); return }
-    const defaults = buildCourseDraftDefaults(pointLabels, route)
+    const defaults = buildCourseDraftDefaults(pointLabels)
     const draft: CourseDraft = {
       name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
       tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility, allowedViewerIds: details.allowedViewerIds, blockedViewerIds: details.blockedViewerIds,
@@ -436,8 +459,10 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ro
     </div> : <form className="route-details-stage" onSubmit={submit}>
       <button type="button" className="text-button" onClick={() => setStage('route')}>← ルートを修正</button>
       <div className="form-grid">
-        <label>コース名<input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="地点名から自動入力されます" /></label><label>エリア<input value={details.area} onChange={(event) => setDetails((previous) => ({ ...previous, area: event.target.value }))} placeholder="地点名から自動入力されます" /></label>
-        <label>都県<select value={details.prefecture} onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value as CourseDraft['prefecture'] }))}><option>東京都</option><option>神奈川県</option><option>静岡県</option></select></label><label>公開範囲<select value={details.visibility} onChange={(event) => setDetails((previous) => ({ ...previous, visibility: event.target.value as CourseDraft['visibility'] }))}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
+        <label>コース名<input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="地点名から自動入力されます" /></label><label>エリア（ナンバー地域など）<input value={details.area} onChange={(event) => setDetails((previous) => ({ ...previous, area: event.target.value }))} placeholder="例: 伊豆・湘南。経路から自動入力" /><small className="tag-help">複数地域をまたぐ場合は「・」区切りで保存します。</small></label>
+        <label>都道府県<input value={details.prefecture} list="course-prefecture-suggestions" onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value }))} placeholder="経路から自動入力" /><small className="tag-help">複数県をまたぐ場合は「・」区切りで保存します。</small></label><label>公開範囲<select value={details.visibility} onChange={(event) => setDetails((previous) => ({ ...previous, visibility: event.target.value as CourseDraft['visibility'] }))}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
+        <datalist id="course-prefecture-suggestions">{JAPANESE_PREFECTURES.map((item) => <option key={item} value={item} />)}</datalist>
+        <div className="wide tag-help administrative-lookup" role="status">{administrativeLookup === 'loading' ? '経路上の都道府県・エリアを確認中…' : administrativeLookup === 'failed' ? <>地域を自動判定できませんでした。入力内容はそのまま保存できます。 <button type="button" className="text-button" onClick={() => void enrichAdministrativeAreas({ area: details.area, prefecture: details.prefecture })}>再判定</button></> : '経路から都道府県・エリアを自動補完しました。必要に応じて編集できます。'}</div>
         {details.visibility === 'limited' && <section className="wide course-share-picker"><h3>共有相手</h3>{(effectiveProfile?.followingIds ?? []).length > 0 ? <><label className="toggle-row"><input type="checkbox" checked={effectiveProfile!.followingIds.every((id) => details.allowedViewerIds.includes(id))} onChange={(event) => setDetails((previous) => ({ ...previous, allowedViewerIds: event.target.checked ? [...new Set([...previous.allowedViewerIds, ...effectiveProfile!.followingIds])] : previous.allowedViewerIds.filter((id) => !effectiveProfile!.followingIds.includes(id)) }))} />フレンド全員</label>{(effectiveProfile?.friendLists ?? []).map((list) => <label className="toggle-row" key={list.id}><input type="checkbox" checked={list.memberIds.length > 0 && list.memberIds.every((id) => details.allowedViewerIds.includes(id))} onChange={(event) => setDetails((previous) => ({ ...previous, allowedViewerIds: event.target.checked ? [...new Set([...previous.allowedViewerIds, ...list.memberIds])] : previous.allowedViewerIds.filter((id) => !list.memberIds.includes(id)) }))} />{list.name}（{list.memberIds.length}人）</label>)}</> : <p>共有できるフレンドがいません。先にプロフィールからフォロー・リスト設定を行ってください。</p>}</section>}
         <label className="wide">料金区分<select value={details.tollStatus} onChange={(event) => setDetails((previous) => ({ ...previous, tollStatus: event.target.value as TollStatus }))}><option value="unknown">料金情報未確認</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select><small className="tag-help">不明な場合は「料金情報未確認」のまま保存します。無料と推測して登録しません。</small></label>
         <label className="wide">説明（任意）<textarea value={details.description} onChange={(event) => setDetails((previous) => ({ ...previous, description: event.target.value }))} rows={3} placeholder="コースの特徴やおすすめポイント" /></label><label className="wide">タグ（任意）<input value={details.tags} onChange={(event) => setDetails((previous) => ({ ...previous, tags: event.target.value }))} list="course-tag-suggestions" placeholder="#ワイド, #高原, #展望" /><datalist id="course-tag-suggestions">{recommendedTags.map((tag) => <option key={tag} value={`#${tag}`} />)}</datalist><small className="tag-help">#から始まる語だけを保存します。カンマまたは空白で区切れます。</small></label>

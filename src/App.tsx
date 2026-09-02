@@ -28,10 +28,11 @@ import { reverseDriveProposal, type DriveProposal } from './lib/recommendations'
 import { insertDraftStops } from './lib/draftInsertion'
 import { moveDraftBlock } from './lib/draftReorder'
 import { reverseDraftBlock } from './lib/draftReorder'
+import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import './styles.css'
 
-type PrefectureFilter = 'すべて' | Course['prefecture']
+type PrefectureFilter = 'すべて' | string
 
 function previewCourseFromProposal(proposal: DriveProposal): Course {
   const elevationProfile = proposal.elevationProfile
@@ -574,7 +575,7 @@ export default function App() {
             </div>
             <div id="advanced-course-filters" className={`advanced-filters ${advancedFiltersOpen ? 'open' : ''}`} aria-hidden={!advancedFiltersOpen} inert={!advancedFiltersOpen}><div className="advanced-filters-inner">
               <div className="filter-row">
-                <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都県"><option>すべて</option><option>東京都</option><option>神奈川県</option><option>静岡県</option></select>
+                <select value={prefecture} onChange={(event) => setPrefecture(event.target.value as PrefectureFilter)} aria-label="都道府県"><option>すべて</option>{JAPANESE_PREFECTURES.map((item) => <option key={item}>{item}</option>)}</select>
                 <select value={tollFilter} onChange={(event) => setTollFilter(event.target.value as 'all' | TollStatus)} aria-label="料金区分"><option value="all">料金すべて</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option><option value="unknown">料金情報未確認</option></select>
               </div>
               <div className="filter-row course-extra-filters">

@@ -348,6 +348,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .modal label { display: grid; gap: 5px; color: #455149; font-size: 11px; font-weight: 600; }
 .modal input:not([type="range"]), .modal select, .modal textarea { width: 100%; padding: 9px 10px; color: var(--ink); background: #fff; border: 1px solid #cfd2cc; border-radius: 7px; resize: vertical; }
 .tag-help { color: var(--muted); font-size: 10px; font-weight: 500; line-height: 1.45; }
+.administrative-lookup { margin-top: -2px; }
+.administrative-lookup .text-button { min-height: 24px; margin-left: 4px; padding: 0 7px; font-size: 10px; vertical-align: middle; }
 .tag-recommendations { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
 .tag-recommendations span { margin-right: 2px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .tag-recommendations button { padding: 5px 8px; color: #1d654a; background: #e5f1eb; border: 1px solid #b7d6c5; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; }

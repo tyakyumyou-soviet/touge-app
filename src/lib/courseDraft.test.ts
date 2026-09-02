@@ -3,7 +3,7 @@ import { buildCourseDraftDefaults, parseHashTags } from './courseDraft'
 
 describe('course draft helpers', () => {
   it('derives a name, area and prefecture from named stops', () => {
-    expect(buildCourseDraftDefaults(['静岡県熱海峠', '静岡県天城高原'], [[139.0, 35.0], [139.0, 34.8]])).toEqual({
+    expect(buildCourseDraftDefaults(['静岡県熱海峠', '静岡県天城高原'])).toEqual({
       name: '熱海峠〜天城高原ドライブ',
       area: '熱海峠〜天城高原',
       prefecture: '静岡県',

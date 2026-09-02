@@ -39,7 +39,7 @@ export interface CourseSearchFilters {
 }
 
 export function courseMatchesSearch(course: Course, filters: CourseSearchFilters) {
-  if (filters.prefecture && filters.prefecture !== 'すべて' && course.prefecture !== filters.prefecture) return false
+  if (filters.prefecture && filters.prefecture !== 'すべて' && !course.prefecture.split(/[・、,，/／\s]+/).includes(filters.prefecture)) return false
   if (filters.toll && filters.toll !== 'all' && courseTollStatus(course) !== filters.toll) return false
   const terms = (filters.text ?? '').trim().toLocaleLowerCase('ja').split(/[\s\u3000]+/).filter(Boolean)
   const searchable = [course.name, course.area, course.description, course.authorName, ...course.tags, ...(course.landmarks?.map((item) => item.name) ?? [])].join(' ').toLocaleLowerCase('ja')

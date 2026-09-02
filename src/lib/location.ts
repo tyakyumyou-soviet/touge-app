@@ -1,6 +1,48 @@
 import type { Coordinate } from '../types'
+import { numberPlateArea, prefecturesInText } from './administrativeAreas'
 
 export interface GeocodedPoint { coordinate: Coordinate; label: string; level?: number }
+
+export interface RouteAdministrativeAreas {
+  prefecture: string
+  area: string
+}
+
+interface ReverseAddress { state?: string; province?: string; county?: string; city?: string; town?: string; village?: string; municipality?: string; city_district?: string; suburb?: string; display_name?: string }
+
+function routeSamples(route: Coordinate[]) {
+  if (!route.length) return []
+  const count = Math.min(7, Math.max(2, route.length))
+  return [...new Map(Array.from({ length: count }, (_, index) => {
+    const point = route[Math.round(index * (route.length - 1) / Math.max(1, count - 1))]
+    return [`${point[0].toFixed(4)},${point[1].toFixed(4)}`, point] as const
+  })).values()]
+}
+
+/**
+ * Looks up administrative names from the route itself.  Sampling the whole
+ * line, rather than only its midpoint, preserves every prefecture/area when
+ * a border-crossing course is registered.
+ */
+export async function resolveRouteAdministrativeAreas(route: Coordinate[]): Promise<RouteAdministrativeAreas | null> {
+  const samples = routeSamples(route)
+  if (!samples.length) return null
+  const results = await Promise.allSettled(samples.map(async ([longitude, latitude]) => {
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=ja&zoom=10&lat=${latitude.toFixed(6)}&lon=${longitude.toFixed(6)}`, { headers: { Accept: 'application/json' } })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = await response.json() as { address?: ReverseAddress; display_name?: string }
+    const address = data.address ?? {}
+    const text = [address.state, address.province, data.display_name, address.display_name].filter(Boolean).join(' ')
+    const prefecture = prefecturesInText(text)[0]
+    const municipality = address.city ?? address.town ?? address.village ?? address.municipality ?? address.city_district ?? address.county ?? address.suburb ?? ''
+    return prefecture ? { prefecture, area: numberPlateArea(prefecture, municipality) } : null
+  }))
+  const resolved = results.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
+  if (!resolved.length) return null
+  const prefectures = [...new Set(resolved.map((item) => item.prefecture))]
+  const areas = [...new Set(resolved.map((item) => item.area).filter(Boolean))]
+  return { prefecture: prefectures.join('・'), area: areas.join('・') }
+}
 
 export async function geocodeJapanesePlace(query: string): Promise<GeocodedPoint> {
   const normalized = query.trim().replace(/[－ー−]/g, '-')
