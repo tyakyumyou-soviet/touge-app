@@ -28,6 +28,7 @@ import { reverseDriveProposal, type DriveProposal } from './lib/recommendations'
 import { insertDraftStops } from './lib/draftInsertion'
 import { moveDraftBlock } from './lib/draftReorder'
 import { reverseDraftBlock } from './lib/draftReorder'
+import { editableStopsFromCourse } from './lib/editingStops'
 import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import './styles.css'
@@ -451,11 +452,12 @@ export default function App() {
     }
     setCourseManagerOpen(false)
     await startDrawing()
+    const stops = editableStopsFromCourse(course)
     setEditingCourse(course)
-    setDraftRoute(course.route)
-    setDraftPointLabels(course.route.map((_, index) => index === 0 ? `${course.name}・始点` : index === course.route.length - 1 ? `${course.name}・終点` : course.landmarks?.find((landmark) => Math.round(landmark.progress * (course.route.length - 1)) === index)?.name ?? '地図指定'))
-    setDraftPointRoles(course.route.map((_, index) => index === 0 ? 'start' : index === course.route.length - 1 ? 'goal' : 'via'))
-    setDraftFocus(course.route[0] ?? null)
+    setDraftRoute(stops.route)
+    setDraftPointLabels(stops.labels)
+    setDraftPointRoles(stops.roles)
+    setDraftFocus(stops.route[0] ?? null)
   }
 
   async function handleCreate(draft: CourseDraft) {
