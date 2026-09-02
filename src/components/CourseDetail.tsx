@@ -26,10 +26,11 @@ interface Props {
   onOpenTimer?: () => void
   isPreview?: boolean
   onEditPreview?: () => void
+  onReversePreview?: () => void
   previewNavigation?: { index: number; total: number; onPrevious: () => void; onNext: () => void; onReturn: () => void }
 }
 
-export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, previewNavigation }: Props) {
+export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, onReversePreview, previewNavigation }: Props) {
   const sheet = useMobileSheet()
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
@@ -113,7 +114,16 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         </div>}
       </div>
       <footer className="nav-actions">
-        <div className="navigation-direction"><span>{navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => setNavigationReversed((value) => !value)}>⇄ 始点とゴールを入れ替える</button></div>
+        <div className="navigation-direction"><span>{!isPreview && navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => {
+          if (isPreview && onReversePreview) {
+            // The preview itself is reversed by the parent, so do not also
+            // reverse its Google Maps URL a second time.
+            setNavigationReversed(false)
+            onReversePreview()
+            return
+          }
+          setNavigationReversed((value) => !value)
+        }}>⇄ 始点とゴールを入れ替える</button></div>
         <div className="navigation-links"><a className="button secondary" href={googleMapsUrl(course, false, navigationReversed)} target="_blank" rel="noreferrer">コースだけ開く</a><a className="button primary" href={googleMapsUrl(course, true, navigationReversed)} target="_blank" rel="noreferrer">現在地から案内</a></div>
       </footer>
       <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" {...sheet.dragProps}><span>{course.name}</span></div>

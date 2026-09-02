@@ -69,6 +69,22 @@ export interface DriveProposal {
   }
 }
 
+/**
+ * Reverses a not-yet-saved recommendation as one coherent route.  The map
+ * geometry, editable waypoints, labels and elevation samples must all have
+ * the same direction; reversing only the navigation URL leaves previews and
+ * the 3D profile inconsistent.
+ */
+export function reverseDriveProposal(proposal: DriveProposal): DriveProposal {
+  return {
+    ...proposal,
+    route: [...proposal.route].reverse(),
+    waypoints: proposal.waypoints ? [...proposal.waypoints].reverse() : undefined,
+    labels: [...proposal.labels].reverse(),
+    elevationProfile: [...proposal.elevationProfile].reverse(),
+  }
+}
+
 const priorities: Record<DriveStyle, Array<keyof Course['ratings']>> = {
   winding: ['curves', 'elevation', 'scenery', 'width'],
   balanced: ['curves', 'scenery', 'width', 'elevation'],

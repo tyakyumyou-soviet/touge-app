@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateDriveProposals, proposalCountFor } from './recommendations'
+import { generateDriveProposals, proposalCountFor, reverseDriveProposal } from './recommendations'
 import type { Course } from '../types'
 
 const base = (id: string, tollStatus: Course['tollStatus'], curves: number): Course => ({
@@ -31,5 +31,21 @@ describe('drive proposals', () => {
   it('returns fewer proposals when the requested count cannot be satisfied', () => {
     const results = generateDriveProposals([base('only', 'free', 5)], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, proposalCount: 5, toll: 'free', style: 'winding', requiredPoints: [] })
     expect(results).toHaveLength(1)
+  })
+
+  it('reverses every directional field of a preview together', () => {
+    const original = {
+      id: 'proposal', source: 'openstreetmap' as const, name: 'テスト', area: '伊豆',
+      route: [[139, 35], [139.01, 35.01], [139.02, 35.02]] as [number, number][],
+      waypoints: [[139, 35], [139.02, 35.02]] as [number, number][],
+      labels: ['始点', '経由地', '終点'], elevationProfile: [80, 160, 120],
+      elevationSource: '地形傾向による推定' as const, tollStatus: 'free' as const,
+      distanceKm: 4, score: 1, reasons: [],
+    }
+    const reversed = reverseDriveProposal(original)
+    expect(reversed.route).toEqual([...original.route].reverse())
+    expect(reversed.waypoints).toEqual([...original.waypoints].reverse())
+    expect(reversed.labels).toEqual(['終点', '経由地', '始点'])
+    expect(reversed.elevationProfile).toEqual([120, 160, 80])
   })
 })

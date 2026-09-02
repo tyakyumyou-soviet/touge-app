@@ -24,7 +24,7 @@ import { useMobileSheet } from './hooks/useMobileSheet'
 import { canUseUnlimitedWaypoints, exceedsWaypointLimit, isAdministrator, WAYPOINT_LIMIT } from './lib/access'
 import { courseMatchesSearch } from './lib/courseSearch'
 import { geocodeJapanesePlace } from './lib/location'
-import type { DriveProposal } from './lib/recommendations'
+import { reverseDriveProposal, type DriveProposal } from './lib/recommendations'
 import { insertDraftStops } from './lib/draftInsertion'
 import { moveDraftBlock } from './lib/draftReorder'
 import { reverseDraftBlock } from './lib/draftReorder'
@@ -247,6 +247,21 @@ export default function App() {
     setMapFocusRequest((request) => request + 1)
     collapseList()
   }, [collapseList])
+  const reverseProposalPreview = useCallback(() => {
+    if (!selected || selected.authorId !== '__proposal_preview__') return
+    const proposalId = selected.id.replace('proposal-preview-', '')
+    const original = proposalDefinitions.find((item) => item.id === proposalId)
+    if (!original) return
+    const reversed = reverseDriveProposal(original)
+    const preview = previewCourseFromProposal(reversed)
+    setProposalDefinitions((items) => items.map((item) => item.id === proposalId ? reversed : item))
+    setProposalPreviews((items) => items.map((item) => item.id === selected.id ? preview : item))
+    // Replace the selected preview with the reversed geometry and issue a
+    // fresh focus request so the selected line, profile, 3D preview and map
+    // all update together.
+    setSelected(preview)
+    setMapFocusRequest((request) => request + 1)
+  }, [proposalDefinitions, selected])
   const addPoint = useCallback((point: Coordinate, label = '地図指定', requestedRole: 'via' | 'goal' = 'via', requestedInsertAfter: number | null = null) => {
     // Keep all three parallel arrays in the same operation. A new via point is
     // placed before an existing goal; choosing a new goal promotes the old one
@@ -594,6 +609,7 @@ export default function App() {
             profileDirty.current = true; setViewerProfile(next); await saveUserProfileSettings(user, { hiddenRouteIds: next.hiddenRouteIds })
           } : undefined}
           isPreview={selected.authorId === '__proposal_preview__'}
+          onReversePreview={reverseProposalPreview}
           previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) selectCourse(next) }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) selectCourse(next) }, onReturn: () => setSelected(null) } : undefined}
           onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) handleUseProposal(proposal) }}
         />}
