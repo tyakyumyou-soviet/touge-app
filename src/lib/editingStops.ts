@@ -13,6 +13,13 @@ export interface EditableCourseStops {
  * rebuild the road-following geometry when the edited course is saved.
  */
 export function editableStopsFromCourse(course: Course): EditableCourseStops {
+  if (course.editorStops?.length && course.editorStops.some((stop) => stop.role === 'start') && course.editorStops.some((stop) => stop.role === 'goal')) {
+    return {
+      route: course.editorStops.map((stop) => stop.coordinate),
+      labels: course.editorStops.map((stop) => stop.label),
+      roles: course.editorStops.map((stop) => stop.role),
+    }
+  }
   if (course.route.length < 2) return { route: [], labels: [], roles: [] }
   const lastIndex = course.route.length - 1
   const used = new Set([0, lastIndex])

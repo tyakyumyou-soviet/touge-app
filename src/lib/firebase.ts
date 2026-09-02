@@ -31,7 +31,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseComment, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
+import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseComment, type CourseEditorStop, type DraftPointRole, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
 import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -76,6 +76,21 @@ function routeFromFirestore(value: unknown): Coordinate[] {
   })
 }
 
+function editorStopsForFirestore(stops: CourseEditorStop[] | undefined) {
+  return (stops ?? []).map((stop) => ({ lng: stop.coordinate[0], lat: stop.coordinate[1], label: stop.label, role: stop.role }))
+}
+
+function editorStopsFromFirestore(value: unknown): CourseEditorStop[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item): CourseEditorStop[] => {
+    if (!item || typeof item !== 'object') return []
+    const stop = item as StoredCoordinate & { label?: unknown; role?: unknown }
+    if (!Number.isFinite(stop.lng) || !Number.isFinite(stop.lat) || typeof stop.label !== 'string') return []
+    const role: DraftPointRole = stop.role === 'start' || stop.role === 'goal' || stop.role === 'via' ? stop.role : 'via'
+    return [{ coordinate: [stop.lng, stop.lat], label: stop.label, role }]
+  })
+}
+
 function firestoreDate(value: unknown): string {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
@@ -100,6 +115,7 @@ function tollStatus(value: unknown): TollStatus | undefined {
 
 function courseFromFirestore(id: string, value: Record<string, unknown>): Course {
   const route = routeFromFirestore(value.route)
+  const editorStops = editorStopsFromFirestore(value.editorStops)
   const elevationProfile = Array.isArray(value.elevationProfile) ? value.elevationProfile.filter((item): item is number => typeof item === 'number' && Number.isFinite(item)) : []
   const profileMin = elevationProfile.length ? Math.min(...elevationProfile) : 0
   const profileMax = elevationProfile.length ? Math.max(...elevationProfile) : 0
@@ -113,6 +129,7 @@ function courseFromFirestore(id: string, value: Record<string, unknown>): Course
     area: typeof value.area === 'string' ? value.area : 'エリア未設定',
     description: typeof value.description === 'string' ? value.description : '',
     route,
+    editorStops: editorStops.length ? editorStops : undefined,
     distanceKm: typeof value.distanceKm === 'number' && Number.isFinite(value.distanceKm) ? value.distanceKm : routeDistanceKm(route),
     durationMin: typeof value.durationMin === 'number' && Number.isFinite(value.durationMin) ? value.durationMin : Math.max(1, Math.round(routeDistanceKm(route) * 2)),
     elevationProfile,
@@ -202,10 +219,11 @@ export async function loadCourseById(courseId: string): Promise<Course | null> {
 }
 
 export async function createCourse(course: Omit<Course, 'id'>): Promise<string> {
-  const { route, ...courseFields } = course
+  const { route, editorStops, ...courseFields } = course
   const result = await addDoc(collection(db, 'courses'), {
     ...courseFields,
     route: routeForFirestore(route),
+    editorStops: editorStopsForFirestore(editorStops),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
@@ -218,9 +236,9 @@ export async function updateCourse(courseId: string, changes: Pick<Course, 'name
 
 /** Updates an existing course in place, including its route. Route tuples are
  * converted at the Firestore boundary just as they are on initial creation. */
-export async function updateCourseWithRoute(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'route' | 'distanceKm' | 'durationMin' | 'minElevation' | 'maxElevation' | 'elevationProfile' | 'elevationSource' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds' | 'globalBlockedViewerIds'>): Promise<void> {
-  const { route, ...fields } = changes
-  await updateDoc(doc(db, 'courses', courseId), { ...fields, route: routeForFirestore(route), updatedAt: serverTimestamp() })
+export async function updateCourseWithRoute(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'route' | 'editorStops' | 'distanceKm' | 'durationMin' | 'minElevation' | 'maxElevation' | 'elevationProfile' | 'elevationSource' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds' | 'globalBlockedViewerIds'>): Promise<void> {
+  const { route, editorStops, ...fields } = changes
+  await updateDoc(doc(db, 'courses', courseId), { ...fields, route: routeForFirestore(route), editorStops: editorStopsForFirestore(editorStops), updatedAt: serverTimestamp() })
 }
 
 /** Replace a saved profile with newly verified elevation data as one atomic

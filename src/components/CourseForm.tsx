@@ -383,6 +383,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     const defaults = buildCourseDraftDefaults(pointLabels)
     const draft: CourseDraft = {
       name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
+      editorStops: route.map((coordinate, index) => ({ coordinate, label: pointLabels[index] || '地図指定', role: pointRoles[index] ?? (index === 0 ? 'start' : index === route.length - 1 ? 'goal' : 'via') })),
       tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility, allowedViewerIds: details.allowedViewerIds, blockedViewerIds: details.blockedViewerIds,
     }
     setBusy(true); setError('')

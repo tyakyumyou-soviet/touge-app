@@ -18,4 +18,16 @@ describe('editing stops', () => {
       roles: ['start', 'via', 'via', 'goal'],
     })
   })
+
+  it('restores every point the driver actually added when present', () => {
+    const editorStops = [
+      { coordinate: course.route[0], label: '自宅付近', role: 'start' as const },
+      { coordinate: course.route[12], label: '必ず通る地点', role: 'via' as const },
+      { coordinate: course.route[50], label: '組み込んだコース・始点', role: 'via' as const },
+      { coordinate: course.route[99], label: '目的地', role: 'goal' as const },
+    ]
+    expect(editableStopsFromCourse({ ...course, editorStops })).toEqual({
+      route: editorStops.map((stop) => stop.coordinate), labels: editorStops.map((stop) => stop.label), roles: editorStops.map((stop) => stop.role),
+    })
+  })
 })

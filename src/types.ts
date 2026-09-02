@@ -34,6 +34,13 @@ export interface RouteLandmark {
   type?: 'ic' | 'place' | 'viewpoint'
 }
 
+/** The compact, user-editable structure used to recreate a saved route. */
+export interface CourseEditorStop {
+  coordinate: Coordinate
+  label: string
+  role: DraftPointRole
+}
+
 export type RatingKey =
   | 'curves'
   | 'elevation'
@@ -67,6 +74,8 @@ export interface Course {
   prefecture: string
   description: string
   route: Coordinate[]
+  /** Original user-added stops. Dense road geometry is kept separately in route. */
+  editorStops?: CourseEditorStop[]
   landmarks?: RouteLandmark[]
   distanceKm: number
   durationMin: number
@@ -108,6 +117,7 @@ export interface CourseDraft {
   prefecture: Course['prefecture']
   description: string
   route: Coordinate[]
+  editorStops?: CourseEditorStop[]
   tags: string[]
   cautions: string[]
   tollStatus: TollStatus
