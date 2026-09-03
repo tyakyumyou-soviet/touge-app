@@ -8,6 +8,7 @@ import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib
 import { assignCourseColors } from '../lib/courseColors'
 import { visibleMapCameraPadding } from '../lib/mapCamera'
 import { createTougeMapStyle } from '../lib/mapStyle'
+import { mapDraftActions } from '../lib/mapDraftActions'
 
 interface MapViewProps {
   courses: Course[]
@@ -317,30 +318,27 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       const coordinate: Coordinate = [event.lngLat.lng, event.lngLat.lat]
       const content = document.createElement('div')
       content.className = 'draft-point-popup'
-      if (recommendationMapStateRef.current.active) {
-        const message = document.createElement('strong'); message.textContent = 'この位置をコース提案の条件に追加しますか？'
-        const start = document.createElement('button'); start.type = 'button'; start.textContent = 'スタートに設定'
-        const via = document.createElement('button'); via.type = 'button'; via.textContent = '必ず通る地点に追加'
-        const goal = document.createElement('button'); goal.type = 'button'; goal.textContent = 'ゴールに設定'
-        const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
-        start.addEventListener('click', () => { onRecommendationMapActionRef.current({ point: coordinate, action: 'start' }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
-        via.addEventListener('click', () => { onRecommendationMapActionRef.current({ point: coordinate, action: 'via' }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
-        goal.addEventListener('click', () => { onRecommendationMapActionRef.current({ point: coordinate, action: 'goal' }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
-        cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
-        content.append(message, start, via, goal, cancel)
-        draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
-        return
-      }
-      const isFirstStop = draftRolesRef.current.length === 0
-      const message = document.createElement('strong'); message.textContent = isFirstStop ? '最初の地点を始点として追加しますか？' : 'この位置を経由地またはゴールとして追加しますか？'
-      const via = document.createElement('button'); via.type = 'button'; via.textContent = isFirstStop ? '始点として追加' : '経由地として追加'
-      const goal = document.createElement('button'); goal.type = 'button'; goal.textContent = 'ゴールとして追加'
+      const hasStart = draftRouteRef.current.length > 0 || draftRolesRef.current.includes('start')
+      const actions = mapDraftActions(hasStart, recommendationMapStateRef.current.active)
+      const message = document.createElement('strong'); message.textContent = hasStart ? 'この位置をどの地点として追加しますか？' : '最初の地点を始点として追加しますか？'
       const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'キャンセル'
-      via.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'via', viaInsertAfterRef.current); draftPopupRef.current?.remove(); draftPopupRef.current = null })
-      goal.addEventListener('click', () => { onAddPointRef.current(coordinate, '地図指定', 'goal'); draftPopupRef.current?.remove(); draftPopupRef.current = null })
       cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
-      content.append(message, via)
-      if (!isFirstStop) content.append(goal)
+      content.append(message)
+      for (const action of actions) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.textContent = action === 'start' ? '始点として追加'
+          : action === 'via' ? '経由地として追加'
+          : action === 'goal' ? 'ゴールとして追加'
+          : '提案の必ず通る地点に追加'
+        button.addEventListener('click', () => {
+          if (action === 'recommendation-via') onRecommendationMapActionRef.current({ point: coordinate, action: 'via' })
+          else onAddPointRef.current(coordinate, '地図指定', action === 'goal' ? 'goal' : 'via', action === 'via' ? viaInsertAfterRef.current : null)
+          draftPopupRef.current?.remove()
+          draftPopupRef.current = null
+        })
+        content.append(button)
+      }
       content.append(cancel)
       draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
     })
