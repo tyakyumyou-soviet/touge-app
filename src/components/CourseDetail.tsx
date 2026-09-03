@@ -68,7 +68,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
             )}
           </div>
         </header>
-        {isPreview && <section className="proposal-preview-actions" aria-label="提案候補の操作">{previewNavigation && <div className="preview-navigation"><button type="button" onClick={previewNavigation.onPrevious} disabled={previewNavigation.index === 0}>← 前の候補</button><button type="button" onClick={previewNavigation.onReturn}>候補一覧へ</button><button type="button" onClick={previewNavigation.onNext} disabled={previewNavigation.index === previewNavigation.total - 1}>次の候補 →</button></div>}{onEditPreview && <button type="button" className="edit-preview-button" onClick={onEditPreview}>この候補を編集する</button>}</section>}
+        {isPreview && <section className="proposal-preview-actions" aria-label="提案候補の操作">{previewNavigation && <div className="preview-navigation"><button type="button" onClick={previewNavigation.onPrevious} disabled={previewNavigation.index === 0}>← 前の候補</button><button type="button" onClick={previewNavigation.onReturn}>候補一覧へ</button><button type="button" onClick={previewNavigation.onNext} disabled={previewNavigation.index === previewNavigation.total - 1}>次の候補 →</button></div>}{onEditPreview && <button type="button" className="edit-preview-button" onClick={onEditPreview}>このルートを組み込む</button>}</section>}
         <div className="hero-metrics">
           <div><strong>{course.distanceKm}</strong><span>km</span></div>
           <div><strong>{course.durationMin}</strong><span>分</span></div>
@@ -103,7 +103,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
           <button onClick={onReportToll}>無料開放・料金変更を報告</button>
         </section>}
         <section className="caution-box"><h3>走行前に確認</h3><ul>{course.cautions.map((item) => <li key={item}>{item}</li>)}</ul><small>最終更新: {course.updatedAt}。現地標識・公的情報を優先してください。</small></section>
-        {canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>名称・説明・公開範囲・タグ・注意事項を編集できます。削除は確認後にFirebaseから実行されます。</p></div><button className="button secondary" onClick={onManageCourse}>編集・削除</button></section>}
+        {!isPreview && canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>名称・説明・公開範囲・タグ・注意事項を編集できます。削除は確認後にFirebaseから実行されます。</p></div><button className="button secondary" onClick={onManageCourse}>編集・削除</button></section>}
         {!isPreview && <div className="secondary-actions">
           <button onClick={onRate}>項目別に評価</button>
           <button onClick={onShare}>コースを共有</button>
@@ -114,7 +114,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         </div>}
       </div>
       <footer className="nav-actions">
-        <div className="navigation-direction"><span>{!isPreview && navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span>{canManageCourse && <button type="button" className="detail-edit-button" onClick={onManageCourse}>編集</button>}<button type="button" onClick={() => {
+        <div className="navigation-direction"><span>{!isPreview && navigationReversed ? 'GOAL → START' : 'START → GOAL'}</span><button type="button" onClick={() => {
           if (isPreview && onReversePreview) {
             // The preview itself is reversed by the parent, so do not also
             // reverse its Google Maps URL a second time.

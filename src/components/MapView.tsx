@@ -6,7 +6,7 @@ import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { assignCourseColors } from '../lib/courseColors'
-import { visibleMapCameraPadding } from '../lib/mapCamera'
+import { bottomSheetInset, visibleMapCameraPadding } from '../lib/mapCamera'
 import { createTougeMapStyle } from '../lib/mapStyle'
 import { mapDraftActions } from '../lib/mapDraftActions'
 
@@ -290,14 +290,65 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     map.on('touchend', () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); touchPressTimer = undefined; finishPointMove() })
     map.on('mouseenter', 'recommendation-points', () => { map.getCanvas().style.cursor = 'pointer' })
     map.on('mouseleave', 'recommendation-points', () => { map.getCanvas().style.cursor = drawingRef.current ? 'crosshair' : '' })
+    // MapLibre's automatic popup anchor only knows about the canvas edges. On
+    // mobile, a bottom sheet covers part of that canvas, so it can choose a
+    // downward-facing popup that is immediately hidden behind the sheet.
+    // Choose the side with more *actually visible* map space instead.
+    const visibleMapBounds = () => {
+      const mapRect = map.getContainer().getBoundingClientRect()
+      const sheetRects = [...document.querySelectorAll<HTMLElement>('[data-map-occlusion="bottom-sheet"]')]
+        .map((sheet) => sheet.getBoundingClientRect())
+      return { mapRect, top: mapRect.top + 12, bottom: mapRect.bottom - bottomSheetInset(mapRect, sheetRects) - 12 }
+    }
+    const popupAnchorInVisibleMap = (point: maplibregl.LngLat) => {
+      const { mapRect, top, bottom } = visibleMapBounds()
+      const screenY = mapRect.top + map.project(point).y
+      return screenY - top >= bottom - screenY ? 'bottom' : 'top'
+    }
+    const createDraftPopup = (point: maplibregl.LngLat) => new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 14,
+      anchor: popupAnchorInVisibleMap(point),
+    }).setLngLat(point)
+    const keepPopupInVisibleMap = (point: maplibregl.LngLat, popup: maplibregl.Popup) => {
+      // Let MapLibre create and measure the popup before choosing its final
+      // camera position. The available space changes with every sheet snap.
+      window.requestAnimationFrame(() => {
+        const { top, bottom } = visibleMapBounds()
+        const content = popup.getElement()?.querySelector<HTMLElement>('.maplibregl-popup-content')
+        if (content) {
+          content.style.maxHeight = `${Math.max(150, bottom - top)}px`
+          content.style.overflowY = 'auto'
+        }
+        window.requestAnimationFrame(() => {
+          if (draftPopupRef.current !== popup) return
+          const element = popup.getElement()
+          if (!element) return
+          const { mapRect, top: visibleTop, bottom: visibleBottom } = visibleMapBounds()
+          const rect = element.getBoundingClientRect()
+          const shiftX = rect.left < mapRect.left + 10 ? mapRect.left + 10 - rect.left : rect.right > mapRect.right - 10 ? mapRect.right - 10 - rect.right : 0
+          const shiftY = rect.top < visibleTop ? visibleTop - rect.top : rect.bottom > visibleBottom ? visibleBottom - rect.bottom : 0
+          if (Math.abs(shiftX) < 1 && Math.abs(shiftY) < 1) return
+          const current = map.project(point)
+          const target = { x: current.x + shiftX, y: current.y + shiftY }
+          const center = map.unproject([mapRect.width / 2 + current.x - target.x, mapRect.height / 2 + current.y - target.y])
+          map.easeTo({ center, zoom: map.getZoom(), duration: 280, essential: true })
+        })
+      })
+    }
+    const showDraftPopup = (point: maplibregl.LngLat, popup: maplibregl.Popup) => {
+      draftPopupRef.current = popup.addTo(map)
+      keepPopupInVisibleMap(point, popup)
+    }
     map.on('click', 'recommendation-points', (event) => {
       if (!recommendationMapStateRef.current.active) return
       suppressNextMapClick = true
       draftPopupRef.current?.remove()
       const feature = event.features?.[0]
       if (feature?.properties?.role === 'center') {
-        draftPopupRef.current = new maplibregl.Popup({ offset: 14 })
-          .setLngLat(event.lngLat).setText('探索範囲の中心です。この地点を通る必要はありません。').addTo(map)
+        showDraftPopup(event.lngLat, createDraftPopup(event.lngLat)
+          .setText('探索範囲の中心です。この地点を通る必要はありません。'))
         return
       }
       const role = feature?.properties?.role as 'start' | 'via' | 'goal' | undefined
@@ -309,7 +360,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       remove.addEventListener('click', () => { if (role) onRecommendationMapActionRef.current({ point: [event.lngLat.lng, event.lngLat.lat], action: 'remove', role, index: Number.isFinite(index) ? index : 0 }); draftPopupRef.current?.remove(); draftPopupRef.current = null })
       cancel.addEventListener('click', () => { draftPopupRef.current?.remove(); draftPopupRef.current = null })
       content.append(message, remove, cancel)
-      draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
+      showDraftPopup(event.lngLat, createDraftPopup(event.lngLat).setDOMContent(content))
     })
     map.on('click', (event) => {
       if (suppressNextMapClick) { suppressNextMapClick = false; return }
@@ -342,7 +393,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
         content.append(button)
       }
       content.append(cancel)
-      draftPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat(event.lngLat).setDOMContent(content).addTo(map)
+      showDraftPopup(event.lngLat, createDraftPopup(event.lngLat).setDOMContent(content))
     })
     mapRef.current = map
     return () => { if (touchPressTimer) window.clearTimeout(touchPressTimer); draftPopupRef.current?.remove(); map.remove(); mapRef.current = null; setMapReady(false) }
@@ -450,53 +501,29 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       (value, point) => value.extend(point),
       new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
     )
-    const centreRouteInVisibleMap = () => {
-      const rect = container.getBoundingClientRect()
-      if (rect.width < 2 || rect.height < 2) return
-      const occlusionPadding = visibleMapCameraPadding(container)
-      const visibleHeight = Math.max(120, rect.height - occlusionPadding.bottom)
-      const target = { x: rect.width / 2, y: Math.min(rect.height - 32, Math.max(32, visibleHeight / 2)) }
-      const current = map.project(bounds.getCenter())
-      const offset: [number, number] = [target.x - current.x, target.y - current.y]
-      if (Math.abs(offset[0]) < 0.5 && Math.abs(offset[1]) < 0.5) return
-      // Keep the final visible-area correction animated as well.  A detail
-      // sheet can appear after the initial fit; snapping this last offset made
-      // a preview look like it teleported even though the fit itself eased.
-      map.panBy([-offset[0], -offset[1]], { duration: 280, essential: true })
-    }
     const fitSelected = (animate: boolean) => {
       const rect = container.getBoundingClientRect()
       if (rect.width < 2 || rect.height < 2) {
         return
       }
-      // Do not feed a nearly full-height sheet inset into cameraForBounds.
-      // MapLibre returns `undefined` in that case (there is technically too
-      // little canvas left), so no movement occurs at all. Fit horizontally
-      // first, then place that fitted route in the centre of the actually
-      // visible map area above the sheet.
-      const fitPadding = { top: 16, right: 40, bottom: 16, left: 40 }
+      // Fit against the *visible* part of the map.  The previous two-step
+      // approach fitted the full canvas and then panned the result upward;
+      // long or diagonal routes could still extend under the bottom sheet.
+      // Supplying the real sheet inset to cameraForBounds makes MapLibre
+      // calculate both the centre and zoom from the unobscured rectangle.
+      const fitPadding = visibleMapCameraPadding(container, { top: 18, right: 42, bottom: 18, left: 42 })
       map.stop()
       map.resize()
-      // Calculate the target camera explicitly before moving it. On mobile a
-      // bottom sheet can leave a narrow, but valid, visible map strip.  Do
-      // not jump to this target first: that made selecting a course look like
-      // an instantaneous teleport before the easing animation began.
-      const camera = map.cameraForBounds(bounds, { padding: fitPadding, maxZoom: 12.5 })
+      const camera = map.cameraForBounds(bounds, { padding: fitPadding, maxZoom: 14.5 })
       if (camera?.center && Number.isFinite(camera.zoom)) {
-        // Obtain a centre that puts the route centre in the visible top part
-        // of the canvas instead of behind the detail sheet.
         const target = { center: camera.center, zoom: camera.zoom, padding: fitPadding }
         if (animate) map.easeTo({ ...target, duration: 640, essential: true })
         else map.jumpTo(target)
-        // A map fit uses the whole canvas. Shift the fitted route afterwards
-        // so it sits in the centre of the portion that remains above the sheet.
-        if (animate) window.setTimeout(centreRouteInVisibleMap, 660)
-        else centreRouteInVisibleMap()
         return
       }
       // Keep a defensive fallback for map styles that cannot calculate a
       // camera before all terrain resources are ready.
-      map.fitBounds(bounds, { padding: fitPadding, maxZoom: 12.5, duration: animate ? 640 : 0, essential: true })
+      map.fitBounds(bounds, { padding: fitPadding, maxZoom: 14.5, duration: animate ? 640 : 0, essential: true })
     }
     // Every selection and proposal preview uses an eased move.  The follow-up
     // passes retain the same behaviour while accommodating the final sheet

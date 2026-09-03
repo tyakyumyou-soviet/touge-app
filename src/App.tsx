@@ -43,7 +43,7 @@ function previewCourseFromProposal(proposal: DriveProposal): Course {
   const prefecture: Course['prefecture'] = lat > 35.62 ? '東京都' : lat > 35.28 ? '神奈川県' : '静岡県'
   return {
     id: `proposal-preview-${proposal.id}`, name: proposal.name, area: proposal.area, prefecture,
-    description: `保存前の自動提案コースです。${proposal.reasons.join('・')}。ルートと評価を確認してから「この候補を編集する」を選んでください。`, route: proposal.route,
+    description: `保存前の自動提案コースです。${proposal.reasons.join('・')}。ルートと評価を確認してから「このルートを組み込む」を選んでください。`, route: proposal.route,
     landmarks: proposal.labels.slice(1, -1).map((name, index, items) => ({ name, progress: (index + 1) / Math.max(2, items.length + 1), type: 'place' })),
     distanceKm: proposal.distanceKm, durationMin: Math.max(5, Math.round(proposal.distanceKm * 1.7)), minElevation: Math.min(...elevationProfile), maxElevation: Math.max(...elevationProfile), elevationProfile,
     elevationSource: proposal.elevationSource, ratings: systemRatings, systemRatings, ratingCount: 0,
@@ -485,7 +485,14 @@ export default function App() {
       throw error
     }
     const created = { id, ...data }
-    setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setNotice(`Firebaseへコースを保存しました（ID: ${id.slice(0, 8)}）`)
+    setCourses((items) => [created, ...items]); setSelected(created); setDrawing(false)
+    // The saved course is now rendered through the normal selected-course
+    // layer. Clear every builder-only source of pins so draft, proposal and
+    // temporary-search markers cannot survive behind its detail sheet.
+    setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
+    setRecommendationMapState({ active: false, start: null, goal: null, vias: [] }); setRecommendationMapAction(null)
+    setProposalPreviews([]); setProposalDefinitions([]); setProposalEditSnapshot(null)
+    setNotice(`Firebaseへコースを保存しました（ID: ${id.slice(0, 8)}）`)
   }
 
   async function handleCourseRouteUpdate(draft: CourseDraft) {
@@ -509,7 +516,10 @@ export default function App() {
     await updateCourseWithRoute(current.id, changes)
     const updated = { ...current, ...changes, updatedAt: new Date().toISOString().slice(0, 10) }
     setCourses((items) => items.map((course) => course.id === current.id ? updated : course))
-    setSelected(updated); setEditingCourse(null); setDrawing(false); setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null)
+    setSelected(updated); setEditingCourse(null); setDrawing(false)
+    setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftFocus(null); setDraftPendingSearch(null)
+    setRecommendationMapState({ active: false, start: null, goal: null, vias: [] }); setRecommendationMapAction(null)
+    setProposalPreviews([]); setProposalDefinitions([]); setProposalEditSnapshot(null)
     setNotice('コースのルートと詳細をFirebaseへ更新しました')
   }
 
