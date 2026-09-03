@@ -43,8 +43,6 @@ interface Props {
   onMoveRouteBlock: (from: number, count: number, to: number) => void
   onReverseRouteBlock: (start: number, count: number) => void
   onChooseViaInsertion: (index: number | null) => void
-  onUndo: () => void
-  onClear: () => void
   onCancel: () => void
   onSave: (draft: CourseDraft) => Promise<void>
 }
@@ -85,7 +83,7 @@ function editorStopsForSave(route: Coordinate[], labels: string[], roles: DraftP
   })
 }
 
-export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onUndo, onClear, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
@@ -125,7 +123,9 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
   const proposalSearchTimer = useRef<number | null>(null)
   const proposalSearchRevision = useRef(0)
   const proposalGenerationRevision = useRef(0)
-  const handledRecommendationAction = useRef(recommendationMapAction?.id ?? 0)
+  // Begin at zero so an action dispatched while this form is mounting is not
+  // mistaken for an already-consumed map action.
+  const handledRecommendationAction = useRef(0)
 
   useEffect(() => {
     onRecommendationMapStateChange({ active: proposalOpen && stage === 'route' && !previewActive, center: proposalCenter, start: proposalStart, goal: proposalGoal, vias: proposalVias })
@@ -142,6 +142,8 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     handledRecommendationAction.current = recommendationMapAction.id
     const point = { coordinate: recommendationMapAction.point, label: '地図指定' }
     if (recommendationMapAction.action === 'center') {
+      setStage('route')
+      setProposalOpen(true)
       setProposalCenter(point)
       setProposalQuery('')
       setProposalError('')
@@ -494,7 +496,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
       {searchNotice && <p className="form-success" role="status">{searchNotice}</p>}
       <p className="route-privacy-note">自宅などの住所を追加する場合、公開範囲は「フレンド・リンク限定」または「非公開」を推奨します。保存されるのはルート上の位置情報です。</p>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <footer><button type="button" className="text-button" onClick={onUndo} disabled={!route.length}>1つ戻す</button><button type="button" className="text-button" onClick={onClear} disabled={!route.length}>すべて消す</button><button type="button" className="button primary" disabled={route.length < 2 || !hasGoal || exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)} onClick={openDetails}>詳細へ →</button></footer>
+      <footer><button type="button" className="button primary" disabled={route.length < 2 || !hasGoal || exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)} onClick={openDetails}>詳細へ →</button></footer>
     </div> : <form className="route-details-stage" onSubmit={submit}>
       <button type="button" className="text-button" onClick={() => setStage('route')}>← ルートを修正</button>
       <div className="form-grid">

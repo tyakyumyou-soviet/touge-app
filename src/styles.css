@@ -456,6 +456,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .three-d-legend i.route { width: 20px; height: 4px; border-radius: 2px; }
 
 .notice, .update-toast { position: fixed; z-index: 80; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 12px 17px; color: #fff; background: var(--ink); border: 1px solid #415047; border-radius: 10px; box-shadow: 0 10px 40px #0005; font-size: 12px; }
+.notice { pointer-events: none; }
 .update-toast { display: flex; align-items: center; gap: 10px; }
 .update-toast button { color: var(--yellow); background: none; border: 0; font-weight: 700; }
 .update-toast.warning { border-color: #c77756; }

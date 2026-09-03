@@ -6,7 +6,7 @@ import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { assignCourseColors } from '../lib/courseColors'
-import { bottomSheetInset, visibleMapCameraPadding } from '../lib/mapCamera'
+import { bottomSheetInset } from '../lib/mapCamera'
 import { createTougeMapStyle } from '../lib/mapStyle'
 import { mapDraftActions } from '../lib/mapDraftActions'
 
@@ -103,6 +103,35 @@ const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number 
   }],
 })
 
+/** Fits any map-rendered route into the area that remains above active sheets. */
+function fitRouteToVisibleMap(map: MapLibreMap, container: HTMLElement, route: Coordinate[], margin: { top: number; right: number; bottom: number; left: number }, duration: number) {
+  if (!route.length) return
+  const rect = container.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return
+  const sheetRects = [...document.querySelectorAll<HTMLElement>('[data-map-occlusion="bottom-sheet"]')].map((sheet) => sheet.getBoundingClientRect())
+  const hiddenBottom = bottomSheetInset(rect, sheetRects)
+  const visible = { left: margin.left, right: rect.width - margin.right, top: margin.top, bottom: rect.height - hiddenBottom - margin.bottom }
+  const visibleWidth = visible.right - visible.left
+  const visibleHeight = visible.bottom - visible.top
+  if (visibleWidth < 48 || visibleHeight < 48) return
+  const projected = route.map((point) => map.project(point))
+  const minX = Math.min(...projected.map((point) => point.x)); const maxX = Math.max(...projected.map((point) => point.x))
+  const minY = Math.min(...projected.map((point) => point.y)); const maxY = Math.max(...projected.map((point) => point.y))
+  const scale = Math.max((maxX - minX) / visibleWidth, (maxY - minY) / visibleHeight, .0001)
+  const currentZoom = map.getZoom()
+  const zoom = Math.min(14.5, Math.max(map.getMinZoom(), currentZoom - Math.log2(scale)))
+  const zoomFactor = 2 ** (zoom - currentZoom)
+  const routeCentre = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+  const targetCentre = { x: (visible.left + visible.right) / 2, y: (visible.top + visible.bottom) / 2 }
+  const screenCentre = { x: rect.width / 2, y: rect.height / 2 }
+  const center = map.unproject([
+    routeCentre.x - (targetCentre.x - screenCentre.x) / zoomFactor,
+    routeCentre.y - (targetCentre.y - screenCentre.y) / zoomFactor,
+  ])
+  if (duration) map.easeTo({ center, zoom, duration, essential: true })
+  else map.jumpTo({ center, zoom })
+}
+
 export function MapView({ courses, selected, previewCourseIds, focusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -187,14 +216,9 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       const container = containerRef.current
       if (!container) return
       const result = event as GeolocationPosition
-      onCurrentLocationChange([result.coords.longitude, result.coords.latitude])
-      map.flyTo({
-        center: [result.coords.longitude, result.coords.latitude],
-        padding: visibleMapCameraPadding(container),
-        zoom: Math.max(map.getZoom(), 14),
-        duration: 500,
-        essential: true,
-      })
+      const point: Coordinate = [result.coords.longitude, result.coords.latitude]
+      onCurrentLocationChange(point)
+      fitRouteToVisibleMap(map, container, [point], { top: 34, right: 42, bottom: 34, left: 42 }, 500)
     })
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
 
@@ -417,14 +441,24 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     const map = mapRef.current
     if (!mapReady || !map?.isStyleLoaded()) return
     const source = map.getSource('draft') as GeoJSONSource | undefined
+    const builderLayers = ['draft-road-line', 'draft-point-pin-tip', 'draft-points', 'draft-point-labels', 'draft-point-names', 'pending-search-pulse', 'pending-search-pin-tip', 'pending-search-pin', 'pending-search-label', 'recommendation-point-tip', 'recommendation-points', 'recommendation-point-labels']
+    const setBuilderVisibility = (visibility: 'visible' | 'none') => builderLayers.forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility)
+    })
     if (!drawing) {
       source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
+      ;(map.getSource('draft-road') as GeoJSONSource | undefined)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
       ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection([]))
       ;(map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(null, ''))
+      ;(map.getSource('recommendation-points') as GeoJSONSource | undefined)?.setData(toRecommendationPointCollection({ active: false, start: null, goal: null, vias: [] }))
+      // A completed save must never leave builder artefacts behind, even if a
+      // late routing response tries to update a GeoJSON source afterwards.
+      setBuilderVisibility('none')
       map.getCanvas().style.cursor = ''
       draftPopupRef.current?.remove(); draftPopupRef.current = null
       return
     }
+    setBuilderVisibility('visible')
     source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
     ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels, draftRoles))
     // A route edit means the search candidate has either been confirmed or the
@@ -476,7 +510,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     const map = mapRef.current
     const container = containerRef.current
     if (!map || !container || !focusPoint) return
-    map.flyTo({ center: focusPoint, padding: visibleMapCameraPadding(container), zoom: Math.max(map.getZoom(), 15), duration: 500, essential: true })
+    fitRouteToVisibleMap(map, container, [focusPoint], { top: 34, right: 42, bottom: 34, left: 42 }, 500)
   }, [focusPoint, drawing, mapReady])
 
   useEffect(() => {
@@ -497,33 +531,12 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     // animation settles; competing fitBounds calls were cancelling each other
     // and made the preview button appear to do nothing on mobile.
     if (!map || !container || !focusRequest || !selected || selected.route.length < 2) return
-    const bounds = selected.route.reduce(
-      (value, point) => value.extend(point),
-      new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
-    )
     const fitSelected = (animate: boolean) => {
-      const rect = container.getBoundingClientRect()
-      if (rect.width < 2 || rect.height < 2) {
-        return
-      }
-      // Fit against the *visible* part of the map.  The previous two-step
-      // approach fitted the full canvas and then panned the result upward;
-      // long or diagonal routes could still extend under the bottom sheet.
-      // Supplying the real sheet inset to cameraForBounds makes MapLibre
-      // calculate both the centre and zoom from the unobscured rectangle.
-      const fitPadding = visibleMapCameraPadding(container, { top: 18, right: 42, bottom: 18, left: 42 })
+      const isProposalPreview = selected.authorId === '__proposal_preview__'
+      const margin = isProposalPreview ? { top: 52, right: 64, bottom: 52, left: 64 } : { top: 18, right: 42, bottom: 18, left: 42 }
       map.stop()
       map.resize()
-      const camera = map.cameraForBounds(bounds, { padding: fitPadding, maxZoom: 14.5 })
-      if (camera?.center && Number.isFinite(camera.zoom)) {
-        const target = { center: camera.center, zoom: camera.zoom, padding: fitPadding }
-        if (animate) map.easeTo({ ...target, duration: 640, essential: true })
-        else map.jumpTo(target)
-        return
-      }
-      // Keep a defensive fallback for map styles that cannot calculate a
-      // camera before all terrain resources are ready.
-      map.fitBounds(bounds, { padding: fitPadding, maxZoom: 14.5, duration: animate ? 640 : 0, essential: true })
+      fitRouteToVisibleMap(map, container, selected.route, margin, animate ? 640 : 0)
     }
     // Every selection and proposal preview uses an eased move.  The follow-up
     // passes retain the same behaviour while accommodating the final sheet
@@ -541,22 +554,13 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     const map = mapRef.current
     const container = containerRef.current
     if (!map || !container || !selected || selected.route.length < 2) return
-    const bounds = selected.route.reduce(
-      (value, point) => value.extend(point),
-      new maplibregl.LngLatBounds(selected.route[0], selected.route[0]),
-    )
     let frame = 0
     const alignToVisibleMap = () => {
       frame = 0
-      const rect = container.getBoundingClientRect()
-      if (rect.width < 2 || rect.height < 2) return
-      const occlusionPadding = visibleMapCameraPadding(container)
-      const visibleHeight = Math.max(120, rect.height - occlusionPadding.bottom)
-      const target = { x: rect.width / 2, y: Math.min(rect.height - 32, Math.max(32, visibleHeight / 2)) }
-      const current = map.project(bounds.getCenter())
-      const offset: [number, number] = [target.x - current.x, target.y - current.y]
-      if (Math.abs(offset[0]) < 0.5 && Math.abs(offset[1]) < 0.5) return
-      map.panBy([-offset[0], -offset[1]], { duration: 280, essential: true })
+      const isProposalPreview = selected.authorId === '__proposal_preview__'
+      fitRouteToVisibleMap(map, container, selected.route, isProposalPreview
+        ? { top: 52, right: 64, bottom: 52, left: 64 }
+        : { top: 18, right: 42, bottom: 18, left: 42 }, 0)
     }
     const scheduleAlignment = () => {
       if (!frame) frame = window.requestAnimationFrame(alignToVisibleMap)
@@ -573,9 +577,8 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
         resize.observe(sheet)
       })
     }
-    // Only sheet attributes are relevant. Watching every style change in the
-    // map canvas creates a feedback loop because panBy itself updates canvas
-    // transforms while a route is being aligned.
+    // Only sheet attributes are relevant. A zero-duration re-fit is used
+    // while dragging so the route remains locked to the visible-map centre.
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === 'attributes')) scheduleAlignment()
       if (records.some((record) => record.type === 'childList')) { observeSheets(); scheduleAlignment() }

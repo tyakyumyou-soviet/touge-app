@@ -100,6 +100,7 @@ export default function App() {
   const [roadReportOpen, setRoadReportOpen] = useState(false)
   const [adminOpen, setAdminOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const noticeRef = useRef<HTMLDivElement>(null)
   const listSheet = useMobileSheet()
   const collapseList = listSheet.collapse
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
@@ -176,8 +177,34 @@ export default function App() {
   }, [])
   useEffect(() => {
     if (!notice) return
-    const timer = window.setTimeout(() => setNotice(''), 5000)
+    const timer = window.setTimeout(() => setNotice(''), 2500)
     return () => window.clearTimeout(timer)
+  }, [notice])
+  useEffect(() => {
+    if (!notice) return
+    let frame = 0
+    const update = () => {
+      const viewportHeight = window.innerHeight
+      const sheetTops = [...document.querySelectorAll<HTMLElement>('[data-map-occlusion="bottom-sheet"]')]
+        .filter((sheet) => {
+          const style = window.getComputedStyle(sheet)
+          return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0
+        })
+        .map((sheet) => sheet.getBoundingClientRect())
+        .filter((rect) => rect.top < viewportHeight && rect.bottom >= viewportHeight - 16 && rect.right > 0 && rect.left < window.innerWidth)
+        .map((rect) => rect.top)
+      // A notification belongs in the unobscured map area, never over the
+      // sheet. The highest active sheet is the only safe reference when a
+      // surface transition temporarily renders two sheets at once.
+      const bottom = sheetTops.length ? Math.max(12, viewportHeight - Math.min(...sheetTops) + 12) : 22
+      // A drag updates the sheet transform every frame. Update the notice
+      // element directly in that same frame, rather than waiting for a React
+      // render or a CSS transition to catch up behind the handle.
+      noticeRef.current?.style.setProperty('bottom', `${bottom}px`)
+    }
+    const followSheet = () => { update(); frame = window.requestAnimationFrame(followSheet) }
+    followSheet()
+    return () => window.cancelAnimationFrame(frame)
   }, [notice])
   useEffect(() => () => {
     if (surfaceTimer.current !== null) window.clearTimeout(surfaceTimer.current)
@@ -652,7 +679,7 @@ export default function App() {
           previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) selectCourse(next) }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) selectCourse(next) }, onReturn: () => setSelected(null) } : undefined}
           onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) handleUseProposal(proposal) }}
         />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onUndo={() => { setDraftRoute((route) => route.slice(0, -1)); setDraftPointLabels((labels) => labels.slice(0, -1)); setDraftPointRoles((roles) => roles.slice(0, -1)); setDraftViaInsertAfter(null) }} onClear={() => { setDraftRoute([]); setDraftPointLabels([]); setDraftPointRoles([]); setDraftViaInsertAfter(null); setDraftPendingSearch(null) }} onCancel={openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onCancel={openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {timerOpen && selected && <DriveTimer course={selected} onClose={() => setTimerOpen(false)} />}
@@ -660,7 +687,7 @@ export default function App() {
         {roadReportOpen && selected && <RoadConditionReportForm courseName={selected.name} onCancel={() => setRoadReportOpen(false)} onSave={handleRoadConditionReport} />}
       </main>
       {pendingProposalAddition && <ProposalGoalDialog name={pendingProposalAddition.proposal.name} hasGoal={draftPointRoles.includes('goal')} onChoose={confirmProposalAddition} onCancel={() => setPendingProposalAddition(null)} />}
-      {notice && <div className="notice" role="status">{notice}</div>}
+      {notice && <div ref={noticeRef} className="notice" role="status">{notice}</div>}
       {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation">
         <section className={`modal logout-dialog ${logoutSheet.className}`} style={logoutSheet.style} role="dialog" aria-modal="true" aria-labelledby="logout-title" {...logoutSheet.dragProps}>
           <div className="mobile-sheet-drag-region"><div className="mobile-sheet-handle" aria-hidden="true" /><h2 id="logout-title">ログアウトしますか？</h2>
