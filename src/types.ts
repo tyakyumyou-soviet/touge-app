@@ -22,8 +22,8 @@ export interface RecommendationMapState {
 export interface RecommendationMapAction {
   id: number
   point: Coordinate
-  action: 'start' | 'via' | 'goal' | 'remove'
-  role?: 'start' | 'via' | 'goal'
+  action: 'center' | 'start' | 'via' | 'goal' | 'remove'
+  role?: 'center' | 'start' | 'via' | 'goal'
   index?: number
 }
 

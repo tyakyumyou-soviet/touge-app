@@ -1,4 +1,4 @@
-export type MapDraftAction = 'start' | 'via' | 'goal' | 'recommendation-via'
+export type MapDraftAction = 'start' | 'via' | 'goal' | 'recommendation-center' | 'recommendation-via'
 
 /**
  * Actions shown after tapping the map while composing a course.
@@ -8,6 +8,6 @@ export type MapDraftAction = 'start' | 'via' | 'goal' | 'recommendation-via'
  */
 export function mapDraftActions(hasStart: boolean, recommendationOpen: boolean): MapDraftAction[] {
   const actions: MapDraftAction[] = hasStart ? ['via', 'goal'] : ['start']
-  if (recommendationOpen) actions.push('recommendation-via')
+  if (recommendationOpen) actions.push('recommendation-center', 'recommendation-via')
   return actions
 }

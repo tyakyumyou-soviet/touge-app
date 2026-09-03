@@ -8,7 +8,8 @@ describe('map tap actions while composing a course', () => {
   })
 
   it('keeps ordinary point actions and adds the recommendation via only while open', () => {
-    expect(mapDraftActions(true, true)).toEqual(['via', 'goal', 'recommendation-via'])
+    expect(mapDraftActions(true, true)).toEqual(['via', 'goal', 'recommendation-center', 'recommendation-via'])
+    expect(mapDraftActions(true, false)).not.toContain('recommendation-center')
     expect(mapDraftActions(true, false)).not.toContain('recommendation-via')
   })
 

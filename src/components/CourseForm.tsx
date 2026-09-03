@@ -141,6 +141,14 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     if (!recommendationMapAction || recommendationMapAction.id === handledRecommendationAction.current) return
     handledRecommendationAction.current = recommendationMapAction.id
     const point = { coordinate: recommendationMapAction.point, label: '地図指定' }
+    if (recommendationMapAction.action === 'center') {
+      setProposalCenter(point)
+      setProposalQuery('')
+      setProposalError('')
+      setProposals([])
+      onSetProposalPreviews([])
+      onFocusPoint(point.coordinate)
+    }
     if (recommendationMapAction.action === 'start') setProposalStart(point)
     if (recommendationMapAction.action === 'goal') setProposalGoal(point)
     if (recommendationMapAction.action === 'via') setProposalVias((items) => [...items, point])
@@ -149,7 +157,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
       else if (recommendationMapAction.role === 'goal') setProposalGoal(null)
       else if (recommendationMapAction.role === 'via') setProposalVias((items) => items.filter((_, index) => index !== recommendationMapAction.index))
     }
-  }, [recommendationMapAction])
+  }, [onFocusPoint, onSetProposalPreviews, recommendationMapAction])
 
   const [courseLibraryOpen, setCourseLibraryOpen] = useState(false)
   const [courseLibraryQuery, setCourseLibraryQuery] = useState('')

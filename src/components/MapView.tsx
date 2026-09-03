@@ -330,9 +330,11 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
         button.textContent = action === 'start' ? '始点として追加'
           : action === 'via' ? '経由地として追加'
           : action === 'goal' ? 'ゴールとして追加'
+          : action === 'recommendation-center' ? '提案の探索中心に設定'
           : '提案の必ず通る地点に追加'
         button.addEventListener('click', () => {
-          if (action === 'recommendation-via') onRecommendationMapActionRef.current({ point: coordinate, action: 'via' })
+          if (action === 'recommendation-center') onRecommendationMapActionRef.current({ point: coordinate, action: 'center' })
+          else if (action === 'recommendation-via') onRecommendationMapActionRef.current({ point: coordinate, action: 'via' })
           else onAddPointRef.current(coordinate, '地図指定', action === 'goal' ? 'goal' : 'via', action === 'via' ? viaInsertAfterRef.current : null)
           draftPopupRef.current?.remove()
           draftPopupRef.current = null
