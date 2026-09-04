@@ -69,6 +69,19 @@ export interface DriveProposal {
   }
 }
 
+/** Stable, direction-independent identity for one suggestion. Router result
+ * ids include a probe index, so geometry is used to recognise the same road
+ * again when the driver repeats a search during the current builder session. */
+export function driveProposalIdentity(proposal: DriveProposal): string {
+  if (proposal.sourceCourseId) return `catalog:${proposal.sourceCourseId}`
+  if (!proposal.route.length) return `${proposal.source}:${proposal.id}`
+  const anchors = [0, .25, .5, .75, 1].map((ratio) => proposal.route[Math.round((proposal.route.length - 1) * ratio)])
+  const encode = (points: Coordinate[]) => points.map(([lng, lat]) => `${lng.toFixed(4)},${lat.toFixed(4)}`).join('|')
+  const forward = encode(anchors)
+  const reverse = encode([...anchors].reverse())
+  return `${proposal.source}:${forward < reverse ? forward : reverse}`
+}
+
 /**
  * Reverses a not-yet-saved recommendation as one coherent route.  The map
  * geometry, editable waypoints, labels and elevation samples must all have

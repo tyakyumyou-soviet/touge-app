@@ -8,7 +8,7 @@ import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, resolveRouteAdministrativeAreas, type GeocodedPoint } from '../lib/location'
 import { JAPANESE_PREFECTURES } from '../lib/administrativeAreas'
 import { currentSearchLocation } from '../lib/currentLocation'
-import { buildDriveProposalRequest, type DriveProposal, type DriveStyle } from '../lib/recommendations'
+import { buildDriveProposalRequest, driveProposalIdentity, type DriveProposal, type DriveStyle } from '../lib/recommendations'
 import { discoverExternalDriveProposals, RoadDiscoveryUnavailableError } from '../lib/externalDiscovery'
 import { tollStatusLabels } from '../lib/toll'
 import type { TollStatus } from '../types'
@@ -32,6 +32,7 @@ interface Props {
   onCurrentLocationChange: (point: Coordinate) => void
   onPendingPointChange: (point: Coordinate | null, label?: string) => void
   recommendationMapAction?: RecommendationMapAction | null
+  incorporatedProposalKeys: string[]
   onRecommendationMapStateChange: (state: RecommendationMapState) => void
   onUseProposal: (proposal: DriveProposal, placement?: 'replace' | 'append', insertAfter?: number | null) => void
   onUndoProposalEdit: () => void
@@ -83,7 +84,7 @@ function editorStopsForSave(route: Coordinate[], labels: string[], roles: DraftP
   })
 }
 
-export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onCancel, onSave }: Props) {
+export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, incorporatedProposalKeys, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onCancel, onSave }: Props) {
   const sheet = useMobileSheet()
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
@@ -116,6 +117,10 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
   const [proposalGoal, setProposalGoal] = useState<GeocodedPoint | null>(null)
   const [proposalSettingsOpen, setProposalSettingsOpen] = useState(false)
   const [proposals, setProposals] = useState<DriveProposal[]>([])
+  const visibleProposals = useMemo(() => {
+    const incorporated = new Set(incorporatedProposalKeys)
+    return proposals.filter((proposal) => !incorporated.has(driveProposalIdentity(proposal)))
+  }, [incorporatedProposalKeys, proposals])
   const [proposalError, setProposalError] = useState('')
   const [proposalProgress, setProposalProgress] = useState('')
   const [proposalLocating, setProposalLocating] = useState(false)
@@ -383,15 +388,17 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     setBusy(true); setProposalError(''); setProposals([]); onSetProposalPreviews([]); setProposalProgress('OpenStreetMapから道路形状を取得しています…')
     const request = buildDriveProposalRequest({
       center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
-      proposalCount, toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias, startPoint: proposalStart, goalPoint: proposalGoal,
+      proposalCount: Math.min(5, proposalCount + incorporatedProposalKeys.length), toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias, startPoint: proposalStart, goalPoint: proposalGoal,
     })
     try {
       const external = await discoverExternalDriveProposals(request)
       if (revision !== proposalGenerationRevision.current) return
       setProposalProgress('道路のカーブ・標高・通行条件を確認しています…')
-      if (!external.length) { setProposalError('この条件では新しいコースを見つけられませんでした。探索範囲・距離・料金条件を変えて再試行してください。'); return }
-      setProposals(external)
-      onSetProposalPreviews(external)
+      const incorporated = new Set(incorporatedProposalKeys)
+      const fresh = external.filter((proposal) => !incorporated.has(driveProposalIdentity(proposal))).slice(0, proposalCount)
+      if (!fresh.length) { setProposalError('この条件で見つかった候補は、すでに今回のコースへ追加されています。条件または探索中心を変えてください。'); return }
+      setProposals(fresh)
+      onSetProposalPreviews(fresh)
     } catch (caught) {
       if (revision !== proposalGenerationRevision.current) return
       setProposals([]); onSetProposalPreviews([])
@@ -467,7 +474,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
         {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
         <button type="button" className="button primary proposal-generate" onClick={generateProposals} disabled={!proposalCenter || busy || proposalLocating}>{proposalLocating ? '現在地を取得中…' : busy ? '峠道を検証中…' : `この条件で${proposalCount}案を見る`}</button>
         {proposalProgress && <div className="proposal-loading" role="status" aria-live="polite"><span aria-hidden="true" /><div><strong>峠適格の道路を検証しています</strong><small>{proposalProgress}</small></div></div>}
-        {proposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">{proposals.length}案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{proposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => { sheet.reset(); onOpenProposalPreview(proposal.id) }}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>{route.length ? 'この候補をルートに追加 →' : 'この候補を使う →'}</button></div></article>)}</div>}
+        {visibleProposals.length > 0 && <div className="proposal-results" aria-live="polite"><p className="proposal-map-hint">{visibleProposals.length}案を地図へ一時表示中です。ラインまたは「プレビュー」で、保存前の詳細を確認できます。</p>{visibleProposals.map((proposal, index) => <article key={proposal.id}><span>候補 {index + 1} · {proposal.source === 'openstreetmap' ? '外部道路から発見' : '登録済みコース'}</span><h4>{proposal.name}</h4><p>{proposal.area} · {proposal.distanceKm.toFixed(1)}km · {tollStatusLabels[proposal.tollStatus]}</p><ul>{proposal.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.validation && <small className="proposal-validation">品質検証済み: 最大欠落 {proposal.validation.maxGapKm.toFixed(2)}km · {proposal.validation.elevationSource}</small>}<div className="proposal-actions"><button type="button" className="button secondary" onClick={() => { sheet.reset(); onOpenProposalPreview(proposal.id) }}>プレビュー</button><button type="button" className="button primary" onClick={() => chooseProposal(proposal)}>{route.length ? 'この候補をルートに追加 →' : 'この候補を使う →'}</button></div></article>)}</div>}
       </section>}
       {hasProposalEditSnapshot && proposals.length > 0 && <button type="button" className="proposal-edit-back" onClick={() => { onUndoProposalEdit(); setProposalOpen(true); setSearchNotice('候補を採用する前の状態に戻しました。別の候補を選べます。') }}>← 候補を採用する前に戻る</button>}
       <section className="existing-route-insert" aria-label="既存コースをルートへ組み込む">

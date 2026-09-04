@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateDriveProposals, proposalCountFor, reverseDriveProposal } from './recommendations'
+import { driveProposalIdentity, generateDriveProposals, proposalCountFor, reverseDriveProposal } from './recommendations'
 import type { Course } from '../types'
 
 const base = (id: string, tollStatus: Course['tollStatus'], curves: number): Course => ({
@@ -8,6 +8,11 @@ const base = (id: string, tollStatus: Course['tollStatus'], curves: number): Cou
 })
 
 describe('drive proposals', () => {
+  it('recognises the same suggested road in either direction', () => {
+    const proposal = generateDriveProposals([base('same-road', 'free', 4)], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, toll: 'all', style: 'balanced', requiredPoints: [], proposalCount: 1 })[0]
+    expect(driveProposalIdentity(reverseDriveProposal(proposal))).toBe(driveProposalIdentity(proposal))
+  })
+
   it('filters toll roads and ranks the requested driving style', () => {
     const results = generateDriveProposals([base('wide', 'free', 3), base('curvy', 'free', 5), base('paid', 'toll', 5)], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, toll: 'free', style: 'winding', requiredPoints: [] })
     expect(results.map((item) => item.sourceCourseId)).toEqual(['curvy', 'wide'])
