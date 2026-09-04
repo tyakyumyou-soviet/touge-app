@@ -4,6 +4,7 @@ import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRa
 import { courseTollStatus, tollStatusLabels } from '../lib/toll'
 import { subscribeLiveRoadInfo } from '../lib/firebase'
 import { fetchCurrentWeather, type CurrentWeather } from '../lib/liveWeather'
+import { fetchCurrentRoadTraffic, type CurrentRoadTraffic } from '../lib/liveRoadTraffic'
 import type { LiveRoadInfo } from '../types'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
@@ -35,6 +36,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
+  const [roadTraffic, setRoadTraffic] = useState<CurrentRoadTraffic | null>(null)
   const systemRatings = systemRatingsFor(course)
   const mergedRatings = combinedRatings(course)
   const userCount = userRatingCountFor(course)
@@ -46,6 +48,12 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
     const midpoint = course.route[Math.floor(course.route.length / 2)] ?? course.route[0]
     if (!midpoint) return
     fetchCurrentWeather(midpoint).then((value) => { if (!cancelled) setWeather(value) }).catch(() => { if (!cancelled) setWeather(null) })
+    return () => { cancelled = true }
+  }, [course.id, course.route])
+  useEffect(() => {
+    let cancelled = false
+    setRoadTraffic(null)
+    fetchCurrentRoadTraffic(course.route).then((value) => { if (!cancelled) setRoadTraffic(value) }).catch(() => { if (!cancelled) setRoadTraffic(null) })
     return () => { cancelled = true }
   }, [course.id, course.route])
 
@@ -79,10 +87,10 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         <p className="description">{course.description}</p>
         <button className="three-d-cta" onClick={onOpen3d}><span>3D</span><div><strong>立体コースビュー</strong><small>地形と高低差を俯瞰して確認</small></div><b>→</b></button>
         <ElevationChart values={course.elevationProfile} />
-        {!isPreview && <section className={`live-road-info ${liveInfo?.status ?? 'caution'}`} aria-label="リアルタイム道路情報">
-          <div className="live-road-head"><h3>走行前のライブ情報</h3><span>{liveInfo ? '同期済み' : '未同期'}</span></div>
-          <div className="live-road-grid"><div><b>天候</b><span>{liveInfo?.weather ?? weather?.summary ?? '取得できませんでした'}{liveInfo?.temperature ? ` · ${liveInfo.temperature}` : weather ? ` · ${weather.temperature}` : ''}</span></div><div><b>通行規制</b><span>{liveInfo?.restriction ?? '公式情報の同期待ち'}</span></div><div><b>交通量</b><span>{liveInfo?.traffic ?? '公式情報の同期待ち'}</span></div></div>
-          <small>{liveInfo ? `${liveInfo.sourceName} · 更新 ${liveInfo.updatedAt}` : weather ? `${weather.sourceName} · 更新 ${weather.updatedAt}。規制・交通量は公的情報の同期後に表示します。` : '天候を取得できませんでした。通行規制・交通量は現地標識・道路管理者の公式情報を確認してください。'}</small>
+        {!isPreview && <section className={`live-road-info ${liveInfo?.status ?? 'caution'}`} aria-label="走行前の道路情報">
+          <div className="live-road-head"><h3>走行前の情報</h3><span>{liveInfo ? '道路情報取得済み' : roadTraffic ? '交通量取得済み' : weather ? '天候取得済み' : '確認中'}</span></div>
+          <div className="live-road-grid"><div><b>天候</b><span>{liveInfo?.weather ?? weather?.summary ?? '取得できませんでした'}{liveInfo?.temperature ? ` · ${liveInfo.temperature}` : weather ? ` · ${weather.temperature}` : ''}</span></div><div><b>通行規制</b>{liveInfo?.restriction ? <span>{liveInfo.restriction}</span> : <a href="https://www.jartic.or.jp/" target="_blank" rel="noreferrer">JARTICで確認 ↗</a>}</div><div><b>交通量</b><span>{liveInfo?.traffic ?? roadTraffic?.summary ?? '近隣の観測地点なし'}</span></div></div>
+          <small>{liveInfo ? `${liveInfo.sourceName} · 更新 ${liveInfo.updatedAt}` : <>{weather ? `${weather.sourceName} · 更新 ${weather.updatedAt}` : '天候取得失敗'}{roadTraffic ? `／${roadTraffic.sourceName} · 観測 ${roadTraffic.updatedAt}` : ''}。規制は走行前に公式情報と現地標識を確認してください。</>}</small>
         </section>}
         <section className="rating-summary" aria-label="評価の内訳">
           <div className="rating-summary-head"><strong>総合評価 {overallRating(mergedRatings)}</strong><span>システム評価を基準にユーザー評価を反映</span></div>

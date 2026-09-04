@@ -15,6 +15,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/road-live"
+  to = "/.netlify/functions/road-live"
+  status = 200
+
+[[redirects]]
   from = "/assets/*"
   to = "/404.html"
   status = 404

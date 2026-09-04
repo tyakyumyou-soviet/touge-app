@@ -84,8 +84,13 @@ export default function App() {
   const [draftViaInsertAfter, setDraftViaInsertAfter] = useState<number | null>(null)
   const [draftFocus, setDraftFocus] = useState<Coordinate | null>(null)
   const [draftPendingSearch, setDraftPendingSearch] = useState<{ point: Coordinate; label: string } | null>(null)
+  const [draftFitRequest, setDraftFitRequest] = useState(0)
   const [recommendationMapState, setRecommendationMapState] = useState<RecommendationMapState>({ active: false, start: null, goal: null, vias: [] })
   const [recommendationMapAction, setRecommendationMapAction] = useState<RecommendationMapAction | null>(null)
+  // Map taps can happen within the same millisecond on fast devices.  A
+  // monotonically increasing id ensures the form never treats a new tap as an
+  // already-consumed action.
+  const recommendationActionSequence = useRef(0)
   const [proposalPreviews, setProposalPreviews] = useState<Course[]>([])
   const [proposalDefinitions, setProposalDefinitions] = useState<DriveProposal[]>([])
   // A monotonically increasing request is deliberately used instead of tying
@@ -405,6 +410,7 @@ export default function App() {
     setDraftPendingSearch(null)
     setPendingProposalAddition(null)
     setSelected(null)
+    setDraftFitRequest((request) => request + 1)
     setNotice(makeGoal ? '提案区間を追加し、その終点をゴールにしました。' : '提案区間を経由地として追加しました。ゴール設定は変更していません。')
   }
 
@@ -627,7 +633,15 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => setRecommendationMapAction({ ...action, id: Date.now() })} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
+        <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
+          const id = ++recommendationActionSequence.current
+          const point = { coordinate: action.point, label: '地図指定' }
+          // Reflect the selected search centre immediately.  CourseForm then
+          // owns the long-lived form values, but waiting for that effect made
+          // a map-tapped centre appear to have been ignored.
+          if (action.action === 'center') setRecommendationMapState((state) => ({ ...state, active: true, center: point }))
+          setRecommendationMapAction({ ...action, id })
+        }} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
         <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={drawing ? undefined : listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
           <div className="explore-panel-top">
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); listSheet.openResting() } }} />

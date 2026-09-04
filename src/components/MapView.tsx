@@ -15,6 +15,7 @@ interface MapViewProps {
   selected: Course | null
   previewCourseIds: string[]
   focusRequest?: number
+  draftFitRequest?: number
   is3d: boolean
   drawing: boolean
   draftRoute: Coordinate[]
@@ -132,7 +133,7 @@ function fitRouteToVisibleMap(map: MapLibreMap, container: HTMLElement, route: C
   else map.jumpTo({ center, zoom })
 }
 
-export function MapView({ courses, selected, previewCourseIds, focusRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -253,26 +254,24 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       map.addLayer({ id: 'selected-contours', type: 'line', source: 'selected-contours', paint: { 'line-color': '#637e70', 'line-width': 1.2, 'line-opacity': .62, 'line-dasharray': [1, 2] } })
       map.addLayer({ id: 'selected-glow', type: 'line', source: 'selected-course', paint: { 'line-color': '#101915', 'line-width': 12, 'line-opacity': .58 } })
       map.addLayer({ id: 'selected-line', type: 'line', source: 'selected-course', paint: { 'line-color': '#f2d16b', 'line-width': 6 } })
-      map.addSource('draft', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
-      map.addLayer({ id: 'draft-line', type: 'line', source: 'draft', layout: { visibility: 'none' }, paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-dasharray': [1.2, 1] } })
       map.addSource('draft-road', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } })
-      map.addLayer({ id: 'draft-road-line', type: 'line', source: 'draft-road', paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-opacity': .9 } })
+      map.addLayer({ id: 'draft-road-line', type: 'line', source: 'draft-road', layout: { visibility: 'none' }, paint: { 'line-color': '#ee704f', 'line-width': 5, 'line-opacity': .9 } })
       map.addSource('draft-points', { type: 'geojson', data: toDraftPointCollection([]) })
       // Keep the draft stops above every course layer.  The small triangular tip
       // makes the otherwise compact numbered marker read as a map pin.
-      map.addLayer({ id: 'draft-point-pin-tip', type: 'symbol', source: 'draft-points', layout: { 'text-field': '▼', 'text-size': 19, 'text-offset': [0, .72], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'] } })
-      map.addLayer({ id: 'draft-points', type: 'circle', source: 'draft-points', paint: { 'circle-radius': 13, 'circle-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
-      map.addLayer({ id: 'draft-point-labels', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true, 'text-ignore-placement': true }, paint: { 'text-color': '#142018' } })
-      map.addLayer({ id: 'draft-point-names', type: 'symbol', source: 'draft-points', layout: { 'text-field': ['concat', ['get', 'label'], '  ', ['get', 'name']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
+      map.addLayer({ id: 'draft-point-pin-tip', type: 'symbol', source: 'draft-points', layout: { visibility: 'none', 'text-field': '▼', 'text-size': 19, 'text-offset': [0, .72], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'] } })
+      map.addLayer({ id: 'draft-points', type: 'circle', source: 'draft-points', layout: { visibility: 'none' }, paint: { 'circle-radius': 13, 'circle-color': ['match', ['get', 'label'], 'S', '#287e5a', 'G', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'draft-point-labels', type: 'symbol', source: 'draft-points', layout: { visibility: 'none', 'text-field': ['get', 'label'], 'text-size': 12, 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true, 'text-ignore-placement': true }, paint: { 'text-color': '#142018' } })
+      map.addLayer({ id: 'draft-point-names', type: 'symbol', source: 'draft-points', layout: { visibility: 'none', 'text-field': ['concat', ['get', 'label'], '  ', ['get', 'name']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
       map.addSource('pending-search-point', { type: 'geojson', data: toPendingSearchPoint(null, '') })
-      map.addLayer({ id: 'pending-search-pulse', type: 'circle', source: 'pending-search-point', paint: { 'circle-radius': 21, 'circle-color': '#e76f51', 'circle-opacity': .2, 'circle-stroke-color': '#d7503d', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': .75 } })
-      map.addLayer({ id: 'pending-search-pin-tip', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': '▼', 'text-size': 23, 'text-offset': [0, .74], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#e76f51' } })
-      map.addLayer({ id: 'pending-search-pin', type: 'circle', source: 'pending-search-point', paint: { 'circle-radius': 15, 'circle-color': '#e76f51', 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
-      map.addLayer({ id: 'pending-search-label', type: 'symbol', source: 'pending-search-point', layout: { 'text-field': ['concat', '仮  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.35], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#7f2f27', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
+      map.addLayer({ id: 'pending-search-pulse', type: 'circle', source: 'pending-search-point', layout: { visibility: 'none' }, paint: { 'circle-radius': 21, 'circle-color': '#e76f51', 'circle-opacity': .2, 'circle-stroke-color': '#d7503d', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': .75 } })
+      map.addLayer({ id: 'pending-search-pin-tip', type: 'symbol', source: 'pending-search-point', layout: { visibility: 'none', 'text-field': '▼', 'text-size': 23, 'text-offset': [0, .74], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#e76f51' } })
+      map.addLayer({ id: 'pending-search-pin', type: 'circle', source: 'pending-search-point', layout: { visibility: 'none' }, paint: { 'circle-radius': 15, 'circle-color': '#e76f51', 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'pending-search-label', type: 'symbol', source: 'pending-search-point', layout: { visibility: 'none', 'text-field': ['concat', '仮  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.35], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#7f2f27', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
       map.addSource('recommendation-points', { type: 'geojson', data: toRecommendationPointCollection({ active: false, start: null, goal: null, vias: [] }) })
-      map.addLayer({ id: 'recommendation-point-tip', type: 'symbol', source: 'recommendation-points', layout: { 'text-field': '▼', 'text-size': 20, 'text-offset': [0, .72], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['match', ['get', 'role'], 'start', '#287e5a', 'goal', '#d35a46', '#e1ac3d'] } })
-      map.addLayer({ id: 'recommendation-points', type: 'circle', source: 'recommendation-points', paint: { 'circle-radius': 14, 'circle-color': ['match', ['get', 'role'], 'start', '#287e5a', 'goal', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
-      map.addLayer({ id: 'recommendation-point-labels', type: 'symbol', source: 'recommendation-points', layout: { 'text-field': ['concat', ['get', 'marker'], '  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
+      map.addLayer({ id: 'recommendation-point-tip', type: 'symbol', source: 'recommendation-points', layout: { visibility: 'none', 'text-field': '▼', 'text-size': 20, 'text-offset': [0, .72], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['match', ['get', 'role'], 'start', '#287e5a', 'goal', '#d35a46', '#e1ac3d'] } })
+      map.addLayer({ id: 'recommendation-points', type: 'circle', source: 'recommendation-points', layout: { visibility: 'none' }, paint: { 'circle-radius': 14, 'circle-color': ['match', ['get', 'role'], 'start', '#287e5a', 'goal', '#d35a46', '#e1ac3d'], 'circle-stroke-width': 3, 'circle-stroke-color': '#fff8e7' } })
+      map.addLayer({ id: 'recommendation-point-labels', type: 'symbol', source: 'recommendation-points', layout: { visibility: 'none', 'text-field': ['concat', ['get', 'marker'], '  ', ['get', 'label']], 'text-size': 13, 'text-offset': [0, 2.15], 'text-anchor': 'top', 'text-allow-overlap': true, 'text-ignore-placement': true, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#15251b', 'text-halo-color': '#fff8e7', 'text-halo-width': 2.5 } })
       map.addSource('current-location', { type: 'geojson', data: toCurrentLocation(null) })
       map.addLayer({ id: 'current-location-halo', type: 'circle', source: 'current-location', paint: { 'circle-radius': 14, 'circle-color': '#287bdc', 'circle-opacity': .18, 'circle-stroke-color': '#287bdc', 'circle-stroke-width': 1, 'circle-stroke-opacity': .38 } })
       map.addLayer({ id: 'current-location-dot', type: 'circle', source: 'current-location', paint: { 'circle-radius': 7, 'circle-color': '#287bdc', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
@@ -280,7 +279,6 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
       map.addLayer({ id: 'course-annotation-labels', type: 'symbol', source: 'course-annotations', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, -1.25], 'text-anchor': 'bottom', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd', 'text-halo-width': 2 } })
-      ;(map.getSource('draft') as GeoJSONSource).setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRouteRef.current } })
       ;(map.getSource('draft-points') as GeoJSONSource).setData(toDraftPointCollection(draftRouteRef.current, draftLabelsRef.current, draftRolesRef.current))
       setMapReady(true)
     })
@@ -427,7 +425,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
 
   useEffect(() => {
     const map = mapRef.current
-    if (!mapReady || !map?.isStyleLoaded()) return
+    if (!mapReady || !map) return
     ;(map.getSource('courses') as GeoJSONSource | undefined)?.setData(toFeatureCollection(courses, courseColors))
   }, [courseColors, courses, mapReady])
 
@@ -439,14 +437,12 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
 
   useEffect(() => {
     const map = mapRef.current
-    if (!mapReady || !map?.isStyleLoaded()) return
-    const source = map.getSource('draft') as GeoJSONSource | undefined
+    if (!mapReady || !map) return
     const builderLayers = ['draft-road-line', 'draft-point-pin-tip', 'draft-points', 'draft-point-labels', 'draft-point-names', 'pending-search-pulse', 'pending-search-pin-tip', 'pending-search-pin', 'pending-search-label', 'recommendation-point-tip', 'recommendation-points', 'recommendation-point-labels']
     const setBuilderVisibility = (visibility: 'visible' | 'none') => builderLayers.forEach((id) => {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility)
     })
     if (!drawing) {
-      source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
       ;(map.getSource('draft-road') as GeoJSONSource | undefined)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } })
       ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection([]))
       ;(map.getSource('pending-search-point') as GeoJSONSource | undefined)?.setData(toPendingSearchPoint(null, ''))
@@ -459,7 +455,6 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       return
     }
     setBuilderVisibility('visible')
-    source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: draftRoute } })
     ;(map.getSource('draft-points') as GeoJSONSource | undefined)?.setData(toDraftPointCollection(draftRoute, draftLabels, draftRoles))
     // A route edit means the search candidate has either been confirmed or the
     // user chose a different point. Clear the map source directly as a second
@@ -478,7 +473,14 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     const map = mapRef.current
     if (!mapReady || !map?.isStyleLoaded()) return
     ;(map.getSource('recommendation-points') as GeoJSONSource | undefined)?.setData(toRecommendationPointCollection(recommendationMapState))
-  }, [mapReady, recommendationMapState])
+    // The builder layers may have been hidden during the previous save or
+    // sheet transition.  A live finder always restores its own pins, rather
+    // than relying on an unrelated draft-route render to do so.
+    const visibility = drawing && recommendationMapState.active ? 'visible' : 'none'
+    ;['recommendation-point-tip', 'recommendation-points', 'recommendation-point-labels'].forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility)
+    })
+  }, [drawing, mapReady, recommendationMapState])
 
   useEffect(() => {
     const map = mapRef.current
@@ -512,6 +514,26 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     if (!map || !container || !focusPoint) return
     fitRouteToVisibleMap(map, container, [focusPoint], { top: 34, right: 42, bottom: 34, left: 42 }, 500)
   }, [focusPoint, drawing, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const container = containerRef.current
+    if (!map || !container || !drawing || !draftFitRequest || draftRoute.length < 2) return
+    const fitDraft = (animate: boolean) => {
+      map.stop()
+      map.resize()
+      fitRouteToVisibleMap(map, container, draftRoute, { top: 42, right: 52, bottom: 42, left: 52 }, animate ? 650 : 0)
+    }
+    const first = window.requestAnimationFrame(() => fitDraft(true))
+    // The goal-choice dialog closes at the same time as the builder sheet is
+    // restored. Refit after that layout settles so the complete composed route
+    // remains centred in the map area that is actually visible.
+    const settleTimers = [260, 680].map((delay) => window.setTimeout(() => fitDraft(true), delay))
+    return () => {
+      window.cancelAnimationFrame(first)
+      settleTimers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [draftFitRequest, draftRoute, drawing, mapReady])
 
   useEffect(() => {
     const map = mapRef.current

@@ -72,7 +72,17 @@ function localRoadDiscoveryRelay() {
 
 export default defineConfig({
   base: '/',
-  server: {},
+  server: {
+    proxy: {
+      // Development-only equivalent of the constrained Netlify relay. The
+      // browser sends the same WFS request that production validates.
+      '/api/jartic-traffic': {
+        target: 'https://api.jartic-open-traffic.org',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/jartic-traffic/, '/geoserver'),
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {
