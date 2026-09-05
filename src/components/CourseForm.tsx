@@ -99,7 +99,9 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
   const [searchError, setSearchError] = useState('')
   const [searchNotice, setSearchNotice] = useState('')
   const [pendingSearchPoint, setPendingSearchPoint] = useState<GeocodedPoint | null>(null)
-  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: [] })
+  const [details, setDetails] = useState<DetailsValues>({ name: '', area: '', prefecture: '静岡県', description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'limited', allowedViewerIds: [], blockedViewerIds: [] })
+  const [audienceMode, setAudienceMode] = useState<'all-friends' | 'lists'>('all-friends')
+  const [selectedFriendListIds, setSelectedFriendListIds] = useState<string[]>([])
   const [administrativeLookup, setAdministrativeLookup] = useState<'idle' | 'loading' | 'failed'>('idle')
   const [proposalOpen, setProposalOpen] = useState(false)
   const [proposalQuery, setProposalQuery] = useState('')
@@ -236,8 +238,10 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
       description: editingCourse.description, tags: editingCourse.tags.map((tag) => `#${tag}`).join(', '), cautions: editingCourse.cautions.join('\n'),
       tollStatus: editingCourse.tollStatus ?? 'unknown', visibility: editingCourse.visibility,
       allowedViewerIds: editingCourse.allowedViewerIds ?? [], blockedViewerIds: [],
-    } : { name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'public', allowedViewerIds: [], blockedViewerIds: [] }
+    } : { name: defaults.name, area: defaults.area, prefecture: defaults.prefecture, description: '', tags: '', cautions: '', tollStatus: 'unknown', visibility: 'limited', allowedViewerIds: effectiveProfile?.followingIds ?? [], blockedViewerIds: [] }
     setDetails(values)
+    setAudienceMode('all-friends')
+    setSelectedFriendListIds([])
     setError('')
     setStage('details')
     if (!editingCourse) void enrichAdministrativeAreas(defaults)
@@ -388,7 +392,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     setBusy(true); setProposalError(''); setProposals([]); onSetProposalPreviews([]); setProposalProgress('OpenStreetMapから道路形状を取得しています…')
     const request = buildDriveProposalRequest({
       center: proposalCenter.coordinate, radiusKm: proposalRadiusKm, maxDistanceKm: proposalMaxDistanceKm,
-      proposalCount: Math.min(5, proposalCount + incorporatedProposalKeys.length), toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias, startPoint: proposalStart, goalPoint: proposalGoal,
+      proposalCount, excludedProposalKeys: incorporatedProposalKeys, toll: proposalToll, style: proposalStyle, requiredPoints: proposalVias, startPoint: proposalStart, goalPoint: proposalGoal,
     })
     try {
       const external = await discoverExternalDriveProposals(request)
@@ -396,7 +400,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
       setProposalProgress('道路のカーブ・標高・通行条件を確認しています…')
       const incorporated = new Set(incorporatedProposalKeys)
       const fresh = external.filter((proposal) => !incorporated.has(driveProposalIdentity(proposal))).slice(0, proposalCount)
-      if (!fresh.length) { setProposalError('この条件で見つかった候補は、すでに今回のコースへ追加されています。条件または探索中心を変えてください。'); return }
+      if (!fresh.length) { setProposalError('追加済みのルートを除いて、条件に合う候補が見つかりませんでした。条件または探索中心を変えてください。'); return }
       setProposals(fresh)
       onSetProposalPreviews(fresh)
     } catch (caught) {
@@ -421,10 +425,15 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     if (route.length < 2 || !hasGoal) { setError('地図上で始点とゴールを指定してください。'); setStage('route'); return }
     if (exceedsWaypointLimit(route.length, canUseUnlimitedWaypoints)) { setError(`地点は${WAYPOINT_LIMIT}個以下にしてください。不要な経由地を削除してから保存してください。`); setStage('route'); return }
     const defaults = buildCourseDraftDefaults(pointLabels)
+    const audienceIds = audienceMode === 'all-friends'
+      ? (effectiveProfile?.followingIds ?? [])
+      : (effectiveProfile?.friendLists ?? []).filter((list) => selectedFriendListIds.includes(list.id)).flatMap((list) => list.memberIds)
     const draft: CourseDraft = {
       name: details.name.trim() || defaults.name, area: details.area.trim() || defaults.area, prefecture: details.prefecture, description: details.description.trim(), route,
       editorStops: editorStopsForSave(route, pointLabels, pointRoles),
-      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: details.visibility, allowedViewerIds: details.allowedViewerIds, blockedViewerIds: details.blockedViewerIds,
+      tags: parseHashTags(details.tags), cautions: details.cautions.split('\n').map((item) => item.trim()).filter(Boolean), tollStatus: details.tollStatus, visibility: 'limited', publicSharingConfirmed: false,
+      allowedViewerIds: editingCourse ? details.allowedViewerIds : [...new Set(audienceIds)], audienceMode: editingCourse ? undefined : audienceMode,
+      selectedFriendListIds: editingCourse ? undefined : selectedFriendListIds, blockedViewerIds: details.blockedViewerIds,
     }
     setBusy(true); setError('')
     try { await onSave(draft) } catch (caught: unknown) {
@@ -508,10 +517,11 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
       <button type="button" className="text-button" onClick={() => setStage('route')}>← ルートを修正</button>
       <div className="form-grid">
         <label>コース名<input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="地点名から自動入力されます" /></label><label>エリア<input value={details.area} onChange={(event) => setDetails((previous) => ({ ...previous, area: event.target.value }))} placeholder="例: 伊豆・湘南。経路から自動入力" /><small className="tag-help">複数地域をまたぐ場合は「・」区切りで保存します。</small></label>
-        <label>都道府県<input value={details.prefecture} list="course-prefecture-suggestions" onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value }))} placeholder="経路から自動入力" /><small className="tag-help">複数県をまたぐ場合は「・」区切りで保存します。</small></label><label>公開範囲<select value={details.visibility} onChange={(event) => setDetails((previous) => ({ ...previous, visibility: event.target.value as CourseDraft['visibility'] }))}><option value="public">一般公開</option><option value="limited">フレンド・リンク限定</option><option value="private">非公開</option></select></label>
+        <label>都道府県<input value={details.prefecture} list="course-prefecture-suggestions" onChange={(event) => setDetails((previous) => ({ ...previous, prefecture: event.target.value }))} placeholder="経路から自動入力" /><small className="tag-help">複数県をまたぐ場合は「・」区切りで保存します。</small></label>
         <datalist id="course-prefecture-suggestions">{JAPANESE_PREFECTURES.map((item) => <option key={item} value={item} />)}</datalist>
         <div className="wide tag-help administrative-lookup" role="status">{administrativeLookup === 'loading' ? '経路上の都道府県・エリアを確認中…' : administrativeLookup === 'failed' ? <>地域を自動判定できませんでした。入力内容はそのまま保存できます。 <button type="button" className="text-button" onClick={() => void enrichAdministrativeAreas({ area: details.area, prefecture: details.prefecture })}>再判定</button></> : '経路から都道府県・エリアを自動補完しました。必要に応じて編集できます。'}</div>
-        {details.visibility === 'limited' && <section className="wide course-share-picker"><h3>共有相手</h3>{(effectiveProfile?.followingIds ?? []).length > 0 ? <><label className="toggle-row"><input type="checkbox" checked={effectiveProfile!.followingIds.every((id) => details.allowedViewerIds.includes(id))} onChange={(event) => setDetails((previous) => ({ ...previous, allowedViewerIds: event.target.checked ? [...new Set([...previous.allowedViewerIds, ...effectiveProfile!.followingIds])] : previous.allowedViewerIds.filter((id) => !effectiveProfile!.followingIds.includes(id)) }))} />フレンド全員</label>{(effectiveProfile?.friendLists ?? []).map((list) => <label className="toggle-row" key={list.id}><input type="checkbox" checked={list.memberIds.length > 0 && list.memberIds.every((id) => details.allowedViewerIds.includes(id))} onChange={(event) => setDetails((previous) => ({ ...previous, allowedViewerIds: event.target.checked ? [...new Set([...previous.allowedViewerIds, ...list.memberIds])] : previous.allowedViewerIds.filter((id) => !list.memberIds.includes(id)) }))} />{list.name}（{list.memberIds.length}人）</label>)}</> : <p>共有できるフレンドがいません。先にプロフィールからフォロー・リスト設定を行ってください。</p>}</section>}
+        {!editingCourse && <section className="wide course-share-picker audience-picker"><h3>公開するフレンド</h3><p>コースは選択したフレンドだけに表示されます。</p><label className={`audience-option ${audienceMode === 'all-friends' ? 'selected' : ''}`}><input type="radio" name="course-audience" checked={audienceMode === 'all-friends'} onChange={() => setAudienceMode('all-friends')} /><span><strong>フレンド全員</strong><small>{effectiveProfile?.followingIds?.length ?? 0}人に公開</small></span></label><label className={`audience-option ${audienceMode === 'lists' ? 'selected' : ''}`}><input type="radio" name="course-audience" checked={audienceMode === 'lists'} onChange={() => setAudienceMode('lists')} /><span><strong>フレンドリストを選ぶ</strong><small>作成済みのリスト単位で公開</small></span></label>{audienceMode === 'lists' && <div className="audience-list-options">{(effectiveProfile?.friendLists ?? []).length ? (effectiveProfile?.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={selectedFriendListIds.includes(list.id)} onChange={(event) => setSelectedFriendListIds((ids) => event.target.checked ? [...new Set([...ids, list.id])] : ids.filter((id) => id !== list.id))} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>) : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}</section>}
+        {editingCourse && <section className="wide course-share-picker"><h3>公開範囲</h3><p>ルート編集中は現在の公開範囲を維持します。公開するフレンドは「コース情報を編集」から変更できます。</p></section>}
         <label className="wide">料金区分<select value={details.tollStatus} onChange={(event) => setDetails((previous) => ({ ...previous, tollStatus: event.target.value as TollStatus }))}><option value="unknown">料金情報未確認</option><option value="free">無料</option><option value="toll">有料</option><option value="conditional">条件付き無料</option><option value="mixed">有料・無料混在</option></select><small className="tag-help">不明な場合は「料金情報未確認」のまま保存します。無料と推測して登録しません。</small></label>
         <label className="wide">説明（任意）<textarea value={details.description} onChange={(event) => setDetails((previous) => ({ ...previous, description: event.target.value }))} rows={3} placeholder="コースの特徴やおすすめポイント" /></label><label className="wide">タグ（任意）<input value={details.tags} onChange={(event) => setDetails((previous) => ({ ...previous, tags: event.target.value }))} list="course-tag-suggestions" placeholder="#ワイド, #高原, #展望" /><datalist id="course-tag-suggestions">{recommendedTags.map((tag) => <option key={tag} value={`#${tag}`} />)}</datalist><small className="tag-help">#から始まる語だけを保存します。カンマまたは空白で区切れます。</small></label>
         {recommendedTags.length > 0 && <div className="wide tag-recommendations" aria-label="おすすめのタグ"><span>おすすめ</span>{recommendedTags.map((tag) => <button key={tag} type="button" onClick={() => addRecommendedTag(tag)}>#{tag}</button>)}</div>}

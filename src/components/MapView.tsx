@@ -575,12 +575,22 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
   useEffect(() => {
     const map = mapRef.current
     const container = containerRef.current
-    if (!map || !container || !selected || selected.route.length < 2) return
+    const route = selected?.route ?? (drawing && draftRoute.length > 1 ? draftRoute : focusPoint ? [focusPoint] : [])
+    if (!map || !container || !route.length) return
     let frame = 0
+    const viewportKey = () => {
+      const rect = container.getBoundingClientRect()
+      const sheets = [...document.querySelectorAll<HTMLElement>('[data-map-occlusion="bottom-sheet"]')].map((sheet) => sheet.getBoundingClientRect())
+      return [rect.width, rect.height, bottomSheetInset(rect, sheets)].map((value) => Math.round(value)).join(':')
+    }
+    let previousViewport = viewportKey()
     const alignToVisibleMap = () => {
       frame = 0
-      const isProposalPreview = selected.authorId === '__proposal_preview__'
-      fitRouteToVisibleMap(map, container, selected.route, isProposalPreview
+      const nextViewport = viewportKey()
+      if (nextViewport === previousViewport) return
+      previousViewport = nextViewport
+      const isProposalPreview = selected?.authorId === '__proposal_preview__'
+      fitRouteToVisibleMap(map, container, route, isProposalPreview
         ? { top: 52, right: 64, bottom: 52, left: 64 }
         : { top: 18, right: 42, bottom: 18, left: 42 }, 0)
     }
@@ -616,7 +626,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       resize.disconnect()
       settleTimers.forEach((timer) => window.clearTimeout(timer))
     }
-  }, [selected, mapReady])
+  }, [selected, mapReady, drawing, draftRoute, focusPoint])
 
   useEffect(() => {
     const map = mapRef.current

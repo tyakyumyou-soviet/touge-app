@@ -111,13 +111,13 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
           <button onClick={onReportToll}>無料開放・料金変更を報告</button>
         </section>}
         <section className="caution-box"><h3>走行前に確認</h3><ul>{course.cautions.map((item) => <li key={item}>{item}</li>)}</ul><small>最終更新: {course.updatedAt}。現地標識・公的情報を優先してください。</small></section>
-        {!isPreview && canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>名称・説明・公開範囲・タグ・注意事項を編集できます。削除は確認後にFirebaseから実行されます。</p></div><button className="button secondary" onClick={onManageCourse}>編集・削除</button></section>}
+        {!isPreview && canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>地点・組み込んだルート・コース情報を編集できます。</p></div><button className="button secondary" onClick={onManageCourse}>編集・削除</button></section>}
+        {!isPreview && onOpenTimer && <section className="course-owner-actions" aria-label="走行記録"><div><h3>走行記録</h3><p>手動または位置情報で所要時間を計測し、この端末に記録します。</p></div><button className="button secondary" onClick={onOpenTimer}>走行タイマーを開く</button></section>}
         {!isPreview && <div className="secondary-actions">
           <button onClick={onRate}>項目別に評価</button>
           <button onClick={onShare}>コースを共有</button>
           <button onClick={onCommunity}>コメント・いいね</button>
           <button onClick={onReportRoad}>道路状況を報告</button>
-          {onOpenTimer && <button onClick={onOpenTimer}>走行タイマー</button>}
           {onToggleMapRoute && <button onClick={onToggleMapRoute}>{mapHidden ? '地図に表示する' : '地図から隠す'}</button>}
         </div>}
       </div>

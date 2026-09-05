@@ -2,7 +2,7 @@ import type { Coordinate, TollStatus } from '../types'
 import { distanceKm, routeDistanceKm } from './course'
 import { distanceToRouteKm } from './courseSearch'
 import { fetchElevationProfile } from './elevation'
-import { proposalCountFor, type DriveProposal, type DriveProposalRequest } from './recommendations'
+import { availableDriveProposals, proposalCountFor, type DriveProposal, type DriveProposalRequest } from './recommendations'
 
 interface OverpassWay {
   type: 'way'
@@ -450,7 +450,7 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
   }
   const settled = await settleDiscoveryTasks(targets, evaluate)
   const hasExplicitStops = Boolean(request.startPoint || request.goalPoint || request.requiredPoints.length)
-  const discoveredCount = () => settled.filter((result) => result.status === 'fulfilled' && result.value).length
+  const discoveredCount = () => availableDriveProposals(settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : []), request).length
   if (!hasExplicitStops && discoveredCount() < count && settled.some((result) => result.status === 'fulfilled')) {
     // Widen spatial coverage not only when the immediate probes find nothing,
     // but also when they do not fill the number of recommendations requested.
@@ -458,8 +458,8 @@ async function discoverRoutedDriveProposals(request: DriveProposalRequest): Prom
     const surrounding = surroundingRouteCandidateTargets(request.center, request.radiusKm, request.maxDistanceKm, targetCount)
     settled.push(...await settleDiscoveryTasks(surrounding, (target, index) => evaluate(target, index + targets.length)))
   }
-  const proposals = settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
-    .sort((a, b) => b.score - a.score)
+  const proposals = availableDriveProposals(settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
+    .sort((a, b) => b.score - a.score), request)
     .slice(0, count)
   // A failed request is not evidence that the requested area has no passes.
   if (!proposals.length && settled.some((result) => result.status === 'rejected')) {
@@ -594,7 +594,7 @@ export async function discoverExternalDriveProposals(request: DriveProposalReque
       validation: { ...item.validation, elevationRangeM: suitability.elevationRangeM, elevationSource: elevation.source },
     } satisfies DriveProposal
     })
-    const next = enriched.flatMap((item): DriveProposal[] => item.status === 'fulfilled' && item.value ? [item.value] : []).sort((a, b) => b.score - a.score).slice(0, count)
+    const next = availableDriveProposals(enriched.flatMap((item): DriveProposal[] => item.status === 'fulfilled' && item.value ? [item.value] : []).sort((a, b) => b.score - a.score), request).slice(0, count)
     if (!next.length && enriched.some((item) => item.status === 'rejected')) throw new RoadDiscoveryUnavailableError('標高を確認できませんでした')
     if (!next.length) throw new Error('この範囲に峠として提案できる道路が見つかりませんでした')
     return next

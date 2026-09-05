@@ -11,6 +11,7 @@ export interface DriveProposalRequest {
   maxDistanceKm: number
   /** Number of results requested by the driver. Defaults to one for a focused first suggestion. */
   proposalCount?: number
+  excludedProposalKeys?: string[]
   toll: 'all' | TollStatus
   style: DriveStyle
   requiredPoints: Array<{ coordinate: Coordinate; label: string }>
@@ -27,6 +28,7 @@ export function buildDriveProposalRequest(settings: DriveProposalRequest): Drive
   return {
     center: [...settings.center], radiusKm: settings.radiusKm, maxDistanceKm: settings.maxDistanceKm,
     proposalCount: settings.proposalCount, toll: settings.toll, style: settings.style,
+    excludedProposalKeys: [...(settings.excludedProposalKeys ?? [])],
     requiredPoints: settings.requiredPoints.map(copyPoint),
     startPoint: settings.startPoint ? copyPoint(settings.startPoint) : null,
     goalPoint: settings.goalPoint ? copyPoint(settings.goalPoint) : null,
@@ -75,11 +77,21 @@ export interface DriveProposal {
 export function driveProposalIdentity(proposal: DriveProposal): string {
   if (proposal.sourceCourseId) return `catalog:${proposal.sourceCourseId}`
   if (!proposal.route.length) return `${proposal.source}:${proposal.id}`
-  const anchors = [0, .25, .5, .75, 1].map((ratio) => proposal.route[Math.round((proposal.route.length - 1) * ratio)])
   const encode = (points: Coordinate[]) => points.map(([lng, lat]) => `${lng.toFixed(4)},${lat.toFixed(4)}`).join('|')
-  const forward = encode(anchors)
-  const reverse = encode([...anchors].reverse())
+  const sample = (points: Coordinate[]) => [0, .25, .5, .75, 1].map((ratio) => points[Math.round((points.length - 1) * ratio)])
+  const forward = encode(sample(proposal.route))
+  const reverse = encode(sample([...proposal.route].reverse()))
   return `${proposal.source}:${forward < reverse ? forward : reverse}`
+}
+
+export function availableDriveProposals(proposals: DriveProposal[], request: DriveProposalRequest): DriveProposal[] {
+  const seen = new Set(request.excludedProposalKeys ?? [])
+  return proposals.filter((proposal) => {
+    const key = driveProposalIdentity(proposal)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /**

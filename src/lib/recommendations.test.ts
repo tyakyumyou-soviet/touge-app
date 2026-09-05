@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { driveProposalIdentity, generateDriveProposals, proposalCountFor, reverseDriveProposal } from './recommendations'
+import { availableDriveProposals, driveProposalIdentity, generateDriveProposals, proposalCountFor, reverseDriveProposal } from './recommendations'
 import type { Course } from '../types'
 
 const base = (id: string, tollStatus: Course['tollStatus'], curves: number): Course => ({
@@ -8,6 +8,16 @@ const base = (id: string, tollStatus: Course['tollStatus'], curves: number): Cou
 })
 
 describe('drive proposals', () => {
+  it('excludes adopted external roads before selecting the requested number, including reversed even-length geometry', () => {
+    const request = { center: [139, 35] as [number, number], radiusKm: 10, maxDistanceKm: 20, toll: 'all' as const, style: 'balanced' as const, requiredPoints: [], proposalCount: 2 }
+    const catalog = generateDriveProposals([base('road', 'free', 4)], request)[0]
+    const adopted = { ...catalog, source: 'openstreetmap' as const, sourceCourseId: undefined, route: Array.from({ length: 8 }, (_, index) => [139 + index * .01, 35 + index * .02] as [number, number]) }
+    const reversed = reverseDriveProposal(adopted)
+    expect(driveProposalIdentity(reversed)).toBe(driveProposalIdentity(adopted))
+    const others = ['a', 'b'].map((id) => ({ ...catalog, id, sourceCourseId: id }))
+    expect(availableDriveProposals([reversed, ...others], { ...request, excludedProposalKeys: [driveProposalIdentity(adopted)] })).toEqual(others)
+    expect(availableDriveProposals([adopted, reversed], request)).toEqual([adopted])
+  })
   it('recognises the same suggested road in either direction', () => {
     const proposal = generateDriveProposals([base('same-road', 'free', 4)], { center: [139, 35], radiusKm: 10, maxDistanceKm: 20, toll: 'all', style: 'balanced', requiredPoints: [], proposalCount: 1 })[0]
     expect(driveProposalIdentity(reverseDriveProposal(proposal))).toBe(driveProposalIdentity(proposal))

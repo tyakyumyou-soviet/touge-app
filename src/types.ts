@@ -103,6 +103,8 @@ export interface Course {
   tollStatus?: TollStatus
   tollInfo?: TollInfo
   visibility: 'public' | 'limited' | 'private'
+  /** True only after the owner explicitly chooses general public visibility. */
+  publicSharingConfirmed?: boolean
   /** Explicit recipients for limited sharing. Kept server-readable for rules. */
   allowedViewerIds?: string[]
   /** Global profile blocks are stored separately so unblocking does not erase
@@ -126,12 +128,24 @@ export interface CourseDraft {
   cautions: string[]
   tollStatus: TollStatus
   visibility: Course['visibility']
+  publicSharingConfirmed?: boolean
   allowedViewerIds?: string[]
+  audienceMode?: 'all-friends' | 'lists'
+  selectedFriendListIds?: string[]
   blockedViewerIds?: string[]
+}
+
+export interface CourseAudience {
+  courseId: string
+  ownerId: string
+  mode: 'all-friends' | 'lists'
+  listIds: string[]
+  listNames: Record<string, string>
 }
 
 export interface UserProfile {
   id: string
+  accountId?: string
   displayName: string
   bio: string
   photoURL?: string | null
@@ -155,6 +169,8 @@ export interface UserProfile {
   nowPlaying?: NowPlaying
   updatedAt?: string
 }
+
+export type AccountRole = 'user' | 'admin' | 'superadmin'
 
 export interface FriendList { id: string; name: string; memberIds: string[] }
 export interface SearchPreset { id: string; name: string; prefecture: string; toll: 'all' | TollStatus; radiusKm: number; sort: 'recommended' | 'curves' | 'elevation' | 'width' | 'personalized' }

@@ -14,8 +14,8 @@ const settings: DriveProposalRequest = {
   center: [139.03, 35.01], radiusKm: 25, maxDistanceKm: 10,
   proposalCount: 1, toll: 'all', style: 'balanced', requiredPoints: [],
 }
-const response = () => Response.json({ code: 'Ok', routes: [{
-  distance: 8000, duration: 720, geometry: { coordinates: road }, legs: [],
+const response = (coordinates = road) => Response.json({ code: 'Ok', routes: [{
+  distance: 8000, duration: 720, geometry: { coordinates }, legs: [],
 }] })
 
 beforeEach(() => {
@@ -45,9 +45,18 @@ describe('finder inputs are independent of the route being composed', () => {
   })
 
   it('honours a requested result count when multiple valid routes are returned', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => response()))
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      const offset = calls++ % 2 * .01
+      return response(road.map(([lng, lat]) => [lng, lat + offset]))
+    }))
     const proposals = await discoverExternalDriveProposals({ ...settings, proposalCount: 2 })
     expect(proposals).toHaveLength(2)
+  })
+
+  it('does not fill the requested count with duplicate roads', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response()))
+    expect(await discoverExternalDriveProposals({ ...settings, proposalCount: 2 })).toHaveLength(1)
   })
 
   it('uses only explicit advanced start/via/goal in that order and snapshots the inputs', async () => {

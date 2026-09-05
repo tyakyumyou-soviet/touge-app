@@ -23,6 +23,7 @@ export function useMobileSheet() {
     const scrollSurface = target.closest<HTMLElement>('[data-sheet-scroll]')
     if ((scrollSurface?.scrollTop ?? currentTarget.scrollTop) > 1) return
     const sheet = currentTarget.closest<HTMLElement>('.mobile-sheet') ?? currentTarget
+    ignoreTap.current = false
     drag.current = { source, id, y, moved: false, height: collapsed ? 54 : sheet.getBoundingClientRect().height, maximumHeight: window.innerHeight - 76 }
     setDragging(true)
   }
@@ -134,7 +135,10 @@ export function useMobileSheet() {
       return
     }
     if (distance <= 8 && !active.active) return
-    if (distance <= 0) return
+    if (distance <= 0) {
+      if (active.active) setOffset(0)
+      return
+    }
     active.active = true
     // Once the content cannot scroll upward any further, the gesture should
     // behave exactly like pulling the sheet by its fixed handle.

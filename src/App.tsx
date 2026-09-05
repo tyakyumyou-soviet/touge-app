@@ -11,20 +11,23 @@ import { TollReportForm, type TollReport } from './components/TollReportForm'
 import { RoadConditionReportForm, type RoadConditionReport } from './components/RoadConditionReportForm'
 import { CommunityPanel } from './components/CommunityPanel'
 import { AdminPanel } from './components/AdminPanel'
-import { CourseManageForm } from './components/CourseManageForm'
+import { AccountIdGate } from './components/AccountIdGate'
+import { CourseManageForm, type EditableCourse } from './components/CourseManageForm'
 import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, clearFriendPresence, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveFriendPresence, saveRating, saveUserProfileSettings, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
+import { auth, clearFriendPresence, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendPresence, saveRating, saveUserProfileSettings, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
-import type { Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, TollStatus, UserProfile } from './types'
+import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, TollStatus, UserProfile } from './types'
 import { personalizedScore } from './lib/personalization'
 import { useMobileSheet } from './hooks/useMobileSheet'
-import { canUseUnlimitedWaypoints, exceedsWaypointLimit, isAdministrator, WAYPOINT_LIMIT } from './lib/access'
+import { exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
 import { courseMatchesSearch } from './lib/courseSearch'
 import { geocodeJapanesePlace } from './lib/location'
 import { driveProposalIdentity, reverseDriveProposal, type DriveProposal } from './lib/recommendations'
+import { subscribeFriends } from './lib/friends'
+import { subscribeAccountRole } from './lib/account'
 import { insertDraftStops } from './lib/draftInsertion'
 import { moveDraftBlock } from './lib/draftReorder'
 import { reverseDraftBlock } from './lib/draftReorder'
@@ -74,6 +77,8 @@ export default function App() {
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [viewerProfile, setViewerProfile] = useState<UserProfile | null>(null)
+  const [profileChecked, setProfileChecked] = useState(false)
+  const [accountRole, setAccountRole] = useState<AccountRole>('user')
   const [authReady, setAuthReady] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [drawing, setDrawing] = useState(false)
@@ -111,12 +116,20 @@ export default function App() {
   const collapseList = listSheet.collapse
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
+  const [acceptedFriendIds, setAcceptedFriendIds] = useState<string[]>([])
+  useEffect(() => {
+    setAcceptedFriendIds([])
+    if (!user) return
+    return subscribeFriends(user.uid, (entries) => setAcceptedFriendIds(entries.filter((entry) => entry.status === 'accepted').map((entry) => entry.sender === user.uid ? entry.recipient : entry.sender)), () => setAcceptedFriendIds([]))
+  }, [user])
+  const [communityCourse, setCommunityCourse] = useState<Course | null>(null)
   const [courseManagerOpen, setCourseManagerOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [timerOpen, setTimerOpen] = useState(false)
   const surfaceTimer = useRef<number | null>(null)
   const profileDirty = useRef(false)
-  const unlimitedWaypoints = canUseUnlimitedWaypoints(user)
+  const administrator = accountRole === 'admin' || accountRole === 'superadmin'
+  const unlimitedWaypoints = administrator
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => { setUser(nextUser); setAuthReady(true) })
@@ -127,6 +140,11 @@ export default function App() {
     return unsubscribe
   }, [])
   useEffect(() => { window.__tougeMarkReady?.() }, [])
+  useEffect(() => {
+    setAccountRole('user')
+    if (!user) return
+    return subscribeAccountRole(user, setAccountRole)
+  }, [user])
   useEffect(() => {
     if (!authReady) return
     let cancelled = false
@@ -142,7 +160,8 @@ export default function App() {
     return () => { cancelled = true }
   }, [authReady, user?.uid])
   useEffect(() => {
-    if (!user) { setViewerProfile(null); return }
+    setProfileChecked(false)
+    if (!user) { setViewerProfile(null); setProfileChecked(true); return }
     profileDirty.current = false
     try { const cached = localStorage.getItem(`touge-profile-${user.uid}`); if (cached) setViewerProfile(JSON.parse(cached) as UserProfile) } catch { /* ignore invalid local cache */ }
     loadUserProfile(user.uid).then((profile) => {
@@ -150,7 +169,7 @@ export default function App() {
       // Keep any newer offline/local interaction that happened while the
       // Firestore request was in flight. Remote-only fields still fill gaps.
       setViewerProfile((current) => profileDirty.current && current ? { ...remote, ...current } : remote)
-    }).catch(() => undefined)
+    }).catch(() => undefined).finally(() => setProfileChecked(true))
   }, [user])
   useEffect(() => { if (user && viewerProfile) localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(viewerProfile)) }, [user, viewerProfile])
   useEffect(() => {
@@ -158,7 +177,7 @@ export default function App() {
     const audience = viewerProfile.locationSharing?.audience ?? 'friends'
     const listIds = new Set(viewerProfile.locationSharing?.listIds ?? [])
     const selectedLists = (viewerProfile.friendLists ?? []).filter((list) => listIds.has(list.id))
-    const allowedViewerIds = [...new Set(audience === 'lists' ? selectedLists.flatMap((list) => list.memberIds) : viewerProfile.followingIds)]
+    const allowedViewerIds = [...new Set(audience === 'lists' ? selectedLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id))
     const nowPlaying = viewerProfile.nowPlaying
     if (!viewerProfile.locationSharing?.enabled) {
       // Writing null is deliberate: Firestore merge writes would otherwise
@@ -170,7 +189,7 @@ export default function App() {
     if (!navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition((position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }), () => undefined, { enableHighAccuracy: true, maximumAge: 30000 })
     return () => navigator.geolocation.clearWatch(watchId)
-  }, [user, viewerProfile])
+  }, [user, viewerProfile, acceptedFriendIds])
   useEffect(() => {
     const courseId = new URLSearchParams(location.search).get('course')
     if (!courseId) return
@@ -227,7 +246,7 @@ export default function App() {
   }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization])
   const mapCourses = useMemo(() => {
     const mode = viewerProfile?.mapRouteVisibility ?? 'all'
-    const followed = new Set(viewerProfile?.followingIds ?? [])
+    const followed = new Set(acceptedFriendIds)
     const hidden = new Set(viewerProfile?.hiddenRouteIds ?? [])
     const visible = mode === 'none' ? [] : courses.filter((course) => !hidden.has(course.id) && (mode === 'all' || (mode === 'mine' && course.authorId === user?.uid) || (mode === 'friends' && (course.authorId === user?.uid || followed.has(course.authorId)))))
     // A course picked from the list must remain visible even when the user's
@@ -236,7 +255,7 @@ export default function App() {
     // confusing for shared and proposal previews.
     const selectedCourse = selected ? [selected] : []
     return [...new Map([...visible, ...proposalPreviews, ...selectedCourse].map((course) => [course.id, course])).values()]
-  }, [courses, proposalPreviews, selected, user?.uid, viewerProfile?.followingIds, viewerProfile?.hiddenRouteIds, viewerProfile?.mapRouteVisibility])
+  }, [courses, proposalPreviews, selected, user?.uid, acceptedFriendIds, viewerProfile?.hiddenRouteIds, viewerProfile?.mapRouteVisibility])
 
   function saveSearchPreset() {
     if (!user || !viewerProfile) { setNotice('プリセットの保存にはログインが必要です'); return }
@@ -473,7 +492,7 @@ export default function App() {
 
   async function openRouteEditor(course: Course) {
     const activeUser = auth.currentUser
-    if (!activeUser || (course.authorId !== activeUser.uid && !isAdministrator(activeUser))) {
+    if (!activeUser || (course.authorId !== activeUser.uid && !administrator)) {
       setNotice('このコースを編集する権限がありません')
       return
     }
@@ -490,7 +509,8 @@ export default function App() {
   async function handleCreate(draft: CourseDraft) {
     const activeUser = auth.currentUser
     if (!activeUser) throw new Error('Authentication required')
-    if (exceedsWaypointLimit(draft.route.length, canUseUnlimitedWaypoints(activeUser))) throw new Error(`地点は${WAYPOINT_LIMIT}個以下にしてください`)
+    if (exceedsWaypointLimit(draft.route.length, unlimitedWaypoints)) throw new Error(`地点は${WAYPOINT_LIMIT}個以下にしてください`)
+    const { audienceMode = 'all-friends', selectedFriendListIds = [], ...savedDraft } = draft
     const quality = validateRouteQuality(draft.route)
     if (!quality.ok) throw new Error(`ルート検証: ${quality.warnings.join('、')}`)
     let routed
@@ -500,7 +520,7 @@ export default function App() {
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const data: Omit<Course, 'id'> = {
-      ...draft,
+      ...savedDraft,
       route: routed.route,
       distanceKm: routed.distanceKm,
       durationMin: routed.durationMin,
@@ -519,7 +539,8 @@ export default function App() {
       updatedAt: new Date().toISOString().slice(0, 10),
     }
     let id: string
-    try { id = await createCourse(data) }
+    const listNames = Object.fromEntries((viewerProfile?.friendLists ?? []).map((list) => [list.id, list.name]))
+    try { id = await createCourse(data, { ownerId: activeUser.uid, mode: audienceMode, listIds: selectedFriendListIds, listNames }) }
     catch (error) {
       const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
       if (code) throw new Error(`Firebase保存エラー (${code})`)
@@ -539,8 +560,9 @@ export default function App() {
   async function handleCourseRouteUpdate(draft: CourseDraft) {
     const activeUser = auth.currentUser
     const current = editingCourse
-    if (!activeUser || !current || (current.authorId !== activeUser.uid && !isAdministrator(activeUser))) throw new Error('Not authorized')
-    if (exceedsWaypointLimit(draft.route.length, canUseUnlimitedWaypoints(activeUser))) throw new Error(`地点は${WAYPOINT_LIMIT}個以下にしてください`)
+    if (!activeUser || !current || (current.authorId !== activeUser.uid && !administrator)) throw new Error('Not authorized')
+    if (exceedsWaypointLimit(draft.route.length, unlimitedWaypoints)) throw new Error(`地点は${WAYPOINT_LIMIT}個以下にしてください`)
+    const { audienceMode, selectedFriendListIds = [], ...savedDraft } = draft
     const quality = validateRouteQuality(draft.route)
     if (!quality.ok) throw new Error(`ルート検証: ${quality.warnings.join('、')}`)
     const routed = await routeAlongRoads(draft.route)
@@ -548,13 +570,14 @@ export default function App() {
     const elevation = elevationResult.values
     const systemRatings = estimateSystemRatings(routed.route, elevation, draft.tags)
     const changes = {
-      ...draft, route: routed.route, distanceKm: routed.distanceKm, durationMin: routed.durationMin,
+      ...savedDraft, route: routed.route, distanceKm: routed.distanceKm, durationMin: routed.durationMin,
       minElevation: Math.min(...elevation), maxElevation: Math.max(...elevation), elevationProfile: elevation, elevationSource: elevationResult.source,
       ratings: combinedRatings({ ...current, systemRatings, ratings: systemRatings, userRatings: current.userRatings, ratingCount: current.ratingCount }), systemRatings,
       systemRatingSource: ['道路形状・曲率（道路ルーティング）', `標高・高低差（${elevationResult.source}）`, '登録タグ・公開情報'], systemRatingUpdatedAt: new Date().toISOString().slice(0, 10),
       allowedViewerIds: draft.allowedViewerIds ?? [],
     }
     await updateCourseWithRoute(current.id, changes)
+    if (audienceMode) await saveCourseAudience(current.id, current.authorId, audienceMode, selectedFriendListIds, Object.fromEntries((viewerProfile?.friendLists ?? []).map((list) => [list.id, list.name])))
     const updated = { ...current, ...changes, updatedAt: new Date().toISOString().slice(0, 10) }
     setCourses((items) => items.map((course) => course.id === current.id ? updated : course))
     setSelected(updated); setEditingCourse(null); setDrawing(false)
@@ -600,11 +623,13 @@ export default function App() {
     setNotice('評価を投稿しました。集計への反映には時間がかかる場合があります。')
   }
 
-  async function handleCourseUpdate(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds'>) {
+  async function handleCourseUpdate(courseId: string, changes: EditableCourse) {
     const current = courses.find((course) => course.id === courseId)
-    if (!current || (current.authorId !== auth.currentUser?.uid && !isAdministrator(auth.currentUser))) throw new Error('Not authorized')
-    const safeChanges = { ...changes, allowedViewerIds: changes.allowedViewerIds ?? [] }
+    if (!current || (current.authorId !== auth.currentUser?.uid && !administrator)) throw new Error('Not authorized')
+    const { audienceMode, selectedFriendListIds, selectedFriendListNames, preserveAudience, ...courseChanges } = changes
+    const safeChanges = { ...courseChanges, visibility: 'limited' as const, publicSharingConfirmed: false, allowedViewerIds: changes.allowedViewerIds ?? [] }
     await updateCourse(courseId, safeChanges)
+    if (!preserveAudience) await saveCourseAudience(courseId, current.authorId, audienceMode, selectedFriendListIds, selectedFriendListNames)
     const updated = { ...current, ...safeChanges, updatedAt: new Date().toISOString().slice(0, 10) }
     setCourses((items) => items.map((course) => course.id === courseId ? updated : course))
     setSelected((course) => course?.id === courseId ? updated : course)
@@ -612,7 +637,7 @@ export default function App() {
 
   async function handleCourseDelete(courseId: string) {
     const current = courses.find((course) => course.id === courseId)
-    if (!current || (current.authorId !== auth.currentUser?.uid && !isAdministrator(auth.currentUser))) throw new Error('Not authorized')
+    if (!current || (current.authorId !== auth.currentUser?.uid && !administrator)) throw new Error('Not authorized')
     await deleteCourse(courseId)
     setCourses((items) => items.filter((course) => course.id !== courseId))
     setSelected((course) => course?.id === courseId ? null : course)
@@ -627,6 +652,12 @@ export default function App() {
   }
   const selectedPreviewIndex = selected ? proposalPreviews.findIndex((course) => course.id === selected.id) : -1
 
+  if (user && !profileChecked) return <div className="account-id-gate account-id-loading" role="status" aria-live="polite"><div><span className="account-loading-spinner" aria-hidden="true" /><strong>アカウントを確認しています</strong></div></div>
+  if (user && !viewerProfile?.accountId) return <AccountIdGate user={user} onRegistered={(accountId) => {
+    profileDirty.current = true
+    setViewerProfile((profile) => profile ? { ...profile, accountId } : { id: user.uid, accountId, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0 })
+  }} onLogout={() => void handleLogout()} />
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -636,7 +667,7 @@ export default function App() {
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="コース名・地名・タグ・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
           <button className="new-route" onClick={openCreateFlow}><span>＋</span>コース登録</button>
-          {user ? <button className="user-button" onClick={() => setCommunityOpen(true)} title="プロフィールとコミュニティ" aria-label="プロフィールとコミュニティ">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
+          {user ? <button className="user-button" onClick={() => { setCommunityCourse(null); setCommunityOpen(true) }} title="アカウント" aria-label="アカウント">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
         </div>
       </header>
 
@@ -687,8 +718,8 @@ export default function App() {
           onBack={() => { setSelected(null); resetListSheet() }}
           onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)}
           onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)}
-          onCommunity={() => setCommunityOpen(true)} onOpenTimer={() => setTimerOpen(true)}
-          canManageCourse={Boolean(user && (selected.authorId === user.uid || isAdministrator(user)))} onManageCourse={() => setCourseManagerOpen(true)}
+          onCommunity={() => { setCommunityCourse(selected); setCommunityOpen(true) }} onOpenTimer={() => setTimerOpen(true)}
+          canManageCourse={Boolean(user && (selected.authorId === user.uid || administrator))} onManageCourse={() => setCourseManagerOpen(true)}
           mapHidden={Boolean(viewerProfile?.hiddenRouteIds?.includes(selected.id))}
           onToggleMapRoute={user && viewerProfile ? async () => {
             const hidden = new Set(viewerProfile.hiddenRouteIds ?? [])
@@ -701,7 +732,7 @@ export default function App() {
           previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) selectCourse(next) }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) selectCourse(next) }, onReturn: () => setSelected(null) } : undefined}
           onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) handleUseProposal(proposal) }}
         />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} incorporatedProposalKeys={incorporatedProposalKeys} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onCancel={openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} incorporatedProposalKeys={incorporatedProposalKeys} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onCancel={openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {timerOpen && selected && <DriveTimer course={selected} onClose={() => setTimerOpen(false)} />}
@@ -717,9 +748,9 @@ export default function App() {
           <footer><button className="button secondary" onClick={() => { setLogoutConfirmOpen(false); logoutSheet.reset() }}>キャンセル</button><button className="button primary" onClick={handleLogout}>ログアウト</button></footer>
         </section>
       </div>}
-      {courseManagerOpen && selected && user && (user.uid === selected.authorId || isAdministrator(user)) && <CourseManageForm course={selected} profile={viewerProfile} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} onEditRoute={() => void openRouteEditor(selected)} />}
-      {communityOpen && <CommunityPanel user={user} course={selected} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => setCommunityOpen(false)} onLogout={() => { setCommunityOpen(false); setLogoutConfirmOpen(true) }} onAdminOpen={isAdministrator(user) ? () => { setCommunityOpen(false); setAdminOpen(true) } : undefined} />}
-      {adminOpen && user && isAdministrator(user) && <AdminPanel user={user} courses={courses} onClose={() => setAdminOpen(false)} />}
+      {courseManagerOpen && selected && user && (user.uid === selected.authorId || administrator) && <CourseManageForm course={selected} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} audienceReadOnly={user.uid !== selected.authorId} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} onEditRoute={() => void openRouteEditor(selected)} />}
+      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} course={communityCourse} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
+      {adminOpen && user && administrator && <AdminPanel user={user} role={accountRole} courses={courses} onClose={() => setAdminOpen(false)} />}
       <InstallPrompt />
     </div>
   )

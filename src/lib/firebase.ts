@@ -31,7 +31,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseComment, type CourseEditorStop, type DraftPointRole, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
+import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseAudience, type CourseComment, type CourseEditorStop, type DraftPointRole, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
 import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
 
 const firebaseConfig = {
@@ -156,21 +156,12 @@ function courseFromFirestore(id: string, value: Record<string, unknown>): Course
   } as Course
 }
 
-async function saveUserProfile(user: User): Promise<User> {
-  await setDoc(doc(db, 'users', user.uid), {
-    displayName: user.displayName ?? 'ドライバー',
-    photoURL: user.photoURL,
-    updatedAt: serverTimestamp(),
-  }, { merge: true })
-  return user
-}
-
 export async function loginWithGoogle(): Promise<User | null> {
   await setPersistence(auth, browserLocalPersistence)
   const provider = new GoogleAuthProvider()
   try {
     const result = await signInWithPopup(auth, provider)
-    return saveUserProfile(result.user)
+    return result.user
   } catch (error) {
     const code = (error as Partial<AuthError>).code
     const useRedirect = ['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'].includes(code ?? '')
@@ -182,7 +173,7 @@ export async function loginWithGoogle(): Promise<User | null> {
 
 export async function completeRedirectLogin(): Promise<User | null> {
   const result = await getRedirectResult(auth)
-  return result ? saveUserProfile(result.user) : null
+  return result?.user ?? null
 }
 
 export const logout = () => signOut(auth)
@@ -206,16 +197,19 @@ async function hydrateCourses(documents: Awaited<ReturnType<typeof getDocs>>['do
     }))
 }
 
-/** Load public routes plus the signed-in driver's own limited/private routes. */
+/** Load official seed routes plus the signed-in driver's own/shared routes. */
 export async function loadPublicCourses(userId?: string): Promise<Course[]> {
-  const publicSnapshot = await getDocs(query(collection(db, 'courses'), where('visibility', '==', 'public')))
-  // A legacy rule/index must not make the public catalogue disappear. Private
-  // and list-shared additions are best-effort; the public query is authoritative.
+  const seedSnapshot = await getDocs(query(collection(db, 'courses'), where('isSeed', '==', true))).catch(() => null)
   const ownSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('authorId', '==', userId))).catch(() => null) : null
   const sharedSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId))).catch(() => null) : null
-  const documents = [...publicSnapshot.docs, ...(ownSnapshot?.docs ?? []), ...(sharedSnapshot?.docs ?? [])]
+  const documents = [...(seedSnapshot?.docs ?? []), ...(ownSnapshot?.docs ?? []), ...(sharedSnapshot?.docs ?? [])]
   const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
   return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))
+}
+
+export async function loadAllCoursesForAdministration(): Promise<Course[]> {
+  const snapshot = await getDocs(collection(db, 'courses'))
+  return hydrateCourses(snapshot.docs).then((courses) => courses.filter((course) => course.route.length >= 2))
 }
 
 export async function loadCourseById(courseId: string): Promise<Course | null> {
@@ -225,25 +219,45 @@ export async function loadCourseById(courseId: string): Promise<Course | null> {
   return course.route.length >= 2 ? course : null
 }
 
-export async function createCourse(course: Omit<Course, 'id'>): Promise<string> {
+export async function createCourse(course: Omit<Course, 'id'>, audience?: { ownerId: string; mode: CourseAudience['mode']; listIds: string[]; listNames: Record<string, string> }): Promise<string> {
   const { route, editorStops, ...courseFields } = course
-  const result = await addDoc(collection(db, 'courses'), {
+  const courseRef = doc(collection(db, 'courses'))
+  const batch = writeBatch(db)
+  batch.set(courseRef, {
     ...courseFields,
     route: routeForFirestore(route),
     editorStops: editorStopsForFirestore(editorStops),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  return result.id
+  if (audience) {
+    const selectedIds = audience.mode === 'lists' ? [...new Set(audience.listIds)] : []
+    batch.set(doc(db, 'courseAudiences', courseRef.id), { ownerId: audience.ownerId, mode: audience.mode, listIds: selectedIds, listNames: Object.fromEntries(selectedIds.map((id) => [id, audience.listNames[id] ?? id])), updatedAt: serverTimestamp() })
+  }
+  await batch.commit()
+  return courseRef.id
 }
 
-export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds'> & Partial<Pick<Course, 'globalBlockedViewerIds'>>): Promise<void> {
+export async function loadCourseAudience(courseId: string): Promise<CourseAudience | null> {
+  const snapshot = await getDoc(doc(db, 'courseAudiences', courseId))
+  if (!snapshot.exists()) return null
+  const data = snapshot.data()
+  const listNames = data.listNames && typeof data.listNames === 'object' ? Object.fromEntries(Object.entries(data.listNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
+  return { courseId, ownerId: String(data.ownerId), mode: data.mode === 'lists' ? 'lists' : 'all-friends', listIds: strings(data.listIds), listNames }
+}
+
+export async function saveCourseAudience(courseId: string, ownerId: string, mode: CourseAudience['mode'], listIds: string[], listNames: Record<string, string> = {}): Promise<void> {
+  const selectedIds = mode === 'lists' ? [...new Set(listIds)] : []
+  await setDoc(doc(db, 'courseAudiences', courseId), { ownerId, mode, listIds: selectedIds, listNames: Object.fromEntries(selectedIds.map((id) => [id, listNames[id] ?? id])), updatedAt: serverTimestamp() })
+}
+
+export async function updateCourse(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'publicSharingConfirmed' | 'allowedViewerIds' | 'blockedViewerIds'> & Partial<Pick<Course, 'globalBlockedViewerIds'>>): Promise<void> {
   await updateDoc(doc(db, 'courses', courseId), { ...changes, updatedAt: serverTimestamp() })
 }
 
 /** Updates an existing course in place, including its route. Route tuples are
  * converted at the Firestore boundary just as they are on initial creation. */
-export async function updateCourseWithRoute(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'route' | 'editorStops' | 'distanceKm' | 'durationMin' | 'minElevation' | 'maxElevation' | 'elevationProfile' | 'elevationSource' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'allowedViewerIds' | 'blockedViewerIds' | 'globalBlockedViewerIds'>): Promise<void> {
+export async function updateCourseWithRoute(courseId: string, changes: Pick<Course, 'name' | 'area' | 'prefecture' | 'description' | 'route' | 'editorStops' | 'distanceKm' | 'durationMin' | 'minElevation' | 'maxElevation' | 'elevationProfile' | 'elevationSource' | 'ratings' | 'systemRatings' | 'systemRatingSource' | 'systemRatingUpdatedAt' | 'tags' | 'cautions' | 'tollStatus' | 'visibility' | 'publicSharingConfirmed' | 'allowedViewerIds' | 'blockedViewerIds' | 'globalBlockedViewerIds'>): Promise<void> {
   const { route, editorStops, ...fields } = changes
   await updateDoc(doc(db, 'courses', courseId), { ...fields, route: routeForFirestore(route), editorStops: editorStopsForFirestore(editorStops), updatedAt: serverTimestamp() })
 }
@@ -267,6 +281,7 @@ export async function deleteCourse(courseId: string): Promise<void> {
   likes.docs.forEach((item) => batch.delete(item.ref))
   comments.docs.forEach((item) => batch.delete(item.ref))
   if (live.exists()) batch.delete(live.ref)
+  batch.delete(doc(db, 'courseAudiences', courseId))
   batch.delete(courseRef)
   await batch.commit()
 }
@@ -307,14 +322,21 @@ export async function reviewAdminReport(reportId: string, status: 'approved' | '
 }
 
 export async function loadUserProfile(userId: string): Promise<UserProfile | null> {
-  const snapshot = await getDoc(doc(db, 'users', userId))
+  const collectionName = auth.currentUser?.uid === userId ? 'users' : 'publicProfiles'
+  const snapshot = await getDoc(doc(db, collectionName, userId))
   if (!snapshot.exists()) return null
   const data = snapshot.data()
   return { id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...data, updatedAt: firestoreDate(data.updatedAt) } as UserProfile
 }
 
 export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {
-  await setDoc(doc(db, 'users', user.uid), { ...values, displayName: values.displayName || user.displayName || 'ドライバー', updatedAt: serverTimestamp() }, { merge: true })
+  const displayName = values.displayName || user.displayName || 'ドライバー'
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'users', user.uid), { ...values, displayName, updatedAt: serverTimestamp() }, { merge: true })
+  const publicKeys = ['displayName', 'bio', 'homeArea', 'mapVisibility', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
+  const publicValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
+  if (Object.keys(publicValues).length) batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, displayName, photoURL: user.photoURL ?? null, updatedAt: serverTimestamp() }, { merge: true })
+  await batch.commit()
 }
 
 export async function saveFriendPresence(user: User, presence: Omit<FriendPresence, 'userId' | 'displayName' | 'photoURL' | 'updatedAt'>): Promise<void> {
@@ -328,10 +350,13 @@ export async function clearFriendPresence(userId: string): Promise<void> {
 export function subscribeFriendPresence(userIds: string[], onChange: (items: FriendPresence[]) => void): () => void {
   const viewerId = auth.currentUser?.uid
   if (!userIds.length || !viewerId) { onChange([]); return () => undefined }
-  const followed = new Set(userIds)
-  return onSnapshot(query(collection(db, 'presence'), where('allowedViewerIds', 'array-contains', viewerId)), (snapshot) => {
-    onChange(snapshot.docs.filter((item) => followed.has(item.id)).map((item) => ({ userId: item.id, ...item.data(), updatedAt: firestoreDate(item.data().updatedAt) } as FriendPresence)))
-  }, () => onChange([]))
+  const values = new Map<string, FriendPresence>()
+  const unsubscribes = [...new Set(userIds)].map((id) => onSnapshot(doc(db, 'presence', id), (snapshot) => {
+    if (snapshot.exists()) values.set(id, { userId: id, ...snapshot.data(), updatedAt: firestoreDate(snapshot.data().updatedAt) } as FriendPresence)
+    else values.delete(id)
+    onChange([...values.values()])
+  }, () => { values.delete(id); onChange([...values.values()]) }))
+  return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
 }
 
 export async function toggleFollow(targetId: string, user: User): Promise<boolean> {
