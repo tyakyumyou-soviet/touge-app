@@ -63,7 +63,10 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /adminRoles/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      // A driver may confirm only their own access level. Role assignments for
+      // every other account are operational metadata and are visible solely to
+      // the fixed/delegated super administrators.
+      allow read: if signedIn() && (request.auth.uid == userId || isSuperAdmin());
       allow create, update: if hasAccountId() && isSuperAdmin() && userId != request.auth.uid
         && request.resource.data.keys().hasOnly(['role', 'accountId', 'displayName', 'updatedBy', 'updatedAt'])
         && request.resource.data.role in ['admin', 'superadmin']

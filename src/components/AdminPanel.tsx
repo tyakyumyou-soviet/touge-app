@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
 import type { AccountRole, AdminReport, Course } from '../types'
 import { loadAllCoursesForAdministration, loadPendingAdminReports, reviewAdminReport } from '../lib/firebase'
-import { loadRegisteredAccounts, PRIMARY_SUPER_ADMIN_EMAIL, setAccountRole, type RegisteredAccount } from '../lib/account'
+import { isPrimarySuperAdmin, loadRegisteredAccounts, PRIMARY_SUPER_ADMIN_EMAIL, setAccountRole, type RegisteredAccount } from '../lib/account'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 
 export function AdminPanel({ user, role, courses, onClose }: { user: User; role: AccountRole; courses: Course[]; onClose: () => void }) {
@@ -12,7 +12,7 @@ export function AdminPanel({ user, role, courses, onClose }: { user: User; role:
   const [tab, setTab] = useState<'reports' | 'roles' | 'users'>('reports')
   const refresh = () => loadPendingAdminReports().then(setReports).catch(() => setNotice('確認待ち情報を読み込めませんでした'))
   useEffect(() => { refresh() }, [])
-  useEffect(() => { if (role === 'superadmin') Promise.all([loadRegisteredAccounts(), loadAllCoursesForAdministration()]).then(([users, registeredCourses]) => { setAccounts(users); setAllCourses(registeredCourses) }).catch(() => setNotice('ユーザー情報を読み込めませんでした')) }, [role])
+  useEffect(() => { if (role === 'superadmin') Promise.all([loadRegisteredAccounts(isPrimarySuperAdmin(user) ? user.uid : undefined), loadAllCoursesForAdministration()]).then(([users, registeredCourses]) => { setAccounts(users); setAllCourses(registeredCourses) }).catch(() => setNotice('ユーザー情報を読み込めませんでした')) }, [role, user])
   async function review(report: AdminReport, status: 'approved' | 'rejected') { try { await reviewAdminReport(report.id, status, user); setReports((items) => items.filter((item) => item.id !== report.id)); setNotice(status === 'approved' ? '承認しました。コース情報への反映は内容を編集して行ってください。' : '差し戻しました。') } catch { setNotice('更新できませんでした。Firestoreルールを確認してください。') } }
   async function changeRole(account: RegisteredAccount, nextRole: AccountRole) {
     setBusyId(account.uid); setNotice('')

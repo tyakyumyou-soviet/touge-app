@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeAccountId, PRIMARY_SUPER_ADMIN_EMAIL, validAccountId } from './account'
+import { isPrimarySuperAdmin, normalizeAccountId, PRIMARY_SUPER_ADMIN_EMAIL, registeredAccountRole, validAccountId } from './account'
 
 describe('account identity', () => {
   it('normalizes full-width and upper-case account IDs before validation', () => {
@@ -17,5 +17,13 @@ describe('account identity', () => {
 
   it('keeps the fixed primary super administrator explicit', () => {
     expect(PRIMARY_SUPER_ADMIN_EMAIL).toBe('taizu61zx@gmail.com')
+    expect(isPrimarySuperAdmin({ email: 'taizu61zx@gmail.com', emailVerified: true })).toBe(true)
+    expect(isPrimarySuperAdmin({ email: 'taizu61zx@gmail.com', emailVerified: false })).toBe(false)
+  })
+
+  it('shows the fixed primary account as a super administrator in account lists', () => {
+    expect(registeredAccountRole('primary-uid', undefined, 'primary-uid')).toBe('superadmin')
+    expect(registeredAccountRole('other-uid', 'admin', 'primary-uid')).toBe('admin')
+    expect(registeredAccountRole('other-uid', undefined, 'primary-uid')).toBe('user')
   })
 })
