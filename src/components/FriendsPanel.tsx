@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { acceptFriend, canAcceptFriend, publishFriendSearch, removeFriend, requestFriend, searchFriends, subscribeFriends, type FriendEntry, type SearchPerson } from '../lib/friends'
 
-export function FriendsPanel({ uid, name }: { uid: string; name: string }) {
-  const [tab, setTab] = useState<'friends' | 'requests' | 'search'>('friends')
+export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: string; name: string; listPanel: ReactNode; listCount?: number }) {
+  const [tab, setTab] = useState<'friends' | 'requests' | 'search' | 'lists'>('friends')
   const [entries, setEntries] = useState<FriendEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -38,12 +38,12 @@ export function FriendsPanel({ uid, name }: { uid: string; name: string }) {
   const avatar = (title: string) => <span className="friend-avatar" aria-hidden="true">{title.slice(0, 1)}</span>
   return <section className="friends-hub" aria-label="フレンド管理">
     <div className="community-segments" role="tablist" aria-label="フレンドの表示">
-      {([['friends', 'フレンド', accepted.length], ['requests', '申請', incoming.length], ['search', '探す', 0]] as const).map(([id, title, count]) => <button key={id} id={`friend-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="friend-tab-panel" onClick={() => { setTab(id); setRemoving(null) }}>{title}{count > 0 && <span className="count-badge">{count}</span>}</button>)}
+      {([['friends', 'フレンド', accepted.length], ['requests', '申請', incoming.length], ['search', '探す', 0], ['lists', 'リスト', listCount]] as const).map(([id, title, count]) => <button key={id} id={`friend-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="friend-tab-panel" onClick={() => { setTab(id); setRemoving(null) }}>{title}{count > 0 && <span className="count-badge">{count}</span>}</button>)}
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {notice && <p className="form-success" role="status">{notice}</p>}
     <div id="friend-tab-panel" role="tabpanel" aria-labelledby={`friend-tab-${tab}`}>
-      {loading && <p role="status">フレンドを読み込み中…</p>}
+      {tab !== 'lists' && loading && <p role="status">フレンドを読み込み中…</p>}
       {tab === 'friends' && <>
         {!loading && !accepted.length && <div className="community-empty"><span aria-hidden="true">◎</span><h3>一緒に走る仲間を見つけよう</h3><p>名前で検索して申請できます。相手が承認するとフレンドになります。</p><button className="button primary" onClick={() => setTab('search')}>フレンドを探す</button></div>}
         {accepted.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry))}<div><strong>{personName(entry)}</strong><small>フレンド</small></div><button className="text-button" disabled={busy} onClick={() => setRemoving(entry)}>解除</button></article>)}
@@ -60,6 +60,7 @@ export function FriendsPanel({ uid, name }: { uid: string; name: string }) {
         {searched && !results.length && <p className="community-empty">見つかりませんでした。表示名と相手の検索公開設定をご確認ください。</p>}
         {results.map((person) => { const relation = entries.find((entry) => entry.members.includes(person.id)); return <article className="friend-person" key={person.id}>{avatar(person.displayName)}<div><strong>{person.displayName}</strong><small>{relation?.status === 'accepted' ? 'フレンド' : relation ? '申請中' : 'ドライバー'}</small></div>{relation ? <button onClick={() => setTab(relation.status === 'accepted' ? 'friends' : 'requests')}>確認</button> : <button disabled={busy} className="button primary" onClick={() => void perform(() => requestFriend(uid, name, person), 'フレンド申請を送りました')}>申請</button>}</article> })}
       </>}
+      {tab === 'lists' && listPanel}
     </div>
   </section>
 }
