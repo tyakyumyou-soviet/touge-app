@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { accountIdAvailable, claimAccountId, normalizeAccountId, validAccountId } from '../lib/account'
 
+function accountIdErrorMessage(caught: unknown, action: 'check' | 'save') {
+  const code = typeof caught === 'object' && caught && 'code' in caught ? String(caught.code) : ''
+  if (code.includes('permission-denied')) return 'ID管理の利用権限を確認できませんでした。管理者にFirestore設定の確認を依頼してください。'
+  if (code.includes('unavailable') || code.includes('network-request-failed')) return 'Firebaseに接続できませんでした。通信状態を確認して、もう一度お試しください。'
+  if (caught instanceof Error && caught.message) return caught.message
+  return action === 'check' ? 'IDを確認できませんでした。もう一度お試しください。' : 'IDを登録できませんでした。もう一度お試しください。'
+}
+
 export function AccountIdGate({ user, onRegistered, onLogout }: { user: User; onRegistered: (accountId: string) => void; onLogout: () => void }) {
   const [value, setValue] = useState('')
   const [state, setState] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
@@ -15,7 +23,11 @@ export function AccountIdGate({ user, onRegistered, onLogout }: { user: User; on
     if (!validAccountId(id)) { setState('idle'); return }
     let active = true
     setState('checking')
-    const timer = window.setTimeout(() => accountIdAvailable(id).then((available) => { if (active) setState(available ? 'available' : 'taken') }).catch(() => { if (active) setError('IDを確認できませんでした。通信状態を確認してください') }), 350)
+    const timer = window.setTimeout(() => accountIdAvailable(id).then((available) => { if (active) setState(available ? 'available' : 'taken') }).catch((caught) => {
+      if (!active) return
+      setState('idle')
+      setError(accountIdErrorMessage(caught, 'check'))
+    }), 350)
     return () => { active = false; window.clearTimeout(timer) }
   }, [value])
   async function submit(event: React.FormEvent) {
@@ -23,7 +35,7 @@ export function AccountIdGate({ user, onRegistered, onLogout }: { user: User; on
     if (state !== 'available' || saving) return
     setSaving(true); setError('')
     try { onRegistered(await claimAccountId(user, value)) }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'IDを登録できませんでした'); setState('taken') }
+    catch (caught) { setError(accountIdErrorMessage(caught, 'save')); setState('idle') }
     finally { setSaving(false) }
   }
   return <div className="account-id-gate" role="dialog" aria-modal="true" aria-labelledby="account-id-title">
