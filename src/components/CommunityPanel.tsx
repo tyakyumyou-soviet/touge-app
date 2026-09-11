@@ -178,10 +178,10 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
             <h3>位置情報と音楽の共有</h3>
             <div className="presence-sharing-options">
               <div className="presence-sharing-option">
-                <label className="community-switch"><span><strong>位置情報</strong><small>現在地を共有相手の地図に表示します</small></span><input type="checkbox" role="switch" aria-label="位置情報を共有する" checked={Boolean(profile?.locationSharing?.enabled)} onChange={(event) => setLocationSharing(event.target.checked)} /></label>
+                <label className="community-switch"><span><strong>位置情報を共有する</strong><small>現在地を共有相手の地図に表示します</small></span><input type="checkbox" role="switch" aria-label="位置情報を共有する" checked={Boolean(profile?.locationSharing?.enabled)} onChange={(event) => setLocationSharing(event.target.checked)} /></label>
               </div>
               <div className="presence-sharing-option">
-                <label className="community-switch"><span><strong>再生中の音楽</strong><small>曲名とアーティスト名だけを共有します</small></span><input type="checkbox" role="switch" aria-label="再生中の音楽を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
+                <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
                 <div className="inline-form"><input value={nowPlaying} onChange={(event) => setNowPlaying(event.target.value)} placeholder="再生中の曲名（任意）" disabled={!(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying))} /><button type="button" className="button secondary" disabled={!(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying))} onClick={() => void shareNowPlaying()}>曲名を更新</button></div>
               </div>
             </div>
