@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { acceptFriend, canAcceptFriend, publishFriendSearch, removeFriend, requestFriend, searchFriends, subscribeFriends, type FriendEntry, type SearchPerson } from '../lib/friends'
+import { acceptFriend, canAcceptFriend, removeFriend, requestFriend, searchFriends, setFriendSearchVisibility, subscribeFriends, type FriendEntry, type SearchPerson } from '../lib/friends'
 
 export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: string; name: string; listPanel: ReactNode; listCount?: number }) {
   const [tab, setTab] = useState<'friends' | 'requests' | 'search' | 'lists'>('friends')
@@ -45,7 +45,7 @@ export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: str
     <div id="friend-tab-panel" role="tabpanel" aria-labelledby={`friend-tab-${tab}`}>
       {tab !== 'lists' && loading && <p role="status">フレンドを読み込み中…</p>}
       {tab === 'friends' && <>
-        {!loading && !accepted.length && <div className="community-empty"><span aria-hidden="true">◎</span><h3>一緒に走る仲間を見つけよう</h3><p>名前で検索して申請できます。相手が承認するとフレンドになります。</p><button className="button primary" onClick={() => setTab('search')}>フレンドを探す</button></div>}
+        {!loading && !accepted.length && <div className="community-empty"><span aria-hidden="true">◎</span><h3>一緒に走る仲間を見つけよう</h3><p>アカウントIDで検索して申請できます。相手が承認するとフレンドになります。</p><button className="button primary" onClick={() => setTab('search')}>フレンドを探す</button></div>}
         {accepted.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry))}<div><strong>{personName(entry)}</strong><small>フレンド</small></div><button className="text-button" disabled={busy} onClick={() => setRemoving(entry)}>解除</button></article>)}
         {removing && <section className="friend-confirm" role="alert"><p>「{personName(removing)}」とのフレンド関係を解除しますか？位置情報のフレンド共有対象からも外れます。</p><div className="social-actions"><button disabled={busy} onClick={() => setRemoving(null)}>キャンセル</button><button className="danger-button" disabled={busy} onClick={() => void perform(() => removeFriend(removing), 'フレンドを解除しました')}>解除する</button></div></section>}
       </>}
@@ -54,11 +54,11 @@ export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: str
         {pending.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry))}<div><strong>{personName(entry)}</strong><small>{canAcceptFriend(entry, uid) ? 'フレンド申請が届いています' : '承認待ち'}</small><div className="social-actions">{canAcceptFriend(entry, uid) && <button disabled={busy} className="button primary" onClick={() => void perform(() => acceptFriend(entry, uid), 'フレンドになりました')}>承認</button>}<button disabled={busy} onClick={() => void perform(() => removeFriend(entry), canAcceptFriend(entry, uid) ? '申請を拒否しました' : '申請を取り消しました')}>{canAcceptFriend(entry, uid) ? '拒否' : '申請を取り消す'}</button></div></div></article>)}
       </>}
       {tab === 'search' && <>
-        <label className="community-switch"><span><strong>名前で見つけてもらう</strong><small>公開されるのは表示名だけです</small></span><input type="checkbox" role="switch" checked={discoverable === true} disabled={busy || discoverable === null} onChange={(event) => { const enabled = event.target.checked; void perform(async () => { await publishFriendSearch(uid, name, enabled); setDiscoverable(enabled) }, enabled ? '名前で検索できるようになりました' : '検索への公開を停止しました') }} /></label>
-        <form className="friend-search" onSubmit={(event) => { event.preventDefault(); const current = ++revision.current; void perform(async () => { const found = await searchFriends(query); if (current === revision.current) { setResults(found.filter((person) => person.id !== uid)); setSearched(true) } }, '') }}><input aria-label="フレンドの表示名" placeholder="表示名で検索" value={query} maxLength={80} onChange={(event) => { revision.current++; setQuery(event.target.value); setResults([]); setSearched(false) }} /><button className="button primary" disabled={busy || !query.trim()}>検索</button></form>
-        <p className="muted">名前の先頭から検索します。検索公開をオンにしたユーザーが表示されます（最大20件）。</p>
-        {searched && !results.length && <p className="community-empty">見つかりませんでした。表示名と相手の検索公開設定をご確認ください。</p>}
-        {results.map((person) => { const relation = entries.find((entry) => entry.members.includes(person.id)); return <article className="friend-person" key={person.id}>{avatar(person.displayName)}<div><strong>{person.displayName}</strong><small>{relation?.status === 'accepted' ? 'フレンド' : relation ? '申請中' : 'ドライバー'}</small></div>{relation ? <button onClick={() => setTab(relation.status === 'accepted' ? 'friends' : 'requests')}>確認</button> : <button disabled={busy} className="button primary" onClick={() => void perform(() => requestFriend(uid, name, person), 'フレンド申請を送りました')}>申請</button>}</article> })}
+        <label className="community-switch"><span><strong>アカウントIDで見つけてもらう</strong><small>オンにすると、あなたの正確なIDを知っている人が申請できます</small></span><input type="checkbox" role="switch" checked={discoverable === true} disabled={busy || discoverable === null} onChange={(event) => { const enabled = event.target.checked; void perform(async () => { await setFriendSearchVisibility(uid, name, enabled); setDiscoverable(enabled) }, enabled ? 'アカウントIDで検索できるようになりました' : '検索への公開を停止しました') }} /></label>
+        <form className="friend-search" onSubmit={(event) => { event.preventDefault(); const current = ++revision.current; void perform(async () => { const found = await searchFriends(query); if (current === revision.current) { setResults(found.filter((person) => person.id !== uid)); setSearched(true) } }, '') }}><input aria-label="フレンドのアカウントID" placeholder="@touge_driver" value={query} maxLength={21} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(event) => { revision.current++; setQuery(event.target.value); setResults([]); setSearched(false) }} /><button className="button primary" disabled={busy || !query.trim()}>検索</button></form>
+        <p className="muted">アカウントIDの完全一致で検索します。表示名からは検索できません。</p>
+        {searched && !results.length && <p className="community-empty">見つかりませんでした。アカウントIDと相手の検索公開設定をご確認ください。</p>}
+        {results.map((person) => { const relation = entries.find((entry) => entry.members.includes(person.id)); return <article className="friend-person" key={person.id}>{avatar(person.displayName)}<div><strong>{person.displayName}</strong><small>@{person.accountId} · {relation?.status === 'accepted' ? 'フレンド' : relation ? '申請中' : 'ドライバー'}</small></div>{relation ? <button onClick={() => setTab(relation.status === 'accepted' ? 'friends' : 'requests')}>確認</button> : <button disabled={busy} className="button primary" onClick={() => void perform(() => requestFriend(uid, name, person), 'フレンド申請を送りました')}>申請</button>}</article> })}
       </>}
       {tab === 'lists' && listPanel}
     </div>

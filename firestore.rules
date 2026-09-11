@@ -43,7 +43,8 @@ service cloud.firestore {
     }
 
     match /friendDirectory/{userId} {
-      allow read: if signedIn();
+      allow get: if signedIn();
+      allow list: if false;
       allow create, update: if hasAccountId() && request.auth.uid == userId
         && request.resource.data.keys().hasOnly(['displayName', 'searchName'])
         && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 80
