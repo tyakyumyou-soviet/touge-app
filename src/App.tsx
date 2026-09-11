@@ -178,11 +178,15 @@ export default function App() {
     const listIds = new Set(viewerProfile.locationSharing?.listIds ?? [])
     const selectedLists = (viewerProfile.friendLists ?? []).filter((list) => listIds.has(list.id))
     const allowedViewerIds = [...new Set(audience === 'lists' ? selectedLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id))
-    const nowPlaying = viewerProfile.nowPlaying
-    if (!viewerProfile.locationSharing?.enabled) {
+    const locationSharingEnabled = Boolean(viewerProfile.locationSharing?.enabled)
+    // Profiles created before the dedicated music switch keep their existing
+    // shared song enabled until the driver explicitly turns music sharing off.
+    const musicSharingEnabled = viewerProfile.musicSharingEnabled ?? Boolean(viewerProfile.nowPlaying)
+    const nowPlaying = musicSharingEnabled ? viewerProfile.nowPlaying ?? null : null
+    if (!locationSharingEnabled) {
       // Writing null is deliberate: Firestore merge writes would otherwise
       // retain the last precise location while only the music share is on.
-      if (nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null })
+      if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null })
       else void clearFriendPresence(user.uid)
       return
     }

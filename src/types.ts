@@ -166,6 +166,8 @@ export interface UserProfile {
   searchPresets?: SearchPreset[]
   personalization?: PersonalizationProfile
   locationSharing?: LocationSharingSettings
+  /** Controls music presence independently from precise location sharing. */
+  musicSharingEnabled?: boolean
   nowPlaying?: NowPlaying
   updatedAt?: string
 }
@@ -177,7 +179,7 @@ export interface SearchPreset { id: string; name: string; prefecture: string; to
 export interface PersonalizationProfile { curves: number; elevation: number; width: number; scenery: number; surface: number; traffic: number; access: number }
 export interface LocationSharingSettings { enabled: boolean; audience: 'friends' | 'lists'; listIds: string[] }
 export interface NowPlaying { title: string; artist?: string; updatedAt: string }
-export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate | null; allowedViewerIds?: string[]; updatedAt?: string; nowPlaying?: NowPlaying }
+export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate | null; allowedViewerIds?: string[]; updatedAt?: string; nowPlaying?: NowPlaying | null }
 
 export interface CourseComment {
   id: string

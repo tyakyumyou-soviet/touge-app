@@ -752,6 +752,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .friend-members, .presence-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .friend-members label, .toggle-row { display: flex; align-items: center; gap: 7px; }
 .presence-list span { padding: 6px 8px; background: color-mix(in srgb, var(--panel) 85%, var(--accent)); border-radius: 8px; font-size: 12px; }
+.presence-sharing-options { display: grid; gap: 10px; margin: 12px 0 16px; }
+.presence-sharing-option { padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 94%, var(--accent)); }
+.presence-sharing-option + .presence-sharing-option { margin-top: 0; }
+.presence-sharing-option .inline-form { margin: 0 0 12px; }
 .personalization-settings label { display: grid; grid-template-columns: 72px minmax(100px, 1fr) 86px 24px; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
 .personalization-settings label > span:last-of-type { text-align: right; }
 .personalization-settings input[type="range"] { width: 100%; }
