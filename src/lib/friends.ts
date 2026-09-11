@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
 import { db } from './firebase'
 import { normalizeAccountId, validAccountId } from './account'
 
@@ -12,12 +12,6 @@ export function canAcceptFriend(entry: FriendEntry, uid: string) { return entry.
 export function subscribeFriends(uid: string, next: (items: FriendEntry[]) => void, error: () => void) {
   return onSnapshot(query(collection(db, 'friendships'), where('members', 'array-contains', uid)), (snapshot) => next(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as FriendEntry))), error)
 }
-export async function setFriendSearchVisibility(uid: string, displayName: string, enabled: boolean) {
-  const ref = doc(db, 'friendDirectory', uid)
-  if (!enabled) return deleteDoc(ref)
-  const name = displayName.trim().slice(0, 80) || 'ドライバー'
-  await setDoc(ref, { displayName: name, searchName: normalizeFriendName(name) })
-}
 export async function searchFriends(value: string): Promise<SearchPerson[]> {
   const accountId = normalizeFriendAccountId(value)
   if (!validAccountId(accountId)) return []
@@ -25,11 +19,7 @@ export async function searchFriends(value: string): Promise<SearchPerson[]> {
   if (!account.exists()) return []
   const uid = String(account.data().uid ?? '')
   if (!uid) return []
-  // The directory document is an explicit opt-in. Account IDs can only resolve
-  // to a search result while this document exists.
-  const directory = await getDoc(doc(db, 'friendDirectory', uid))
-  if (!directory.exists()) return []
-  return [{ id: uid, accountId, displayName: String(directory.data().displayName || 'ドライバー') }]
+  return [{ id: uid, accountId, displayName: String(account.data().displayName || 'ドライバー') }]
 }
 export async function requestFriend(uid: string, name: string, person: SearchPerson) {
   if (uid === person.id) throw new Error('自分には申請できません')

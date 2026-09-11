@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '../lib/firebase'
-import { acceptFriend, canAcceptFriend, removeFriend, requestFriend, searchFriends, setFriendSearchVisibility, subscribeFriends, type FriendEntry, type SearchPerson } from '../lib/friends'
+import { acceptFriend, canAcceptFriend, removeFriend, requestFriend, searchFriends, subscribeFriends, type FriendEntry, type SearchPerson } from '../lib/friends'
 
 export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: string; name: string; listPanel: ReactNode; listCount?: number }) {
   const [tab, setTab] = useState<'friends' | 'requests' | 'search' | 'lists'>('friends')
@@ -13,15 +11,12 @@ export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: str
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchPerson[]>([])
   const [searched, setSearched] = useState(false)
-  const [discoverable, setDiscoverable] = useState<boolean | null>(null)
   const [removing, setRemoving] = useState<FriendEntry | null>(null)
   const revision = useRef(0)
   useEffect(() => {
-    let active = true
-    getDoc(doc(db, 'friendDirectory', uid)).then((snapshot) => { if (active) setDiscoverable(snapshot.exists()) }).catch(() => { if (active) setError('検索公開の設定を取得できませんでした') })
     const unsubscribe = subscribeFriends(uid, (items) => { setEntries(items); setLoading(false) }, () => { setLoading(false); setError('フレンドを同期できませんでした。接続状態を確認してください') })
     const currentRevision = revision
-    return () => { active = false; currentRevision.current++; unsubscribe() }
+    return () => { currentRevision.current++; unsubscribe() }
   }, [uid])
   async function perform(action: () => Promise<unknown>, message: string) {
     if (busy) return
@@ -54,10 +49,9 @@ export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: str
         {pending.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry))}<div><strong>{personName(entry)}</strong><small>{canAcceptFriend(entry, uid) ? 'フレンド申請が届いています' : '承認待ち'}</small><div className="social-actions">{canAcceptFriend(entry, uid) && <button disabled={busy} className="button primary" onClick={() => void perform(() => acceptFriend(entry, uid), 'フレンドになりました')}>承認</button>}<button disabled={busy} onClick={() => void perform(() => removeFriend(entry), canAcceptFriend(entry, uid) ? '申請を拒否しました' : '申請を取り消しました')}>{canAcceptFriend(entry, uid) ? '拒否' : '申請を取り消す'}</button></div></div></article>)}
       </>}
       {tab === 'search' && <>
-        <label className="community-switch"><span><strong>アカウントIDで見つけてもらう</strong><small>オンにすると、あなたの正確なIDを知っている人が申請できます</small></span><input type="checkbox" role="switch" checked={discoverable === true} disabled={busy || discoverable === null} onChange={(event) => { const enabled = event.target.checked; void perform(async () => { await setFriendSearchVisibility(uid, name, enabled); setDiscoverable(enabled) }, enabled ? 'アカウントIDで検索できるようになりました' : '検索への公開を停止しました') }} /></label>
         <form className="friend-search" onSubmit={(event) => { event.preventDefault(); const current = ++revision.current; void perform(async () => { const found = await searchFriends(query); if (current === revision.current) { setResults(found.filter((person) => person.id !== uid)); setSearched(true) } }, '') }}><input aria-label="フレンドのアカウントID" placeholder="@touge_driver" value={query} maxLength={21} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(event) => { revision.current++; setQuery(event.target.value); setResults([]); setSearched(false) }} /><button className="button primary" disabled={busy || !query.trim()}>検索</button></form>
         <p className="muted">アカウントIDの完全一致で検索します。表示名からは検索できません。</p>
-        {searched && !results.length && <p className="community-empty">見つかりませんでした。アカウントIDと相手の検索公開設定をご確認ください。</p>}
+        {searched && !results.length && <p className="community-empty">見つかりませんでした。アカウントIDをご確認ください。</p>}
         {results.map((person) => { const relation = entries.find((entry) => entry.members.includes(person.id)); return <article className="friend-person" key={person.id}>{avatar(person.displayName)}<div><strong>{person.displayName}</strong><small>@{person.accountId} · {relation?.status === 'accepted' ? 'フレンド' : relation ? '申請中' : 'ドライバー'}</small></div>{relation ? <button onClick={() => setTab(relation.status === 'accepted' ? 'friends' : 'requests')}>確認</button> : <button disabled={busy} className="button primary" onClick={() => void perform(() => requestFriend(uid, name, person), 'フレンド申請を送りました')}>申請</button>}</article> })}
       </>}
       {tab === 'lists' && listPanel}

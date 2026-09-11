@@ -33,13 +33,12 @@ describe('friend request lifecycle', () => {
     await expect(acceptFriend(pending, 'b')).rejects.toThrow()
   })
 
-  it('finds only an exact opted-in account ID', async () => {
+  it('finds only an exact registered account ID', async () => {
     expect(normalizeFriendAccountId('  @ＴＯＵＧＥ_61 ')).toBe('touge_61')
-    state.documents.set('accountIds/touge_61', { uid: 'driver-61' })
-    state.documents.set('friendDirectory/driver-61', { displayName: '峠ドライバー' })
+    state.documents.set('accountIds/touge_61', { uid: 'driver-61', displayName: '峠ドライバー' })
     await expect(searchFriends('@TOUGE_61')).resolves.toEqual([{ id: 'driver-61', accountId: 'touge_61', displayName: '峠ドライバー' }])
     await expect(searchFriends('touge')).resolves.toEqual([])
-    state.documents.delete('friendDirectory/driver-61')
+    state.documents.delete('accountIds/touge_61')
     await expect(searchFriends('touge_61')).resolves.toEqual([])
   })
 })
