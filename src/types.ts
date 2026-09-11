@@ -166,6 +166,9 @@ export interface UserProfile {
   blockedUserIds?: string[]
   /** Controls which route lines are rendered on this driver's map. */
   mapRouteVisibility?: 'all' | 'friends' | 'mine' | 'none'
+  mapRouteSources?: Array<'official' | 'mine' | 'friends'>
+  mapRouteFriendScope?: 'all' | 'lists'
+  mapRouteFriendListIds?: string[]
   hiddenRouteIds?: string[]
   searchPresets?: SearchPreset[]
   personalization?: PersonalizationProfile

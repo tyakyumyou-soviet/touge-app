@@ -7,6 +7,7 @@ import { FriendsPanel } from './FriendsPanel'
 import { FriendListsPanel } from './FriendListsPanel'
 import { subscribeFriends } from '../lib/friends'
 import { nowPlayingFromMediaMetadata, postEmbedUrl, postUrlsFromText } from '../lib/profile'
+import { mapRouteSourcesFromProfile, type MapRouteSource } from '../lib/mapRoutePreferences'
 
 interface Props { user: User | null; course?: Course | null; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
 
@@ -110,10 +111,11 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
     const validListIds = new Set(friendLists.map((list) => list.id))
     const locationSharing = profile?.locationSharing ? { ...profile.locationSharing, listIds: profile.locationSharing.listIds.filter((id) => validListIds.has(id)) } : undefined
     const mapProfileListIds = (profile?.mapProfileListIds ?? []).filter((id) => validListIds.has(id))
-    const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, ...(locationSharing ? { locationSharing } : {}) }
+    const mapRouteFriendListIds = (profile?.mapRouteFriendListIds ?? []).filter((id) => validListIds.has(id))
+    const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, mapRouteFriendListIds, ...(locationSharing ? { locationSharing } : {}) }
     const next = { ...base, mapAllowedViewerIds: mapProfileViewerIds(base) }
     setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    await saveUserProfileSettings(user, { friendLists, mapProfileListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
+    await saveUserProfileSettings(user, { friendLists, mapProfileListIds, mapRouteFriendListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
     setNotice('フレンドリストを保存しました')
   }
   function viewerIds(nextProfile = profile) {
@@ -147,6 +149,10 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
   function patchProfile(values: Partial<UserProfile>) { if (!user) return; setProfile((p) => ({ id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...p, ...values })) }
+  function toggleMapRouteSource(source: MapRouteSource, enabled: boolean) {
+    const current = mapRouteSourcesFromProfile(profile)
+    patchProfile({ mapRouteSources: enabled ? [...new Set([...current, source])] : current.filter((item) => item !== source) })
+  }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
   const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
   return <div className="modal-backdrop" role="presentation"><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
@@ -184,7 +190,21 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
           </section>
           <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '共有設定を保存'}</button>
         </>}
-        {settingsView === 'settings' && <><section className="route-display-settings"><h3>地図上のルート表示</h3><select value={profile?.mapRouteVisibility ?? 'all'} onChange={(event) => patchProfile({ mapRouteVisibility: event.target.value as UserProfile['mapRouteVisibility'] })}><option value="all">すべて表示</option><option value="friends">フレンド・自分のみ</option><option value="mine">自分のコースのみ</option><option value="none">ルートを表示しない</option></select></section><section className="personalization-settings"><h3>パーソナライズを設定</h3><p>回答に近い道路を「パーソナライズ順」で上位へ表示します。</p>{([['curves', '直線的', 'くねくね'], ['width', '狭い道', '広い道'], ['elevation', '平坦', '高低差'], ['scenery', '走り重視', '景色重視'], ['surface', '荒れた路面', '滑らか'], ['traffic', '賑やか', '交通量少なめ'], ['access', '秘境寄り', '行きやすい']] as const).map(([key, low, high]) => <label key={key}><span>{low}</span><input aria-label={`${low}から${high}`} type="range" min="1" max="5" step="1" value={profile?.personalization?.[key] ?? 3} onChange={(event) => patchProfile({ personalization: { curves: 3, elevation: 3, width: 3, scenery: 3, surface: 3, traffic: 3, access: 3, ...profile?.personalization, [key]: Number(event.target.value) } })} /><span>{high}</span><output>{profile?.personalization?.[key] ?? 3}</output></label>)}</section><button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '設定を保存'}</button></>}
+        {settingsView === 'settings' && <>
+          <section className="route-display-settings">
+            <h3>地図上のルート表示</h3>
+            <p>表示したい種類を複数選択できます。</p>
+            <div className="route-source-options" role="group" aria-label="地図に表示するルートの種類">
+              {([['official', '公式・おすすめ', '初期収録された峠コース'], ['mine', '自分のコース', '自分で作成したコース'], ['friends', 'フレンドのコース', '共有されたフレンドのコース']] as const).map(([id, title, description]) => <label key={id} className={mapRouteSourcesFromProfile(profile).includes(id) ? 'selected' : ''}><input type="checkbox" checked={mapRouteSourcesFromProfile(profile).includes(id)} onChange={(event) => toggleMapRouteSource(id, event.target.checked)} /><span><strong>{title}</strong><small>{description}</small></span><b aria-hidden="true">✓</b></label>)}
+            </div>
+            {mapRouteSourcesFromProfile(profile).includes('friends') && <div className="map-route-friend-scope">
+              <label className="sharing-scope-select"><span>表示するフレンド</span><select value={profile?.mapRouteFriendScope ?? 'all'} onChange={(event) => patchProfile({ mapRouteFriendScope: event.target.value as 'all' | 'lists' })}><option value="all">フレンド全員（{friendIds.length}人）</option><option value="lists">フレンドリストから選ぶ</option></select></label>
+              {profile?.mapRouteFriendScope === 'lists' && <div className="audience-list-options">{(profile.friendLists ?? []).length ? <>{(profile.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={profile.mapRouteFriendListIds?.includes(list.id)} onChange={(event) => patchProfile({ mapRouteFriendListIds: event.target.checked ? [...new Set([...(profile.mapRouteFriendListIds ?? []), list.id])] : (profile.mapRouteFriendListIds ?? []).filter((id) => id !== list.id) })} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{profile.mapRouteFriendListIds?.length ?? 0}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
+            </div>}
+          </section>
+          <section className="personalization-settings"><h3>パーソナライズを設定</h3><p>回答に近い道路を「パーソナライズ順」で上位へ表示します。</p>{([['curves', '直線的', 'くねくね'], ['width', '狭い道', '広い道'], ['elevation', '平坦', '高低差'], ['scenery', '走り重視', '景色重視'], ['surface', '荒れた路面', '滑らか'], ['traffic', '賑やか', '交通量少なめ'], ['access', '秘境寄り', '行きやすい']] as const).map(([key, low, high]) => <label key={key}><span>{low}</span><input aria-label={`${low}から${high}`} type="range" min="1" max="5" step="1" value={profile?.personalization?.[key] ?? 3} onChange={(event) => patchProfile({ personalization: { curves: 3, elevation: 3, width: 3, scenery: 3, surface: 3, traffic: 3, access: 3, ...profile?.personalization, [key]: Number(event.target.value) } })} /><span>{high}</span><output>{profile?.personalization?.[key] ?? 3}</output></label>)}</section>
+          <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '設定を保存'}</button>
+        </>}
       </>}
       {course && <section className="social-thread">{authorProfile && <ProfileShowcase profile={authorProfile} title={`${course.authorName ?? authorProfile.displayName}のプロフィール`} />}<div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>{profile?.followingIds?.includes(course.authorId) ? 'フォロー解除' : '＋ 作成者をフォロー'}</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button danger-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
     </>}

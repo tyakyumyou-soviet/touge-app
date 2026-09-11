@@ -35,6 +35,7 @@ import { editableStopsFromCourse } from './lib/editingStops'
 import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import { nowPlayingFromMediaMetadata } from './lib/profile'
+import { mapRouteSourcesFromProfile, visibleMapFriendIds } from './lib/mapRoutePreferences'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | string
@@ -268,17 +269,21 @@ export default function App() {
       })
   }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization])
   const mapCourses = useMemo(() => {
-    const mode = viewerProfile?.mapRouteVisibility ?? 'all'
-    const followed = new Set(acceptedFriendIds)
+    const sources = new Set(mapRouteSourcesFromProfile(viewerProfile))
+    const visibleFriendIds = visibleMapFriendIds(viewerProfile, acceptedFriendIds)
     const hidden = new Set(viewerProfile?.hiddenRouteIds ?? [])
-    const visible = mode === 'none' ? [] : courses.filter((course) => !hidden.has(course.id) && (mode === 'all' || (mode === 'mine' && course.authorId === user?.uid) || (mode === 'friends' && (course.authorId === user?.uid || followed.has(course.authorId)))))
+    const visible = courses.filter((course) => !hidden.has(course.id) && (
+      (course.isSeed && sources.has('official'))
+      || (course.authorId === user?.uid && sources.has('mine'))
+      || (visibleFriendIds.has(course.authorId) && sources.has('friends'))
+    ))
     // A course picked from the list must remain visible even when the user's
     // background-map preference hides that category. Otherwise its detail can
     // open with no corresponding route on the map, which is especially
     // confusing for shared and proposal previews.
     const selectedCourse = selected ? [selected] : []
     return [...new Map([...visible, ...proposalPreviews, ...selectedCourse].map((course) => [course.id, course])).values()]
-  }, [courses, proposalPreviews, selected, user?.uid, acceptedFriendIds, viewerProfile?.hiddenRouteIds, viewerProfile?.mapRouteVisibility])
+  }, [courses, proposalPreviews, selected, user?.uid, acceptedFriendIds, viewerProfile])
 
   function saveSearchPreset() {
     if (!user || !viewerProfile) { setNotice('プリセットの保存にはログインが必要です'); return }
