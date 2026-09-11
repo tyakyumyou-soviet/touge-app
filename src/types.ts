@@ -150,7 +150,11 @@ export interface UserProfile {
   bio: string
   photoURL?: string | null
   homeArea?: string
-  mapVisibility: 'all' | 'friends' | 'none'
+  mapVisibility: 'all' | 'friends' | 'lists' | 'none'
+  /** Friend lists selected when mapVisibility is limited to lists. */
+  mapProfileListIds?: string[]
+  /** Materialized viewer IDs used by public-profile security rules. */
+  mapAllowedViewerIds?: string[]
   followingIds: string[]
   followerCount: number
   /** Optional car information and social profile/showcase links. */

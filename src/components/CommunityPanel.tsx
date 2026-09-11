@@ -85,10 +85,16 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
     if (!profile?.followingIds?.length) { setFriendProfiles({}); return }
     Promise.all(profile.followingIds.map((id) => loadUserProfile(id).then((item) => [id, item] as const).catch(() => [id, null] as const))).then((items) => setFriendProfiles(Object.fromEntries(items.filter((item): item is readonly [string, UserProfile] => Boolean(item[1])))))
   }, [profile?.followingIds])
+  function mapProfileViewerIds(nextProfile = profile) {
+    if (nextProfile?.mapVisibility !== 'lists') return []
+    const selected = new Set(nextProfile.mapProfileListIds ?? [])
+    return [...new Set((nextProfile.friendLists ?? []).filter((list) => selected.has(list.id)).flatMap((list) => list.memberIds))].filter((id) => friendIds.includes(id))
+  }
   function saveProfile() {
     if (!user || !profile) return
-    setSaving(true); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(profile)); onProfileSaved?.(profile)
-    void saveUserProfileSettings(user, profile).then(() => setNotice(navigator.onLine ? 'プロフィールを保存しました' : 'オフラインで保存しました。接続回復後に同期します')).catch(() => setNotice('端末には保存しました。Firebaseとの同期を再試行します')).finally(() => setSaving(false))
+    const next = { ...profile, mapAllowedViewerIds: mapProfileViewerIds(profile) }
+    setProfile(next); setSaving(true); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
+    void saveUserProfileSettings(user, next).then(() => setNotice(navigator.onLine ? 'プロフィールを保存しました' : 'オフラインで保存しました。接続回復後に同期します')).catch(() => setNotice('端末には保存しました。Firebaseとの同期を再試行します')).finally(() => setSaving(false))
   }
   async function postComment() { if (!user || !course || !body.trim()) return; try { await addCourseComment(course.id, body.trim(), user); setBody('') } catch { setNotice('コメントを保存できませんでした') } }
   async function removeComment(commentId: string) { if (!course) return; try { await deleteCourseComment(course.id, commentId) } catch { setNotice('コメントを削除できませんでした') } }
@@ -103,9 +109,11 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
     if (!user) return
     const validListIds = new Set(friendLists.map((list) => list.id))
     const locationSharing = profile?.locationSharing ? { ...profile.locationSharing, listIds: profile.locationSharing.listIds.filter((id) => validListIds.has(id)) } : undefined
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, ...(locationSharing ? { locationSharing } : {}) }
+    const mapProfileListIds = (profile?.mapProfileListIds ?? []).filter((id) => validListIds.has(id))
+    const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, ...(locationSharing ? { locationSharing } : {}) }
+    const next = { ...base, mapAllowedViewerIds: mapProfileViewerIds(base) }
     setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    await saveUserProfileSettings(user, { friendLists, ...(locationSharing ? { locationSharing } : {}) })
+    await saveUserProfileSettings(user, { friendLists, mapProfileListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
     setNotice('フレンドリストを保存しました')
   }
   function viewerIds(nextProfile = profile) {
@@ -150,9 +158,13 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
         {settingsView === 'profile' && <><section className="profile-editor"><div className="profile-avatar" aria-label="プロフィール画像">{profileImageUrl ? <img src={profileImageUrl} alt="Googleアカウントのプロフィール画像" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label>愛車（任意）<input value={profile?.vehicleName ?? ''} onChange={(e) => patchProfile({ vehicleName: e.target.value })} placeholder="例: 86 GT MT" /></label><label>愛車メモ（任意）<input value={profile?.vehicleDetails ?? ''} onChange={(e) => patchProfile({ vehicleDetails: e.target.value })} placeholder="例: 年式・カラー・仕様" /></label></div></section><section className="profile-social"><h3>SNS・愛車紹介（任意）</h3><p>愛車の写真・動画を紹介するためのアカウントと投稿URLです。</p><div className="form-grid"><label>X<input value={profile?.socialLinks?.x ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, x: e.target.value } })} placeholder="https://x.com/username" /></label><label>Instagram<input value={profile?.socialLinks?.instagram ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/username" /></label><label>YouTube<input value={profile?.socialLinks?.youtube ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@channel" /></label><label>TikTok<input value={profile?.socialLinks?.tiktok ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@username" /></label><label className="wide">愛車紹介の投稿URL（任意）<textarea rows={3} value={(profile?.showcasePostUrls ?? []).join('\n')} onChange={(e) => patchProfile({ showcasePostUrls: postUrlsFromText(e.target.value) })} placeholder="愛車の写真・動画が載った投稿URLを1行ずつ（最大3件）" /><small>対応投稿は埋め込み表示、その他はリンクとして表示します。</small></label></div></section>{profile && <ProfileShowcase profile={profile} />}<button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : 'プロフィールを保存'}</button></>}
         {settingsView === 'friends' && <FriendsPanel uid={user.uid} name={profile?.displayName || user.displayName || 'ドライバー'} listCount={profile?.friendLists?.length ?? 0} listPanel={<FriendListsPanel lists={profile?.friendLists ?? []} friendIds={friendIds} friendName={friendName} onSave={saveFriendLists} />} />}
         {settingsView === 'sharing' && <>
-          <section className="presence-settings">
-            <h3>プロフィールを地図に表示</h3>
-            <select value={profile?.mapVisibility ?? 'friends'} onChange={(e) => patchProfile({ mapVisibility: e.target.value as UserProfile['mapVisibility'] })}><option value="all">全体に表示</option><option value="friends">フレンドのみ</option><option value="none">表示しない</option></select>
+          <section className="presence-settings profile-map-audience audience-picker" role="group" aria-labelledby="profile-map-audience-title">
+            <h3 id="profile-map-audience-title">プロフィールを地図に表示</h3>
+            <label className={`audience-option ${profile?.mapVisibility === 'all' ? 'selected' : ''}`}><input type="radio" name="profile-map-audience" checked={profile?.mapVisibility === 'all'} onChange={() => patchProfile({ mapVisibility: 'all' })} /><span><strong>全ユーザー</strong><small>ログイン中のすべてのユーザーに表示</small></span></label>
+            <label className={`audience-option ${(profile?.mapVisibility ?? 'friends') === 'friends' ? 'selected' : ''}`}><input type="radio" name="profile-map-audience" checked={(profile?.mapVisibility ?? 'friends') === 'friends'} onChange={() => patchProfile({ mapVisibility: 'friends' })} /><span><strong>フレンド全員</strong><small>{friendIds.length}人に表示</small></span></label>
+            <label className={`audience-option ${profile?.mapVisibility === 'lists' ? 'selected' : ''}`}><input type="radio" name="profile-map-audience" checked={profile?.mapVisibility === 'lists'} onChange={() => patchProfile({ mapVisibility: 'lists' })} /><span><strong>フレンドリストを選ぶ</strong><small>複数のリストを選択できます</small></span></label>
+            {profile?.mapVisibility === 'lists' && <div className="audience-list-options">{(profile.friendLists ?? []).length ? <>{(profile.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={profile.mapProfileListIds?.includes(list.id)} onChange={(event) => patchProfile({ mapProfileListIds: event.target.checked ? [...new Set([...(profile.mapProfileListIds ?? []), list.id])] : (profile.mapProfileListIds ?? []).filter((id) => id !== list.id) })} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{profile.mapProfileListIds?.length ?? 0}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
+            <label className={`audience-option ${profile?.mapVisibility === 'none' ? 'selected' : ''}`}><input type="radio" name="profile-map-audience" checked={profile?.mapVisibility === 'none'} onChange={() => patchProfile({ mapVisibility: 'none' })} /><span><strong>表示しない</strong><small>地図上のプロフィールを非公開にします</small></span></label>
           </section>
           <section className="presence-settings">
             <h3>位置情報と音楽の共有</h3>

@@ -333,7 +333,7 @@ export async function saveUserProfileSettings(user: User, values: Partial<Omit<U
   const displayName = values.displayName || user.displayName || 'ドライバー'
   const batch = writeBatch(db)
   batch.set(doc(db, 'users', user.uid), { ...values, displayName, updatedAt: serverTimestamp() }, { merge: true })
-  const publicKeys = ['displayName', 'bio', 'homeArea', 'mapVisibility', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
+  const publicKeys = ['displayName', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
   const publicValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
   if (Object.keys(publicValues).length) batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, displayName, photoURL: user.photoURL ?? null, updatedAt: serverTimestamp() }, { merge: true })
   await batch.commit()

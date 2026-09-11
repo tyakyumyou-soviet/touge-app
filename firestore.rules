@@ -118,11 +118,16 @@ service cloud.firestore {
     match /publicProfiles/{userId} {
       allow get: if signedIn() && (request.auth.uid == userId || isSuperAdmin()
         || resource.data.mapVisibility == 'all'
-        || (resource.data.mapVisibility == 'friends' && friendWith(userId)));
+        || (resource.data.mapVisibility == 'friends' && friendWith(userId))
+        || (resource.data.mapVisibility == 'lists'
+          && resource.data.mapAllowedViewerIds is list
+          && request.auth.uid in resource.data.mapAllowedViewerIds
+          && friendWith(userId)));
       allow list: if false;
       allow create, update: if hasAccountId() && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['displayName', 'photoURL', 'bio', 'homeArea', 'mapVisibility', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls', 'updatedAt'])
-        && request.resource.data.mapVisibility in ['all', 'friends', 'none']
+        && request.resource.data.keys().hasOnly(['displayName', 'photoURL', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls', 'updatedAt'])
+        && request.resource.data.mapVisibility in ['all', 'friends', 'lists', 'none']
+        && (!(request.resource.data.mapVisibility == 'lists') || request.resource.data.mapAllowedViewerIds is list)
         && request.resource.data.updatedAt == request.time;
       allow delete: if hasAccountId() && request.auth.uid == userId;
     }
