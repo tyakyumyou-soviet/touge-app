@@ -760,6 +760,12 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .presence-audience { margin: 18px 0 12px; }
 .presence-audience h4 { margin: 0 0 2px; }
 .profile-map-audience { display: grid; gap: 10px; }
+.sharing-scope-select { display: grid; gap: 7px; }
+.sharing-scope-select > span { color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.sharing-scope-select select { width: 100%; min-height: 50px; padding: 0 44px 0 15px; border: 1px solid #cbd8d0; border-radius: 14px; color: var(--ink); background: linear-gradient(135deg, #fff 0%, #f1f7f3 100%); box-shadow: 0 7px 18px rgba(25, 65, 47, .07); font: inherit; font-weight: 800; cursor: pointer; }
+.sharing-scope-select select:hover { border-color: #7db696; }
+.sharing-scope-select select:focus-visible { border-color: #237756; box-shadow: 0 0 0 3px rgba(35, 119, 86, .14); outline: 0; }
+.sharing-scope-select + .audience-list-options, .presence-audience .audience-list-options { margin: 2px 0 0; padding: 10px; border: 1px solid #dce7df; border-radius: 14px; background: #f7faf8; }
 .personalization-settings label { display: grid; grid-template-columns: 72px minmax(100px, 1fr) 86px 24px; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
 .personalization-settings label > span:last-of-type { text-align: right; }
 .personalization-settings input[type="range"] { width: 100%; }
