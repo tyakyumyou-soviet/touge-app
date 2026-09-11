@@ -756,6 +756,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .presence-sharing-option { padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 94%, var(--accent)); }
 .presence-sharing-option + .presence-sharing-option { margin-top: 0; }
 .presence-sharing-option .inline-form { margin: 0 0 12px; }
+.automatic-sharing-status { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
 .personalization-settings label { display: grid; grid-template-columns: 72px minmax(100px, 1fr) 86px 24px; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
 .personalization-settings label > span:last-of-type { text-align: right; }
 .personalization-settings input[type="range"] { width: 100%; }

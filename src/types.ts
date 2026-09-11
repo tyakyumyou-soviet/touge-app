@@ -168,7 +168,7 @@ export interface UserProfile {
   locationSharing?: LocationSharingSettings
   /** Controls music presence independently from precise location sharing. */
   musicSharingEnabled?: boolean
-  nowPlaying?: NowPlaying
+  nowPlaying?: NowPlaying | null
   updatedAt?: string
 }
 

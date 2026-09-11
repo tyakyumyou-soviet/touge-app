@@ -6,7 +6,7 @@ import { useMobileSheet } from '../hooks/useMobileSheet'
 import { FriendsPanel } from './FriendsPanel'
 import { FriendListsPanel } from './FriendListsPanel'
 import { subscribeFriends } from '../lib/friends'
-import { postEmbedUrl, postUrlsFromText } from '../lib/profile'
+import { nowPlayingFromMediaMetadata, postEmbedUrl, postUrlsFromText } from '../lib/profile'
 
 interface Props { user: User | null; course?: Course | null; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
 
@@ -37,7 +37,6 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [likeState, setLikeState] = useState({ count: 0, liked: false })
-  const [nowPlaying, setNowPlaying] = useState('')
   const [presence, setPresence] = useState<FriendPresence[]>([])
   const [friendProfiles, setFriendProfiles] = useState<Record<string, UserProfile>>({})
   const [settingsView, setSettingsView] = useState<'home' | 'profile' | 'friends' | 'sharing' | 'settings'>('home')
@@ -131,32 +130,13 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
   }
   function setMusicSharing(enabled: boolean) {
     if (!user) return
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled }
+    const playing = enabled ? nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata) : null
+    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, nowPlaying: playing }
     setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    void saveUserProfileSettings(user, { musicSharingEnabled: enabled })
-    if (!enabled) {
-      if (next.locationSharing?.enabled) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: null })
-      else void clearFriendPresence(user.uid)
-    }
-    setNotice(enabled ? '音楽共有をオンにしました。共有する曲名を確認してください' : '音楽共有をオフにしました')
-  }
-  async function shareNowPlaying() {
-    if (!user) return
-    const title = nowPlaying.trim() || navigator.mediaSession?.metadata?.title || ''
-    if (!title) { setNotice('再生中の曲名を入力してください。外部音楽アプリの曲名はブラウザから自動取得できない場合があります。'); return }
-    setNowPlaying(title)
-    const playing = { title, artist: navigator.mediaSession?.metadata?.artist || undefined, updatedAt: new Date().toISOString() }
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: true, nowPlaying: playing }
-    setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    try {
-      await Promise.all([
-        saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: playing, ...(next.locationSharing?.enabled ? {} : { location: null }) }),
-        saveUserProfileSettings(user, { musicSharingEnabled: true, nowPlaying: playing }),
-      ])
-      setNotice('再生中の曲名を共有しました')
-    } catch {
-      setNotice('曲名を端末に保存しました。接続回復後にもう一度共有してください。')
-    }
+    void saveUserProfileSettings(user, { musicSharingEnabled: enabled, nowPlaying: playing })
+    if (next.locationSharing?.enabled || playing) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: playing, ...(next.locationSharing?.enabled ? {} : { location: null }) })
+    else void clearFriendPresence(user.uid)
+    setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
   function patchProfile(values: Partial<UserProfile>) { if (!user) return; setProfile((p) => ({ id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...p, ...values })) }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
@@ -182,7 +162,7 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
               </div>
               <div className="presence-sharing-option">
                 <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
-                <div className="inline-form"><input value={nowPlaying} onChange={(event) => setNowPlaying(event.target.value)} placeholder="再生中の曲名（任意）" disabled={!(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying))} /><button type="button" className="button secondary" disabled={!(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying))} onClick={() => void shareNowPlaying()}>曲名を更新</button></div>
+                {(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)) && <p className="automatic-sharing-status">{profile?.nowPlaying?.title ? `共有中: ${profile.nowPlaying.title}${profile.nowPlaying.artist ? ` / ${profile.nowPlaying.artist}` : ''}` : '再生情報を検出すると自動で共有します'}</p>}
               </div>
             </div>
             <label>共有相手<select value={profile?.locationSharing?.audience ?? 'friends'} onChange={(event) => patchProfile({ locationSharing: { enabled: Boolean(profile?.locationSharing?.enabled), listIds: profile?.locationSharing?.listIds ?? [], audience: event.target.value as 'friends' | 'lists' } })}><option value="friends">フレンド全員</option><option value="lists">選択したリストのみ</option></select></label>

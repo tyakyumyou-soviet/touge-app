@@ -34,6 +34,7 @@ import { reverseDraftBlock } from './lib/draftReorder'
 import { editableStopsFromCourse } from './lib/editingStops'
 import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
+import { nowPlayingFromMediaMetadata } from './lib/profile'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | string
@@ -172,6 +173,24 @@ export default function App() {
     }).catch(() => undefined).finally(() => setProfileChecked(true))
   }, [user])
   useEffect(() => { if (user && viewerProfile) localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(viewerProfile)) }, [user, viewerProfile])
+  const automaticMusicSharingEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
+  useEffect(() => {
+    if (!user || !automaticMusicSharingEnabled) return
+    let lastTrack = ''
+    const syncDetectedTrack = () => {
+      const playing = nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata)
+      if (!playing) return
+      const track = `${playing.title}\n${playing.artist ?? ''}`
+      if (track === lastTrack) return
+      lastTrack = track
+      profileDirty.current = true
+      setViewerProfile((current) => current ? { ...current, nowPlaying: playing } : current)
+      void saveUserProfileSettings(user, { nowPlaying: playing })
+    }
+    syncDetectedTrack()
+    const timer = window.setInterval(syncDetectedTrack, 5000)
+    return () => window.clearInterval(timer)
+  }, [user, automaticMusicSharingEnabled])
   useEffect(() => {
     if (!user || !viewerProfile) return
     const audience = viewerProfile.locationSharing?.audience ?? 'friends'

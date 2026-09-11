@@ -1,3 +1,15 @@
+import type { NowPlaying } from '../types'
+
+export function nowPlayingFromMediaMetadata(
+  metadata: Pick<MediaMetadata, 'title' | 'artist'> | null | undefined,
+  updatedAt = new Date().toISOString(),
+): NowPlaying | null {
+  const title = metadata?.title?.trim()
+  if (!title) return null
+  const artist = metadata?.artist?.trim()
+  return { title, ...(artist ? { artist } : {}), updatedAt }
+}
+
 export function postEmbedUrl(value: string) {
   try {
     const url = new URL(value)
