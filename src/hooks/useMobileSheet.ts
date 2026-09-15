@@ -184,7 +184,14 @@ export function useMobileSheet() {
   }
 
   function tap(event: ReactMouseEvent<HTMLElement>) {
-    if (!isMobile() || ignoreTap.current || !collapsed || !(event.target as Element).closest(handleSelector) || (event.target as Element).closest(controlSelector)) return
+    if (!isMobile()) return
+    // A drag/cancel can be followed by one synthetic click. Consume only that
+    // click; keeping this flag set made every later handle tap inert.
+    if (ignoreTap.current) {
+      ignoreTap.current = false
+      return
+    }
+    if (!collapsed || !(event.target as Element).closest(handleSelector) || (event.target as Element).closest(controlSelector)) return
     openResting()
   }
 

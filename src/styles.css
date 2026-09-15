@@ -1215,6 +1215,112 @@ html[data-theme="dark"] .account-id-loading > div { color: #e7eee9; border-color
 html[data-theme="dark"] .account-id-input { border-color: #46554c; background: #202a24; }
 html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #45534b; }
 
+/* Dark-mode completion pass ------------------------------------------------
+   Many workflow cards predate the appearance setting and used literal light
+   surfaces. Keep their hierarchy, but make every nested editing surface use
+   the same low-glare palette as its parent sheet. */
+html[data-theme="dark"] :is(
+  .route-status, .join-sequence li, .route-search-results button,
+  .route-current-location, .existing-route-insert, .route-order-editor,
+  .route-order-editor li button, .route-stop-list div, .route-builder-summary,
+  .draft-point-popup button:last-child, .text-button, .tag-recommendations button,
+  .social-link-row a, .account-summary, .route-builder-intro,
+  .proposal-current-location, .proposal-settings-toggle, .proposal-loading,
+  .proposal-map-hint, .proposal-edit-back, .proposal-results article,
+  .admin-report-list article,
+  .admin-owned-courses, .audience-list-options > label, .audience-readonly,
+  .role-badge, .superadmin-user-list details
+) { color: var(--ink); border-color: #3a4a41; background: #1a2620; }
+
+html[data-theme="dark"] :is(
+  .creation-choice-card:hover, .join-course-picker button.selected,
+  .route-order-editor li.drop-target, .set-goal-button,
+  .proposal-launch.active, .drive-proposal-builder,
+  .audience-option.selected
+) { color: var(--ink); border-color: #4f9a75; background: #20362a; box-shadow: 0 7px 20px #0003; }
+
+html[data-theme="dark"] :is(
+  .creation-choice-card > span, .join-course-picker button > span,
+  .route-order-editor li button, .route-stop-list div,
+  .tag-recommendations button, .social-link-row a, .proposal-via-tags span,
+  .route-builder-summary, .route-status
+) { color: #9be0bd; background: #203a2d; border-color: #426b55; }
+
+html[data-theme="dark"] :is(
+  .join-sequence li.empty, .route-order-editor,
+  .existing-route-insert, .route-builder-intro, .proposal-current-location,
+  .proposal-settings-toggle, .proposal-results article, .admin-report-list article,
+  .admin-owned-courses, .audience-readonly
+) { background: #151f1a; }
+
+html[data-theme="dark"] :is(
+  .join-sequence button, .route-stop-list button,
+  .draft-point-popup button:last-child, .text-button,
+  .route-manager-heading button, .route-bulk-actions button,
+  .personalization-summary button, .audience-readonly > div span
+) { color: #c9d8cf; border-color: #46564c; background: #243029; }
+
+html[data-theme="dark"] :is(
+  .reverse-route-button, .proposal-launch,
+  .proposal-preview-actions .preview-navigation button,
+  .address-match-confirm
+) { color: #f1d981; border-color: #9a8138; background: #342d18; }
+
+html[data-theme="dark"] :is(
+  .route-order-editor li .route-block-reverse,
+  .proposal-preview-actions .edit-preview-button
+) { color: #17150d; border-color: #d5b34a; background: var(--yellow); }
+
+html[data-theme="dark"] :is(.search-not-found, .friend-confirm) {
+  color: #ffb6aa; border-color: #8f5148; background: #38201d;
+}
+html[data-theme="dark"] :is(.search-not-found small, .route-privacy-note) { color: #e8bcae; }
+
+html[data-theme="dark"] :is(.address-match-confirm small, .proposal-results ul) { color: #d8d3b7; }
+
+html[data-theme="dark"] :is(
+  .elevation-chart, .rating-empty, .toll-box, .course-owner-actions,
+  .toll-box.toll, .caution-box, .nav-actions
+) { color: var(--ink); border-color: #3d4c43; background: #19251f; }
+html[data-theme="dark"] .toll-box.toll { background: #302c1e; border-color: #675b35; }
+html[data-theme="dark"] .caution-box { color: #ead8aa; background: #312a1d; border-left-color: #c59d4c; }
+html[data-theme="dark"] :is(.bar, .rating-empty, .toll-box > button, .secondary-actions button) { color: #c9d6cf; border-color: #46554c; background: #202b25; }
+html[data-theme="dark"] :is(.description, .toll-box p, .rating-summary-head span, .rating-provenance, .rating-source, .toll-box small) { color: var(--muted); }
+
+html[data-theme="dark"] :is(
+  .course-manager, .course-manager-section, .course-manager-summary,
+  .course-manager-actions, .course-manager-danger, .modal.admin-panel,
+  .admin-tabs, .role-account-list > article, .admin-report-list > article,
+  .role-manager > input, .role-account-list select, .superadmin-users > input
+) { color: var(--ink); border-color: #394940; background: #151f1a; }
+html[data-theme="dark"] :is(.course-manager-summary, .course-manager-section, .role-account-list > article, .admin-report-list > article) { background: #1a2620; }
+html[data-theme="dark"] .course-manager-actions { background: linear-gradient(#151f1a00, #151f1a 24%); }
+html[data-theme="dark"] .course-manager-danger { color: #ffc2b8; border-color: #74473f; background: #2e1e1b; }
+html[data-theme="dark"] .course-manager-danger p { color: #e9b7ad; }
+html[data-theme="dark"] :is(.admin-tabs button[aria-selected="true"], .role-badge.superadmin) { color: #9be0bd; background: #20362a; }
+html[data-theme="dark"] .role-badge.admin { color: #f0d983; background: #382f17; }
+
+html[data-theme="dark"] :is(
+  .active-nearby-filter, .toll-chip, .toll-chip.free, .toll-chip.toll,
+  .toll-chip.conditional, .toll-chip.mixed, .toll-chip.unknown,
+  .route-source-icon.official, .route-source-dot.official,
+  .route-source-icon.mine, .route-source-dot.mine,
+  .route-source-icon.friends, .route-source-dot.friends,
+  .friend-avatar
+) { border-color: transparent; }
+html[data-theme="dark"] .active-nearby-filter { color: #a5dfc1; background: #1c382b; }
+html[data-theme="dark"] .active-nearby-filter button { color: #a5dfc1; background: #263c30; }
+html[data-theme="dark"] .toll-chip { color: #c4d1c9; background: #27322c; }
+html[data-theme="dark"] .toll-chip.free { color: #a5dfc1; background: #1e392c; }
+html[data-theme="dark"] .toll-chip.toll { color: #f0d983; background: #3b3118; }
+html[data-theme="dark"] .toll-chip.conditional { color: #f3c894; background: #3c291b; }
+html[data-theme="dark"] .toll-chip.mixed { color: #c7c8ff; background: #292943; }
+html[data-theme="dark"] .toll-chip.unknown { color: #c6d0ca; background: #29312d; }
+
+html[data-theme="dark"] :is(.explore-drag-handle::after, .drag-handle::after, .mobile-sheet-handle::after) { background: #9ca8a0; }
+html[data-theme="dark"] .detail-peek-handle { color: #bfcac3; }
+html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
+
 @media (max-width: 480px) {
   .community-panel .theme-settings { padding: 16px; }
   .theme-options button { grid-template-columns: 1fr; justify-items: center; min-height: 70px; padding: 9px 5px; text-align: center; }
