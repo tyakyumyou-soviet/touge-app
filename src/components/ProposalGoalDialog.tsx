@@ -9,7 +9,7 @@ export function ProposalGoalDialog({ name, hasGoal, onChoose, onCancel }: { name
     dialog.current?.focus()
     return () => previous?.focus()
   }, [])
-  return <div className="modal-backdrop proposal-goal-backdrop"><section ref={dialog} tabIndex={-1} className={`modal proposal-goal-dialog ${sheet.className}`} style={sheet.style}
+  return <div className="modal-backdrop proposal-goal-backdrop" {...sheet.backdropProps}><section ref={dialog} tabIndex={-1} className={`modal proposal-goal-dialog ${sheet.className}`} style={sheet.style}
     role="dialog" aria-modal="true" aria-labelledby="proposal-goal-title" onKeyDown={(event) => {
       if (event.key === 'Escape') onCancel()
       if (event.key === 'Tab') {

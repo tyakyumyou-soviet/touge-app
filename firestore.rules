@@ -117,8 +117,9 @@ service cloud.firestore {
 
     match /publicProfiles/{userId} {
       allow get: if signedIn() && (request.auth.uid == userId || isSuperAdmin()
-        || resource.data.mapVisibility == 'all'
-        || (resource.data.mapVisibility == 'friends' && friendWith(userId))
+        // Legacy `all` profiles are now read as friend-only until their owner
+        // next saves the normalized `friends` setting.
+        || (resource.data.mapVisibility in ['friends', 'all'] && friendWith(userId))
         || (resource.data.mapVisibility == 'lists'
           && resource.data.mapAllowedViewerIds is list
           && request.auth.uid in resource.data.mapAllowedViewerIds
@@ -126,7 +127,7 @@ service cloud.firestore {
       allow list: if false;
       allow create, update: if hasAccountId() && request.auth.uid == userId
         && request.resource.data.keys().hasOnly(['displayName', 'photoURL', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls', 'updatedAt'])
-        && request.resource.data.mapVisibility in ['all', 'friends', 'lists', 'none']
+        && request.resource.data.mapVisibility in ['friends', 'lists', 'none']
         && (!(request.resource.data.mapVisibility == 'lists') || request.resource.data.mapAllowedViewerIds is list)
         && request.resource.data.updatedAt == request.time;
       allow delete: if hasAccountId() && request.auth.uid == userId;

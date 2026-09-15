@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { UserProfile } from '../types'
-import { mapRouteSourcesFromProfile, visibleMapFriendIds } from './mapRoutePreferences'
+import { isCourseVisibleByMapPreferences, mapRouteSourcesFromProfile, visibleMapFriendIds } from './mapRoutePreferences'
 
 const profile = (values: Partial<UserProfile>): UserProfile => ({ id: 'me', displayName: 'Driver', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...values })
 
@@ -18,5 +18,13 @@ describe('map route display preferences', () => {
       { id: 'local', name: 'Local', memberIds: ['b', 'c', 'outsider'] },
     ] })
     expect([...visibleMapFriendIds(value, ['a', 'b', 'c'])]).toEqual(['a', 'b', 'c'])
+  })
+
+  it('applies per-course exceptions after source defaults without bypassing friend scope', () => {
+    const course = { id: 'route-a', authorId: 'friend-a', isSeed: false }
+    expect(isCourseVisibleByMapPreferences(course, profile({ mapRouteSources: [] }), 'me', ['friend-a'])).toBe(false)
+    expect(isCourseVisibleByMapPreferences(course, profile({ mapRouteSources: [], mapRouteOverrides: { 'route-a': 'show' } }), 'me', ['friend-a'])).toBe(true)
+    expect(isCourseVisibleByMapPreferences(course, profile({ mapRouteSources: ['friends'], mapRouteOverrides: { 'route-a': 'hide' } }), 'me', ['friend-a'])).toBe(false)
+    expect(isCourseVisibleByMapPreferences(course, profile({ mapRouteSources: [], mapRouteOverrides: { 'route-a': 'show' } }), 'me', [])).toBe(false)
   })
 })

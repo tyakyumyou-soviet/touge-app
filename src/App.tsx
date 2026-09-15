@@ -19,7 +19,7 @@ import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQua
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
 import { auth, clearFriendPresence, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendPresence, saveRating, saveUserProfileSettings, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
-import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, TollStatus, UserProfile } from './types'
+import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
 import { personalizedScore } from './lib/personalization'
 import { useMobileSheet } from './hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
@@ -35,10 +35,20 @@ import { editableStopsFromCourse } from './lib/editingStops'
 import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import { nowPlayingFromMediaMetadata } from './lib/profile'
-import { mapRouteSourcesFromProfile, visibleMapFriendIds } from './lib/mapRoutePreferences'
+import { isCourseVisibleByMapPreferences } from './lib/mapRoutePreferences'
+import { normalizeThemePreference, resolveThemePreference, type ResolvedTheme } from './lib/theme'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | string
+
+function initialThemePreference(): ThemePreference {
+  if (typeof window === 'undefined') return 'system'
+  return normalizeThemePreference(localStorage.getItem('touge-theme'))
+}
+
+function systemDarkMode() {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+}
 
 function previewCourseFromProposal(proposal: DriveProposal): Course {
   const elevationProfile = proposal.elevationProfile
@@ -79,6 +89,8 @@ export default function App() {
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [viewerProfile, setViewerProfile] = useState<UserProfile | null>(null)
+  const [themePreference, setThemePreference] = useState<ThemePreference>(initialThemePreference)
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveThemePreference(initialThemePreference(), systemDarkMode()))
   const [profileChecked, setProfileChecked] = useState(false)
   const [accountRole, setAccountRole] = useState<AccountRole>('user')
   const [authReady, setAuthReady] = useState(false)
@@ -134,6 +146,23 @@ export default function App() {
   const unlimitedWaypoints = administrator
 
   useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyTheme = () => {
+      const next = resolveThemePreference(themePreference, media.matches)
+      setResolvedTheme(next)
+      document.documentElement.dataset.theme = next
+      document.documentElement.dataset.themePreference = themePreference
+      document.documentElement.style.colorScheme = next
+      localStorage.setItem('touge-theme', themePreference)
+      const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+      if (themeMeta) themeMeta.content = next === 'dark' ? '#0b100d' : '#101915'
+    }
+    applyTheme()
+    media.addEventListener('change', applyTheme)
+    return () => media.removeEventListener('change', applyTheme)
+  }, [themePreference])
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => { setUser(nextUser); setAuthReady(true) })
     completeRedirectLogin().catch((error: unknown) => {
       const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
@@ -165,7 +194,13 @@ export default function App() {
     setProfileChecked(false)
     if (!user) { setViewerProfile(null); setProfileChecked(true); return }
     profileDirty.current = false
-    try { const cached = localStorage.getItem(`touge-profile-${user.uid}`); if (cached) setViewerProfile(JSON.parse(cached) as UserProfile) } catch { /* ignore invalid local cache */ }
+    try {
+      const cached = localStorage.getItem(`touge-profile-${user.uid}`)
+      if (cached) {
+        const parsed = JSON.parse(cached) as UserProfile & { mapVisibility?: string }
+        setViewerProfile({ ...parsed, mapVisibility: parsed.mapVisibility === 'lists' || parsed.mapVisibility === 'none' ? parsed.mapVisibility : 'friends' })
+      }
+    } catch { /* ignore invalid local cache */ }
     loadUserProfile(user.uid).then((profile) => {
       const remote = profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }
       // Keep any newer offline/local interaction that happened while the
@@ -174,6 +209,16 @@ export default function App() {
     }).catch(() => undefined).finally(() => setProfileChecked(true))
   }, [user])
   useEffect(() => { if (user && viewerProfile) localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(viewerProfile)) }, [user, viewerProfile])
+  useEffect(() => {
+    if (viewerProfile?.themePreference) setThemePreference(normalizeThemePreference(viewerProfile.themePreference))
+  }, [viewerProfile?.themePreference])
+  const changeThemePreference = useCallback((next: ThemePreference) => {
+    setThemePreference(next)
+    if (!user) return
+    profileDirty.current = true
+    setViewerProfile((current) => current ? { ...current, themePreference: next } : current)
+    void saveUserProfileSettings(user, { themePreference: next }).catch(() => setNotice('外観はこの端末に保存しました。アカウントとの同期は接続回復後に再試行してください。'))
+  }, [user])
   const automaticMusicSharingEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   useEffect(() => {
     if (!user || !automaticMusicSharingEnabled) return
@@ -264,19 +309,12 @@ export default function App() {
       .filter((course) => courseMatchesSearch(course, { text: search, prefecture, toll: tollFilter, center: nearbyCenter?.point, radiusKm: nearbyCenter ? nearbyRadiusKm : undefined }))
       .sort((a, b) => {
         if (sort === 'recommended') return (b.ratings.curves + b.ratings.elevation + b.ratings.width) - (a.ratings.curves + a.ratings.elevation + a.ratings.width)
-        if (sort === 'personalized') return personalizedScore(b, viewerProfile?.personalization ?? {}) - personalizedScore(a, viewerProfile?.personalization ?? {})
+        if (sort === 'personalized') return personalizedScore(b, viewerProfile?.personalization ?? {}, viewerProfile?.personalizationWeights) - personalizedScore(a, viewerProfile?.personalization ?? {}, viewerProfile?.personalizationWeights)
         return b.ratings[sort] - a.ratings[sort]
       })
-  }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization])
+  }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization, viewerProfile?.personalizationWeights])
   const mapCourses = useMemo(() => {
-    const sources = new Set(mapRouteSourcesFromProfile(viewerProfile))
-    const visibleFriendIds = visibleMapFriendIds(viewerProfile, acceptedFriendIds)
-    const hidden = new Set(viewerProfile?.hiddenRouteIds ?? [])
-    const visible = courses.filter((course) => !hidden.has(course.id) && (
-      (course.isSeed && sources.has('official'))
-      || (course.authorId === user?.uid && sources.has('mine'))
-      || (visibleFriendIds.has(course.authorId) && sources.has('friends'))
-    ))
+    const visible = courses.filter((course) => isCourseVisibleByMapPreferences(course, viewerProfile, user?.uid, acceptedFriendIds))
     // A course picked from the list must remain visible even when the user's
     // background-map preference hides that category. Otherwise its detail can
     // open with no corresponding route on the map, which is especially
@@ -700,7 +738,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
+        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
           const id = ++recommendationActionSequence.current
           const point = { coordinate: action.point, label: '地図指定' }
           // Reflect the selected search centre immediately.  CourseForm then
@@ -709,7 +747,7 @@ export default function App() {
           if (action.action === 'center') setRecommendationMapState((state) => ({ ...state, active: true, center: point }))
           setRecommendationMapAction({ ...action, id })
         }} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
-        <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={drawing ? undefined : listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
+        <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
           <div className="explore-panel-top">
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); listSheet.openResting() } }} />
           </div>
@@ -748,12 +786,13 @@ export default function App() {
           onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)}
           onCommunity={() => { setCommunityCourse(selected); setCommunityOpen(true) }} onOpenTimer={() => setTimerOpen(true)}
           canManageCourse={Boolean(user && (selected.authorId === user.uid || administrator))} onManageCourse={() => setCourseManagerOpen(true)}
-          mapHidden={Boolean(viewerProfile?.hiddenRouteIds?.includes(selected.id))}
+          mapHidden={!isCourseVisibleByMapPreferences(selected, viewerProfile, user?.uid, acceptedFriendIds)}
           onToggleMapRoute={user && viewerProfile ? async () => {
-            const hidden = new Set(viewerProfile.hiddenRouteIds ?? [])
-            if (hidden.has(selected.id)) hidden.delete(selected.id); else hidden.add(selected.id)
-            const next = { ...viewerProfile, hiddenRouteIds: [...hidden] }
-            profileDirty.current = true; setViewerProfile(next); await saveUserProfileSettings(user, { hiddenRouteIds: next.hiddenRouteIds })
+            const visible = isCourseVisibleByMapPreferences(selected, viewerProfile, user.uid, acceptedFriendIds)
+            const mapRouteOverrides = { ...(viewerProfile.mapRouteOverrides ?? {}), [selected.id]: visible ? 'hide' as const : 'show' as const }
+            const hiddenRouteIds = (viewerProfile.hiddenRouteIds ?? []).filter((id) => id !== selected.id)
+            const next = { ...viewerProfile, mapRouteOverrides, hiddenRouteIds }
+            profileDirty.current = true; setViewerProfile(next); await saveUserProfileSettings(user, { mapRouteOverrides, hiddenRouteIds })
           } : undefined}
           isPreview={selected.authorId === '__proposal_preview__'}
           onReversePreview={reverseProposalPreview}
@@ -769,7 +808,7 @@ export default function App() {
       </main>
       {pendingProposalAddition && <ProposalGoalDialog name={pendingProposalAddition.proposal.name} hasGoal={draftPointRoles.includes('goal')} onChoose={confirmProposalAddition} onCancel={() => setPendingProposalAddition(null)} />}
       {notice && <div ref={noticeRef} className="notice" role="status">{notice}</div>}
-      {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation">
+      {logoutConfirmOpen && <div className="modal-backdrop logout-backdrop" role="presentation" {...logoutSheet.backdropProps}>
         <section className={`modal logout-dialog ${logoutSheet.className}`} style={logoutSheet.style} role="dialog" aria-modal="true" aria-labelledby="logout-title" {...logoutSheet.dragProps}>
           <div className="mobile-sheet-drag-region"><div className="mobile-sheet-handle" aria-hidden="true" /><h2 id="logout-title">ログアウトしますか？</h2>
           <p>ログアウトすると、コース登録や評価投稿には再度ログインが必要です。</p></div>
@@ -777,7 +816,7 @@ export default function App() {
         </section>
       </div>}
       {courseManagerOpen && selected && user && (user.uid === selected.authorId || administrator) && <CourseManageForm course={selected} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} audienceReadOnly={user.uid !== selected.authorId} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} onEditRoute={() => void openRouteEditor(selected)} />}
-      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} course={communityCourse} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
+      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} course={communityCourse} courses={courses} themePreference={themePreference} resolvedTheme={resolvedTheme} onThemeChange={changeThemePreference} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
       {adminOpen && user && administrator && <AdminPanel user={user} role={accountRole} courses={courses} onClose={() => setAdminOpen(false)} />}
       <InstallPrompt />
     </div>

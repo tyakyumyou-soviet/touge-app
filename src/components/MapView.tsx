@@ -7,10 +7,12 @@ import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { assignCourseColors } from '../lib/courseColors'
 import { bottomSheetInset } from '../lib/mapCamera'
-import { createTougeMapStyle } from '../lib/mapStyle'
+import { applyTougeMapTheme, createTougeMapStyle } from '../lib/mapStyle'
 import { mapDraftActions } from '../lib/mapDraftActions'
+import type { ResolvedTheme } from '../lib/theme'
 
 interface MapViewProps {
+  theme: ResolvedTheme
   courses: Course[]
   selected: Course | null
   previewCourseIds: string[]
@@ -133,7 +135,7 @@ function fitRouteToVisibleMap(map: MapLibreMap, container: HTMLElement, route: C
   else map.jumpTo({ center, zoom })
 }
 
-export function MapView({ courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ theme, courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -148,6 +150,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
   const draftRolesRef = useRef(draftRoles)
   const viaInsertAfterRef = useRef(viaInsertAfter)
   const recommendationMapStateRef = useRef(recommendationMapState)
+  const themeRef = useRef(theme)
   const onRecommendationMapActionRef = useRef(onRecommendationMapAction)
   const [mapError, setMapError] = useState('')
   const [mapReady, setMapReady] = useState(false)
@@ -164,6 +167,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
   useEffect(() => { draftRolesRef.current = draftRoles }, [draftRoles])
   useEffect(() => { viaInsertAfterRef.current = viaInsertAfter }, [viaInsertAfter])
   useEffect(() => { recommendationMapStateRef.current = recommendationMapState }, [recommendationMapState])
+  useEffect(() => { themeRef.current = theme }, [theme])
   useEffect(() => { onRecommendationMapActionRef.current = onRecommendationMapAction }, [onRecommendationMapAction])
 
   useEffect(() => {
@@ -173,7 +177,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: createTougeMapStyle(),
+        style: createTougeMapStyle(themeRef.current),
         center: [139.03, 35.22],
         zoom: 8.2,
         pitch: 0,
@@ -280,6 +284,7 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
       map.addLayer({ id: 'course-annotation-labels', type: 'symbol', source: 'course-annotations', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, -1.25], 'text-anchor': 'bottom', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd', 'text-halo-width': 2 } })
       ;(map.getSource('draft-points') as GeoJSONSource).setData(toDraftPointCollection(draftRouteRef.current, draftLabelsRef.current, draftRolesRef.current))
+      applyTougeMapTheme(map, themeRef.current)
       setMapReady(true)
     })
 
@@ -422,6 +427,12 @@ export function MapView({ courses, selected, previewCourseIds, focusRequest = 0,
   // Event handlers intentionally use refs above. Recreating the MapLibre map on
   // every parent render interrupts touch interactions, especially long-press drag.
   }, [onCurrentLocationChange])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    applyTougeMapTheme(map, theme)
+  }, [mapReady, theme])
 
   useEffect(() => {
     const map = mapRef.current

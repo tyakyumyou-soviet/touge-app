@@ -150,7 +150,9 @@ export interface UserProfile {
   bio: string
   photoURL?: string | null
   homeArea?: string
-  mapVisibility: 'all' | 'friends' | 'lists' | 'none'
+  mapVisibility: 'friends' | 'lists' | 'none'
+  /** Visual theme. System follows the device color-scheme preference. */
+  themePreference?: ThemePreference
   /** Friend lists selected when mapVisibility is limited to lists. */
   mapProfileListIds?: string[]
   /** Materialized viewer IDs used by public-profile security rules. */
@@ -169,9 +171,13 @@ export interface UserProfile {
   mapRouteSources?: Array<'official' | 'mine' | 'friends'>
   mapRouteFriendScope?: 'all' | 'lists'
   mapRouteFriendListIds?: string[]
+  /** Per-course exceptions applied after the source-level map defaults. */
+  mapRouteOverrides?: Record<string, 'show' | 'hide'>
   hiddenRouteIds?: string[]
   searchPresets?: SearchPreset[]
   personalization?: PersonalizationProfile
+  /** Importance per personalization trait. Zero means the trait is ignored. */
+  personalizationWeights?: PersonalizationWeights
   locationSharing?: LocationSharingSettings
   /** Controls music presence independently from precise location sharing. */
   musicSharingEnabled?: boolean
@@ -179,11 +185,13 @@ export interface UserProfile {
   updatedAt?: string
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark'
 export type AccountRole = 'user' | 'admin' | 'superadmin'
 
 export interface FriendList { id: string; name: string; memberIds: string[] }
 export interface SearchPreset { id: string; name: string; prefecture: string; toll: 'all' | TollStatus; radiusKm: number; sort: 'recommended' | 'curves' | 'elevation' | 'width' | 'personalized' }
 export interface PersonalizationProfile { curves: number; elevation: number; width: number; scenery: number; surface: number; traffic: number; access: number }
+export type PersonalizationWeights = Partial<Record<RatingKey, number>>
 export interface LocationSharingSettings { enabled: boolean; audience: 'friends' | 'lists'; listIds: string[] }
 export interface NowPlaying { title: string; artist?: string; updatedAt: string }
 export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate | null; allowedViewerIds?: string[]; updatedAt?: string; nowPlaying?: NowPlaying | null }

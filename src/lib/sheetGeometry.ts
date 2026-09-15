@@ -16,3 +16,8 @@ export function nextSheetSnap(current: SheetSnap, dragY: number, threshold = 42)
   if (dragY > threshold) return current === 'full' ? 'middle' : 'minimized'
   return current
 }
+
+/** Backdrop taps only step a fully expanded sheet down to its middle rest. */
+export function backdropSheetSnap(current: SheetSnap): SheetSnap {
+  return current === 'full' ? 'middle' : current
+}

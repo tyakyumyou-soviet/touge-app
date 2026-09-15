@@ -326,7 +326,10 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
   const snapshot = await getDoc(doc(db, collectionName, userId))
   if (!snapshot.exists()) return null
   const data = snapshot.data()
-  return { id: userId, displayName: 'ドライバー', followingIds: [], mapVisibility: 'friends', followerCount: 0, bio: '', ...data, updatedAt: firestoreDate(data.updatedAt) } as UserProfile
+  // Profiles saved before public map visibility was removed may still contain
+  // `all`. Treat every unknown/legacy value as friend-only when it is loaded.
+  const mapVisibility = data.mapVisibility === 'lists' || data.mapVisibility === 'none' ? data.mapVisibility : 'friends'
+  return { id: userId, displayName: 'ドライバー', followingIds: [], followerCount: 0, bio: '', ...data, mapVisibility, updatedAt: firestoreDate(data.updatedAt) } as UserProfile
 }
 
 export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {

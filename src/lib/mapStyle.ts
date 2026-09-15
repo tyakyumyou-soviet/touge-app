@@ -1,4 +1,38 @@
-import type { StyleSpecification } from 'maplibre-gl'
+import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl'
+import type { ResolvedTheme } from './theme'
+
+const darkPaint: Record<string, Record<string, unknown>> = {
+  background: { 'background-color': '#101713' },
+  landcover: { 'fill-color': ['match', ['get', 'class'], 'wood', '#173421', 'grass', '#1d3023', 'ice', '#29363b', '#18231d'] },
+  landuse: { 'fill-color': ['match', ['get', 'class'], 'residential', '#292824', 'park', '#193221', 'hospital', '#332528', 'school', '#302d20', '#1d2821'] },
+  water: { 'fill-color': '#16384a' }, waterway: { 'line-color': '#2a6682' }, boundary: { 'line-color': '#64736a' },
+  'roads-casing': { 'line-color': '#0a0e0c' },
+  roads: { 'line-color': ['match', ['get', 'class'], 'motorway', '#ad7244', 'trunk', '#a77a4c', 'primary', '#967c59', 'secondary', '#837a68', '#667068'] },
+  buildings: { 'fill-color': '#303832', 'fill-outline-color': '#4a574f' },
+  'road-labels': { 'text-color': '#c1cbc5', 'text-halo-color': '#111814' },
+  'place-labels': { 'text-color': '#e4ece7', 'text-halo-color': '#111814' },
+}
+
+const overlayPaint = {
+  light: {
+    'terrain-hillshade': { 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' },
+    'courses-shadow': { 'line-color': '#101915' }, 'selected-glow': { 'line-color': '#101915' }, 'selected-contours': { 'line-color': '#637e70' },
+    'draft-points': { 'circle-stroke-color': '#fff8e7' }, 'draft-point-labels': { 'text-color': '#142018' }, 'draft-point-names': { 'text-color': '#15251b', 'text-halo-color': '#fff8e7' },
+    'pending-search-pin': { 'circle-stroke-color': '#fff8e7' }, 'pending-search-label': { 'text-color': '#7f2f27', 'text-halo-color': '#fff8e7' },
+    'recommendation-points': { 'circle-stroke-color': '#fff8e7' }, 'recommendation-point-labels': { 'text-color': '#15251b', 'text-halo-color': '#fff8e7' },
+    'current-location-dot': { 'circle-stroke-color': '#ffffff' }, 'selected-contour-labels': { 'text-color': '#516b5e', 'text-halo-color': '#f7f3e9' },
+    'course-annotation-points': { 'circle-stroke-color': '#f6f1dd' }, 'course-annotation-labels': { 'text-color': '#203a2d', 'text-halo-color': '#f6f1dd' },
+  },
+  dark: {
+    'terrain-hillshade': { 'hillshade-shadow-color': '#050806', 'hillshade-highlight-color': '#35433b', 'hillshade-accent-color': '#142019' },
+    'courses-shadow': { 'line-color': '#050806' }, 'selected-glow': { 'line-color': '#050806' }, 'selected-contours': { 'line-color': '#7ea08f' },
+    'draft-points': { 'circle-stroke-color': '#172019' }, 'draft-point-labels': { 'text-color': '#eef5f0' }, 'draft-point-names': { 'text-color': '#eef5f0', 'text-halo-color': '#172019' },
+    'pending-search-pin': { 'circle-stroke-color': '#172019' }, 'pending-search-label': { 'text-color': '#ffb2a2', 'text-halo-color': '#172019' },
+    'recommendation-points': { 'circle-stroke-color': '#172019' }, 'recommendation-point-labels': { 'text-color': '#eef5f0', 'text-halo-color': '#172019' },
+    'current-location-dot': { 'circle-stroke-color': '#eef6f2' }, 'selected-contour-labels': { 'text-color': '#9fc4b1', 'text-halo-color': '#111814' },
+    'course-annotation-points': { 'circle-stroke-color': '#172019' }, 'course-annotation-labels': { 'text-color': '#e4ece7', 'text-halo-color': '#111814' },
+  },
+} as const
 
 /**
  * A compact OpenFreeMap style owned by the app. The upstream Liberty style
@@ -7,8 +41,8 @@ import type { StyleSpecification } from 'maplibre-gl'
  * consume it. Keeping the visual style local removes that unstable expression
  * while retaining roads, terrain context, buildings, and place labels.
  */
-export function createTougeMapStyle(): StyleSpecification {
-  return {
+export function createTougeMapStyle(theme: ResolvedTheme = 'light'): StyleSpecification {
+  const style: StyleSpecification = {
     version: 8,
     sources: {
       openmaptiles: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
@@ -69,5 +103,28 @@ export function createTougeMapStyle(): StyleSpecification {
         paint: { 'text-color': '#25342c', 'text-halo-color': '#f7f3e9', 'text-halo-width': 1.8 },
       },
     ],
+  }
+  if (theme === 'dark') {
+    style.layers.forEach((layer) => {
+      const paint = darkPaint[layer.id]
+      if (paint) Object.assign(layer.paint ??= {}, paint)
+    })
+  }
+  return style
+}
+
+/** Recolors the loaded map without replacing sources or losing app overlays. */
+export function applyTougeMapTheme(map: MapLibreMap, theme: ResolvedTheme) {
+  const entries = theme === 'dark' ? { ...darkPaint, ...overlayPaint.dark } : overlayPaint.light
+  Object.entries(entries).forEach(([layerId, paint]) => {
+    if (!map.getLayer(layerId)) return
+    Object.entries(paint).forEach(([property, value]) => map.setPaintProperty(layerId, property, value as never))
+  })
+  if (theme === 'light') {
+    const lightStyle = createTougeMapStyle('light')
+    lightStyle.layers.forEach((layer) => {
+      if (!map.getLayer(layer.id) || !layer.paint) return
+      Object.entries(layer.paint).forEach(([property, value]) => map.setPaintProperty(layer.id, property, value as never))
+    })
   }
 }

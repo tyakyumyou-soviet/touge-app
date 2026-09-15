@@ -59,7 +59,8 @@ export async function loadRegisteredAccounts(primarySuperAdminUid?: string): Pro
   const roleMap = new Map(roles.docs.map((item) => [item.id, item.data().role as AccountRole]))
   return users.docs.flatMap((item) => {
     const data = item.data() as Partial<UserProfile>
-    return typeof data.accountId === 'string' ? [{ uid: item.id, accountId: data.accountId, displayName: data.displayName ?? 'ドライバー', role: registeredAccountRole(item.id, roleMap.get(item.id), primarySuperAdminUid), profile: { id: item.id, displayName: data.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...data } as UserProfile }] : []
+    const mapVisibility = data.mapVisibility === 'lists' || data.mapVisibility === 'none' ? data.mapVisibility : 'friends'
+    return typeof data.accountId === 'string' ? [{ uid: item.id, accountId: data.accountId, displayName: data.displayName ?? 'ドライバー', role: registeredAccountRole(item.id, roleMap.get(item.id), primarySuperAdminUid), profile: { id: item.id, displayName: data.displayName ?? 'ドライバー', bio: '', followingIds: [], followerCount: 0, ...data, mapVisibility } as UserProfile }] : []
   }).sort((a, b) => a.accountId.localeCompare(b.accountId))
 }
 

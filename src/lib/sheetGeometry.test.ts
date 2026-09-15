@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundedDownwardSheetOffset, nextSheetSnap, raisedSheetHeight, type SheetSnap } from './sheetGeometry'
+import { backdropSheetSnap, boundedDownwardSheetOffset, nextSheetSnap, raisedSheetHeight, type SheetSnap } from './sheetGeometry'
 
 describe('bottom-anchored sheet expansion', () => {
   it('grows continuously by the upward drag distance', () => {
@@ -32,6 +32,12 @@ describe('three-step bottom sheet snapping', () => {
     ['middle', 20, 'middle'],
   ])('moves %s with drag %i to %s', (current, drag, next) => {
     expect(nextSheetSnap(current, drag)).toBe(next)
+  })
+
+  it('steps down from full on backdrop tap but leaves middle and minimized unchanged', () => {
+    expect(backdropSheetSnap('full')).toBe('middle')
+    expect(backdropSheetSnap('middle')).toBe('middle')
+    expect(backdropSheetSnap('minimized')).toBe('minimized')
   })
 })
 

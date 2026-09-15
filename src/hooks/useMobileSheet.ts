@@ -1,13 +1,15 @@
-import { useCallback, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
-import { boundedDownwardSheetOffset, nextSheetSnap, raisedSheetHeight, type SheetSnap } from '../lib/sheetGeometry'
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
+import { backdropSheetSnap, boundedDownwardSheetOffset, nextSheetSnap, raisedSheetHeight, type SheetSnap } from '../lib/sheetGeometry'
 
 const handleSelector = '.mobile-sheet-drag-region,.detail-sheet-top,.detail-peek-handle,.explore-panel-top,.course-list-drag-area'
 const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-drag]'
+const sheetActivationEvent = 'touge-mobile-sheet-activate'
 
 /** Shared gesture contract for every mobile bottom sheet (機能A).
  * Attach dragProps to the sheet's entire non-interactive top region and apply
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet() {
+  const sheetId = useId()
   const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; height: number; maximumHeight: number } | null>(null)
   const scrollDrag = useRef<{ y: number; active: boolean; height: number } | null>(null)
   const ignoreTap = useRef(false)
@@ -17,6 +19,27 @@ export function useMobileSheet() {
   const [offset, setOffset] = useState(0)
   const [dragHeight, setDragHeight] = useState<number>()
   const isMobile = () => window.matchMedia('(max-width: 760px)').matches
+
+  // Only one sheet may occupy the middle/full position. Opening any sheet
+  // minimizes every other mounted sheet; once the active sheet is minimized,
+  // the compact trays can be displayed together without overlap.
+  useEffect(() => {
+    const minimizeForActiveSheet = (event: Event) => {
+      const activeId = (event as CustomEvent<string>).detail
+      if (!isMobile() || activeId === sheetId) return
+      setCollapsed(true)
+      setExpanded(false)
+      setOffset(0)
+      setDragHeight(undefined)
+    }
+    window.addEventListener(sheetActivationEvent, minimizeForActiveSheet)
+    return () => window.removeEventListener(sheetActivationEvent, minimizeForActiveSheet)
+  }, [sheetId])
+
+  useEffect(() => {
+    if (!isMobile() || collapsed) return
+    window.dispatchEvent(new CustomEvent(sheetActivationEvent, { detail: sheetId }))
+  }, [collapsed, expanded, sheetId])
 
   function startGesture(target: Element, currentTarget: HTMLElement, y: number, source: 'pointer' | 'touch', id: number) {
     if (!isMobile() || !target.closest(handleSelector) || target.closest(controlSelector)) return
@@ -179,6 +202,17 @@ export function useMobileSheet() {
     setOffset(0)
   }
 
+  function tapBackdrop(event: ReactMouseEvent<HTMLElement>) {
+    if (!isMobile() || event.target !== event.currentTarget) return
+    const current: SheetSnap = collapsed ? 'minimized' : expanded ? 'full' : 'middle'
+    if (backdropSheetSnap(current) !== 'middle') return
+    if (!expanded) return
+    setExpanded(false)
+    setCollapsed(false)
+    setOffset(0)
+    setDragHeight(undefined)
+  }
+
   const reset = useCallback(() => {
     drag.current = null
     scrollDrag.current = null
@@ -209,6 +243,7 @@ export function useMobileSheet() {
     collapse,
     openResting,
     expandOnTap,
+    backdropProps: { onClick: tapBackdrop },
     // Root delegation is supported, but only designated headers start drags.
     dragProps: {
       onPointerDown: start, onPointerMove: move, onPointerUp: end, onPointerCancel: cancel,

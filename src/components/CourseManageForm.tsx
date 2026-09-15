@@ -60,7 +60,7 @@ export function CourseManageForm({ course, profile, onClose, onSave, onDelete, o
     finally { setDeleting(false) }
   }
 
-  return <div className="modal-backdrop course-manager-backdrop" role="presentation"><section className={`modal course-manager ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="course-manager-title" {...sheet.dragProps} data-sheet-scroll {...sheet.scrollProps}>
+  return <div className="modal-backdrop course-manager-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal course-manager ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="course-manager-title" {...sheet.dragProps} data-sheet-scroll {...sheet.scrollProps}>
     <div className="mobile-sheet-drag-region course-manager-header"><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COURSE STUDIO</p><h2 id="course-manager-title">コースを編集</h2><p>情報・ルート・公開範囲をひとつの画面で整えます</p></div><button className="icon-button" type="button" onClick={onClose} aria-label="編集画面を閉じる">×</button></header></div>
     <div className="course-manager-summary"><span className="course-manager-summary-icon" aria-hidden="true">⌁</span><div><small>編集中のコース</small><strong>{course.name}</strong><span>{course.distanceKm} km <i>•</i> {course.durationMin}分</span></div><b>下書き</b></div>
     <section className="course-manager-route-card"><span aria-hidden="true">↝</span><div><p className="eyebrow">ROUTE</p><h3>ルート構成を編集</h3><p>地点の追加・並び替えや、別コースの組み込みができます。</p></div><button type="button" onClick={onEditRoute}>編集する <span aria-hidden="true">→</span></button></section>

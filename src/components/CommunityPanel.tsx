@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Course, CourseComment, FriendPresence, UserProfile } from '../types'
+import type { Course, CourseComment, FriendPresence, ThemePreference, UserProfile } from '../types'
 import { addCourseComment, clearFriendPresence, deleteCourseComment, loadUserProfile, saveFriendPresence, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
@@ -7,9 +7,12 @@ import { FriendsPanel } from './FriendsPanel'
 import { FriendListsPanel } from './FriendListsPanel'
 import { subscribeFriends } from '../lib/friends'
 import { nowPlayingFromMediaMetadata, postEmbedUrl, postUrlsFromText } from '../lib/profile'
-import { mapRouteSourcesFromProfile, type MapRouteSource } from '../lib/mapRoutePreferences'
+import { RouteDisplaySettings } from './RouteDisplaySettings'
+import { PersonalizationSettings } from './PersonalizationSettings'
+import { ThemeSettings } from './ThemeSettings'
+import type { ResolvedTheme } from '../lib/theme'
 
-interface Props { user: User | null; course?: Course | null; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
+interface Props { user: User | null; course?: Course | null; courses?: Course[]; themePreference: ThemePreference; resolvedTheme: ResolvedTheme; onThemeChange: (value: ThemePreference) => void; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
 
 const socialNames = { x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok' } as const
 
@@ -29,7 +32,7 @@ function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: str
   </section>
 }
 
-export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, onProfileSaved }: Props) {
+export function CommunityPanel({ user, course, courses = [], themePreference, resolvedTheme, onThemeChange, onClose, onLogout, onAdminOpen, onProfileSaved }: Props) {
   const sheet = useMobileSheet()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [authorProfile, setAuthorProfile] = useState<UserProfile | null>(null)
@@ -149,13 +152,9 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
   function patchProfile(values: Partial<UserProfile>) { if (!user) return; setProfile((p) => ({ id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...p, ...values })) }
-  function toggleMapRouteSource(source: MapRouteSource, enabled: boolean) {
-    const current = mapRouteSourcesFromProfile(profile)
-    patchProfile({ mapRouteSources: enabled ? [...new Set([...current, source])] : current.filter((item) => item !== source) })
-  }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
   const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
-  return <div className="modal-backdrop" role="presentation"><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
+  return <div className="modal-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">{course ? 'コメント・いいね' : viewTitle}</h2></div><div className="community-header-actions">{!course && settingsView !== 'home' && <button type="button" className="icon-button" onClick={() => navigate('home')} aria-label="アカウントメニューへ戻る">←</button>}<button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></div></header></div>
     <div className="community-scroll" ref={contentRef} data-sheet-scroll {...sheet.scrollProps}><div key={course?.id ?? settingsView} className={`community-view ${transitionDirection}`}>
     {!user ? <div className="empty-state"><p>ログインするとプロフィール編集、フォロー、コメント、いいねが使えます。</p></div> : <>
@@ -166,7 +165,7 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
         {settingsView === 'sharing' && <>
           <section className="presence-settings profile-map-audience" aria-labelledby="profile-map-audience-title">
             <h3 id="profile-map-audience-title">プロフィールを地図に表示</h3>
-            <label className="sharing-scope-select"><span>表示する相手</span><select value={profile?.mapVisibility ?? 'friends'} onChange={(event) => patchProfile({ mapVisibility: event.target.value as UserProfile['mapVisibility'] })}><option value="all">全ユーザー</option><option value="friends">フレンド全員（{friendIds.length}人）</option><option value="lists">フレンドリストから選ぶ</option><option value="none">表示しない</option></select></label>
+            <label className="sharing-scope-select"><span>表示する相手</span><select value={profile?.mapVisibility ?? 'friends'} onChange={(event) => patchProfile({ mapVisibility: event.target.value as UserProfile['mapVisibility'] })}><option value="friends">フレンド全員（{friendIds.length}人）</option><option value="lists">フレンドリストから選ぶ</option><option value="none">表示しない</option></select></label>
             {profile?.mapVisibility === 'lists' && <div className="audience-list-options">{(profile.friendLists ?? []).length ? <>{(profile.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={profile.mapProfileListIds?.includes(list.id)} onChange={(event) => patchProfile({ mapProfileListIds: event.target.checked ? [...new Set([...(profile.mapProfileListIds ?? []), list.id])] : (profile.mapProfileListIds ?? []).filter((id) => id !== list.id) })} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{profile.mapProfileListIds?.length ?? 0}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
           </section>
           <section className="presence-settings">
@@ -191,18 +190,9 @@ export function CommunityPanel({ user, course, onClose, onLogout, onAdminOpen, o
           <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '共有設定を保存'}</button>
         </>}
         {settingsView === 'settings' && <>
-          <section className="route-display-settings">
-            <h3>地図上のルート表示</h3>
-            <p>表示したい種類を複数選択できます。</p>
-            <div className="route-source-options" role="group" aria-label="地図に表示するルートの種類">
-              {([['official', '公式・おすすめ', '初期収録された峠コース'], ['mine', '自分のコース', '自分で作成したコース'], ['friends', 'フレンドのコース', '共有されたフレンドのコース']] as const).map(([id, title, description]) => <label key={id} className={mapRouteSourcesFromProfile(profile).includes(id) ? 'selected' : ''}><input type="checkbox" checked={mapRouteSourcesFromProfile(profile).includes(id)} onChange={(event) => toggleMapRouteSource(id, event.target.checked)} /><span><strong>{title}</strong><small>{description}</small></span><b aria-hidden="true">✓</b></label>)}
-            </div>
-            {mapRouteSourcesFromProfile(profile).includes('friends') && <div className="map-route-friend-scope">
-              <label className="sharing-scope-select"><span>表示するフレンド</span><select value={profile?.mapRouteFriendScope ?? 'all'} onChange={(event) => patchProfile({ mapRouteFriendScope: event.target.value as 'all' | 'lists' })}><option value="all">フレンド全員（{friendIds.length}人）</option><option value="lists">フレンドリストから選ぶ</option></select></label>
-              {profile?.mapRouteFriendScope === 'lists' && <div className="audience-list-options">{(profile.friendLists ?? []).length ? <>{(profile.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={profile.mapRouteFriendListIds?.includes(list.id)} onChange={(event) => patchProfile({ mapRouteFriendListIds: event.target.checked ? [...new Set([...(profile.mapRouteFriendListIds ?? []), list.id])] : (profile.mapRouteFriendListIds ?? []).filter((id) => id !== list.id) })} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{profile.mapRouteFriendListIds?.length ?? 0}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
-            </div>}
-          </section>
-          <section className="personalization-settings"><h3>パーソナライズを設定</h3><p>回答に近い道路を「パーソナライズ順」で上位へ表示します。</p>{([['curves', '直線的', 'くねくね'], ['width', '狭い道', '広い道'], ['elevation', '平坦', '高低差'], ['scenery', '走り重視', '景色重視'], ['surface', '荒れた路面', '滑らか'], ['traffic', '賑やか', '交通量少なめ'], ['access', '秘境寄り', '行きやすい']] as const).map(([key, low, high]) => <label key={key}><span>{low}</span><input aria-label={`${low}から${high}`} type="range" min="1" max="5" step="1" value={profile?.personalization?.[key] ?? 3} onChange={(event) => patchProfile({ personalization: { curves: 3, elevation: 3, width: 3, scenery: 3, surface: 3, traffic: 3, access: 3, ...profile?.personalization, [key]: Number(event.target.value) } })} /><span>{high}</span><output>{profile?.personalization?.[key] ?? 3}</output></label>)}</section>
+          <ThemeSettings value={themePreference} resolvedTheme={resolvedTheme} onChange={(value) => { onThemeChange(value); patchProfile({ themePreference: value }) }} />
+          {profile && <RouteDisplaySettings profile={profile} courses={courses} userId={user.uid} friendIds={friendIds} friendNames={friendNames} onChange={patchProfile} />}
+          {profile && <PersonalizationSettings profile={profile} onChange={patchProfile} />}
           <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '設定を保存'}</button>
         </>}
       </>}
