@@ -3,10 +3,11 @@ import * as maplibregl from 'maplibre-gl'
 import { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
-import { createTougeMapStyle } from '../lib/mapStyle'
+import { applyTougeMapTheme, createTougeMapStyle } from '../lib/mapStyle'
 import { fetchElevationProfile, isSuspiciousElevationProfile, type ElevationResult } from '../lib/elevation'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
 import { fetchTerrainGrid, type TerrainGrid } from '../lib/terrain'
+import type { ResolvedTheme } from '../lib/theme'
 
 type ViewMode = 'overview' | 'preview' | 'model'
 
@@ -104,7 +105,7 @@ function unprojectGroundPoint(screen: Point2, view: ModelView, zoom: number): Po
   const yawRad = (view.yaw * Math.PI) / 180
   return [rotatedX * Math.cos(yawRad) + depth * Math.sin(yawRad), -rotatedX * Math.sin(yawRad) + depth * Math.cos(yawRad), 0]
 }
-export function Course3DView({ course, onClose, onElevationRepaired }: { course: Course; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
+export function Course3DView({ course, theme = 'light', onClose, onElevationRepaired }: { course: Course; theme?: ResolvedTheme; onClose: () => void; onElevationRepaired?: (course: Course, elevation: number[], source: ElevationResult['source']) => Promise<void> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const progressMarkerRef = useRef<Marker | null>(null)
@@ -253,6 +254,12 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     })
     return () => controller.abort()
   }, [compactModel, course.id, course.route])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map?.isStyleLoaded()) return
+    applyTougeMapTheme(map, theme)
+  }, [theme])
 
   useEffect(() => () => { if (modelViewFrameRef.current) window.cancelAnimationFrame(modelViewFrameRef.current) }, [])
   const terrainModel = useMemo(() => {
@@ -421,7 +428,7 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     if (!supportsWebGL()) { setMapError('この端末ではWebGL地形を利用できません。'); return }
     let map: MapLibreMap
     try {
-      map = new maplibregl.Map({ container: containerRef.current, style: createTougeMapStyle(), center: course.route[Math.floor(course.route.length / 2)], zoom: 11, pitch: 70, bearing: -28, maxPitch: 85, attributionControl: false })
+      map = new maplibregl.Map({ container: containerRef.current, style: createTougeMapStyle(theme), center: course.route[Math.floor(course.route.length / 2)], zoom: 11, pitch: 70, bearing: -28, maxPitch: 85, attributionControl: false })
     } catch { setMapError('3D地図を初期化できませんでした。'); return }
     map.on('error', (event) => {
       const message = event.error?.message ?? ''
@@ -460,7 +467,7 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
     })
     mapRef.current = map
     return () => { progressMarkerRef.current?.remove(); progressMarkerRef.current = null; map.remove() }
-  }, [course, displayCourse])
+  }, [course, displayCourse, theme])
 
   useEffect(() => {
     const map = mapRef.current
