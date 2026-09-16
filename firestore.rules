@@ -35,11 +35,23 @@ service cloud.firestore {
       return (exists(/databases/$(database)/documents/friendships/$(first)) && get(/databases/$(database)/documents/friendships/$(first)).data.status == 'accepted')
         || (exists(/databases/$(database)/documents/friendships/$(second)) && get(/databases/$(database)/documents/friendships/$(second)).data.status == 'accepted');
     }
+    function courseBlocksViewer(courseData) {
+      return (('blockedViewerIds' in courseData) && courseData.blockedViewerIds is list && request.auth.uid in courseData.blockedViewerIds)
+        || (('globalBlockedViewerIds' in courseData) && courseData.globalBlockedViewerIds is list && request.auth.uid in courseData.globalBlockedViewerIds);
+    }
     function canViewCourse(courseData) {
       return ('isSeed' in courseData && courseData.isSeed == true)
         || isAdmin()
         || owns(courseData)
-        || (signedIn() && 'allowedViewerIds' in courseData && courseData.allowedViewerIds is list && request.auth.uid in courseData.allowedViewerIds);
+        // allowedViewerIds is a materialized audience snapshot. It must never
+        // outlive the friendship: a former or blocked friend loses access even
+        // before the asynchronous audience reconciliation job finishes.
+        || (signedIn()
+          && 'allowedViewerIds' in courseData
+          && courseData.allowedViewerIds is list
+          && request.auth.uid in courseData.allowedViewerIds
+          && friendWith(courseData.authorId)
+          && !courseBlocksViewer(courseData));
     }
 
     match /friendDirectory/{userId} {
@@ -154,13 +166,18 @@ service cloud.firestore {
         && request.resource.data.publicSharingConfirmed == false
         && (!('isSeed' in request.resource.data) || request.resource.data.isSeed == false)
         && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 120
         && request.resource.data.route is list
-        && request.resource.data.route.size() >= 2;
+        && request.resource.data.route.size() >= 2 && request.resource.data.route.size() <= 3000
+        && request.resource.data.allowedViewerIds is list && request.resource.data.allowedViewerIds.size() <= 500;
       allow update: if hasAccountId() && (owns(resource.data) || isAdmin())
         && request.resource.data.authorId == resource.data.authorId
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isSeed'])
         && request.resource.data.visibility == 'limited'
-        && request.resource.data.publicSharingConfirmed == false;
+        && request.resource.data.publicSharingConfirmed == false
+        && (!('allowedViewerIds' in request.resource.data) || (request.resource.data.allowedViewerIds is list && request.resource.data.allowedViewerIds.size() <= 500))
+        && (!('blockedViewerIds' in request.resource.data) || (request.resource.data.blockedViewerIds is list && request.resource.data.blockedViewerIds.size() <= 500))
+        && (!('globalBlockedViewerIds' in request.resource.data) || (request.resource.data.globalBlockedViewerIds is list && request.resource.data.globalBlockedViewerIds.size() <= 500));
       allow delete: if hasAccountId() && (owns(resource.data) || isAdmin());
 
       match /ratings/{userId} {
@@ -168,10 +185,16 @@ service cloud.firestore {
         allow create, update: if hasAccountId()
           && request.auth.uid == userId
           && request.resource.data.userId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['userId', 'userName', 'curves', 'elevation', 'width', 'scenery', 'surface', 'traffic', 'access', 'comment', 'updatedAt'])
+          && request.resource.data.userName is string && request.resource.data.userName.size() <= 80
           && request.resource.data.curves >= 1 && request.resource.data.curves <= 5
           && request.resource.data.elevation >= 1 && request.resource.data.elevation <= 5
           && request.resource.data.width >= 1 && request.resource.data.width <= 5
-          && request.resource.data.scenery >= 1 && request.resource.data.scenery <= 5;
+          && request.resource.data.scenery >= 1 && request.resource.data.scenery <= 5
+          && request.resource.data.surface >= 1 && request.resource.data.surface <= 5
+          && request.resource.data.traffic >= 1 && request.resource.data.traffic <= 5
+          && request.resource.data.access >= 1 && request.resource.data.access <= 5
+          && (!('comment' in request.resource.data) || (request.resource.data.comment is string && request.resource.data.comment.size() <= 1000));
         allow delete: if hasAccountId() && (request.auth.uid == userId || ownsCourse(courseId));
       }
       match /likes/{userId} {
@@ -184,7 +207,10 @@ service cloud.firestore {
         allow create: if hasAccountId() && request.resource.data.authorId == request.auth.uid
           && request.resource.data.body is string && request.resource.data.body.size() > 0
           && request.resource.data.body.size() <= 1000;
-        allow update: if hasAccountId() && resource.data.authorId == request.auth.uid;
+        // Comments are currently append/delete only. Do not leave a broad
+        // update permission that lets an author rewrite the author identity,
+        // timestamps, or server-owned counters.
+        allow update: if false;
         allow delete: if hasAccountId() && (resource.data.authorId == request.auth.uid || ownsCourse(courseId));
       }
       match /live/{infoId} {

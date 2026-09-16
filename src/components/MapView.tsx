@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
+import { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
+import mapLibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Coordinate, Course, DraftPointRole, RecommendationMapAction, RecommendationMapState } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
-import { assignCourseColors } from '../lib/courseColors'
+import { assignCourseColors, darkCoursePalette } from '../lib/courseColors'
 import { bottomSheetInset } from '../lib/mapCamera'
 import { applyTougeMapTheme, createTougeMapStyle } from '../lib/mapStyle'
 import { mapDraftActions } from '../lib/mapDraftActions'
 import type { ResolvedTheme } from '../lib/theme'
+import { speedCameraFeatureCollection, type SpeedCamera } from '../lib/speedSafety'
+
+// MapLibre 6 no longer exposes its worker at the development-server path that
+// Vite serves by default. Register Vite's emitted CSP-worker URL explicitly;
+// otherwise the worker request returns 404 and the canvas stays blank.
+maplibregl.setWorkerUrl(mapLibreWorkerUrl)
 
 interface MapViewProps {
   theme: ResolvedTheme
@@ -31,6 +39,10 @@ interface MapViewProps {
   currentLocation: Coordinate | null
   searchCenter?: Coordinate | null
   searchRadiusKm?: number
+  speedCameras: SpeedCamera[]
+  showSpeedCameras: boolean
+  drivingSpeedKph: number | null
+  driveModeActive: boolean
   onCurrentLocationChange: (point: Coordinate) => void
   onSelect: (course: Course) => void
   onRecommendationMapAction: (action: Omit<RecommendationMapAction, 'id'>) => void
@@ -135,7 +147,7 @@ function fitRouteToVisibleMap(map: MapLibreMap, container: HTMLElement, route: C
   else map.jumpTo({ center, zoom })
 }
 
-export function MapView({ theme, courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ theme, courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, speedCameras, showSpeedCameras, drivingSpeedKph, driveModeActive, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -154,7 +166,7 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
   const onRecommendationMapActionRef = useRef(onRecommendationMapAction)
   const [mapError, setMapError] = useState('')
   const [mapReady, setMapReady] = useState(false)
-  const courseColors = useMemo(() => assignCourseColors(courses), [courses])
+  const courseColors = useMemo(() => assignCourseColors(courses, theme === 'dark' ? darkCoursePalette : undefined), [courses, theme])
 
   useEffect(() => { coursesRef.current = courses }, [courses])
   useEffect(() => { drawingRef.current = drawing }, [drawing])
@@ -217,11 +229,10 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     const geolocate = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true })
     map.addControl(geolocate, 'top-right')
-    geolocate.on('geolocate', (event) => {
+    geolocate.on('geolocate', (event: maplibregl.GeolocatePositionEvent) => {
       const container = containerRef.current
       if (!container) return
-      const result = event as GeolocationPosition
-      const point: Coordinate = [result.coords.longitude, result.coords.latitude]
+      const point: Coordinate = [event.coords.longitude, event.coords.latitude]
       onCurrentLocationChange(point)
       fitRouteToVisibleMap(map, container, [point], { top: 34, right: 42, bottom: 34, left: 42 }, 500)
     })
@@ -239,14 +250,14 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
         id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem',
         paint: { 'hillshade-exaggeration': .34, 'hillshade-shadow-color': '#42574d', 'hillshade-highlight-color': '#f6f1dd', 'hillshade-accent-color': '#718477' },
       }, 'road-labels')
-      map.addSource('courses', { type: 'geojson', data: toFeatureCollection(coursesRef.current, assignCourseColors(coursesRef.current)) })
+      map.addSource('courses', { type: 'geojson', data: toFeatureCollection(coursesRef.current, assignCourseColors(coursesRef.current, themeRef.current === 'dark' ? darkCoursePalette : undefined)) })
       map.addLayer({
         id: 'courses-shadow', type: 'line', source: 'courses',
-        paint: { 'line-color': '#101915', 'line-width': 7, 'line-opacity': 0.48 },
+        paint: { 'line-color': '#101915', 'line-width': 8, 'line-opacity': 0.74 },
       })
       map.addLayer({
         id: 'courses-line', type: 'line', source: 'courses',
-        paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': .96 },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 4.6, 'line-opacity': .98 },
       })
       // The reactive effect below immediately supplies the current filter.
       // Starting empty keeps map construction independent from parent state.
@@ -279,6 +290,10 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
       map.addSource('current-location', { type: 'geojson', data: toCurrentLocation(null) })
       map.addLayer({ id: 'current-location-halo', type: 'circle', source: 'current-location', paint: { 'circle-radius': 14, 'circle-color': '#287bdc', 'circle-opacity': .18, 'circle-stroke-color': '#287bdc', 'circle-stroke-width': 1, 'circle-stroke-opacity': .38 } })
       map.addLayer({ id: 'current-location-dot', type: 'circle', source: 'current-location', paint: { 'circle-radius': 7, 'circle-color': '#287bdc', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
+      map.addSource('speed-cameras', { type: 'geojson', data: speedCameraFeatureCollection([]) })
+      map.addLayer({ id: 'speed-camera-halo', type: 'circle', source: 'speed-cameras', layout: { visibility: 'none' }, paint: { 'circle-radius': 15, 'circle-color': '#d84c3f', 'circle-opacity': .22 } })
+      map.addLayer({ id: 'speed-camera-marker', type: 'circle', source: 'speed-cameras', layout: { visibility: 'none' }, paint: { 'circle-radius': 9, 'circle-color': '#b9352e', 'circle-stroke-color': '#fff8e7', 'circle-stroke-width': 2 } })
+      map.addLayer({ id: 'speed-camera-label', type: 'symbol', source: 'speed-cameras', layout: { visibility: 'none', 'text-field': '!', 'text-size': 13, 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true, 'text-ignore-placement': true }, paint: { 'text-color': '#ffffff' } })
       map.addLayer({ id: 'selected-contour-labels', type: 'symbol', source: 'selected-contours', layout: { 'symbol-placement': 'line-center', 'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#3d5b4c', 'text-halo-color': '#f6f1dd', 'text-halo-width': 1.5 } })
       map.addSource('course-annotations', { type: 'geojson', data: toCourseAnnotationCollection(null) })
       map.addLayer({ id: 'course-annotation-points', type: 'circle', source: 'course-annotations', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'kind'], 'gradient', '#df624a', 'curves', '#d69f35', 'viewpoint', '#4c9ed9', '#4c9b79'], 'circle-stroke-color': '#f6f1dd', 'circle-stroke-width': 1.5 } })
@@ -438,7 +453,7 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
     const map = mapRef.current
     if (!mapReady || !map) return
     ;(map.getSource('courses') as GeoJSONSource | undefined)?.setData(toFeatureCollection(courses, courseColors))
-  }, [courseColors, courses, mapReady])
+  }, [courseColors, courses, mapReady, theme])
 
   useEffect(() => {
     const map = mapRef.current
@@ -498,6 +513,15 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
     if (!mapReady || !map?.isStyleLoaded()) return
     ;(map.getSource('current-location') as GeoJSONSource | undefined)?.setData(toCurrentLocation(currentLocation))
   }, [currentLocation, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    ;(map.getSource('speed-cameras') as GeoJSONSource | undefined)?.setData(speedCameraFeatureCollection(speedCameras))
+    ;['speed-camera-halo', 'speed-camera-marker', 'speed-camera-label'].forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showSpeedCameras ? 'visible' : 'none')
+    })
+  }, [mapReady, showSpeedCameras, speedCameras])
 
   useEffect(() => {
     const map = mapRef.current
@@ -647,5 +671,9 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
   }, [is3d])
 
   if (mapError) return <div className="map map-fallback" role="status"><div><strong>地図を表示できません</strong><p>{mapError}</p><button onClick={() => location.reload()}>再読み込み</button></div></div>
-  return <div ref={containerRef} className="map" aria-label="峠コース地図" />
+  return <div ref={containerRef} className="map" aria-label="峠コース地図">
+    {driveModeActive && <output className="drive-speed-hud" aria-label={`GPS速度 ${drivingSpeedKph === null ? '取得中' : `${Math.round(drivingSpeedKph)} km/h`}`}>
+      <small>GPS SPEED</small><strong>{drivingSpeedKph === null ? '—' : Math.round(drivingSpeedKph)}</strong><span>km/h</span>
+    </output>}
+  </div>
 }

@@ -1,6 +1,11 @@
 import type { Coordinate, Course } from '../types'
 
 const palette = ['#d69f35', '#2e9bd4', '#b568c5', '#df624a', '#38a978', '#7787de']
+/** Bright, hue-separated colours that retain contrast against the dark terrain
+ * basemap. They are intentionally not just lightened versions of the light
+ * palette: yellow / cyan / magenta remain distinguishable for colour vision
+ * deficiencies and when routes share the same road geometry. */
+export const darkCoursePalette = ['#ffd44d', '#58d8ff', '#ff83dd', '#ff8b62', '#78e7a9', '#aeb7ff']
 const adjacentMetres = 260
 
 type Point = [number, number]
@@ -40,7 +45,7 @@ function segmentsConflict(a0: Point, a1: Point, b0: Point, b1: Point) {
 
 /** Returns a stable graph colouring: only intersecting / near-parallel routes
  * are forced into different palette colours. */
-export function assignCourseColors(courses: Pick<Course, 'id' | 'route'>[]) {
+export function assignCourseColors(courses: Pick<Course, 'id' | 'route'>[], colorsPalette = palette) {
   const conflicts = new Map(courses.map((course) => [course.id, new Set<string>()]))
   for (let left = 0; left < courses.length; left += 1) for (let right = left + 1; right < courses.length; right += 1) {
     const a = courses[left]; const b = courses[right]
@@ -57,7 +62,7 @@ export function assignCourseColors(courses: Pick<Course, 'id' | 'route'>[]) {
   const ordered = [...courses].sort((a, b) => (conflicts.get(b.id)?.size ?? 0) - (conflicts.get(a.id)?.size ?? 0) || a.id.localeCompare(b.id))
   ordered.forEach((course) => {
     const unavailable = new Set([...conflicts.get(course.id) ?? []].map((id) => colors.get(id)))
-    colors.set(course.id, palette.find((color) => !unavailable.has(color)) ?? palette[colors.size % palette.length])
+    colors.set(course.id, colorsPalette.find((color) => !unavailable.has(color)) ?? colorsPalette[colors.size % colorsPalette.length])
   })
   return colors
 }

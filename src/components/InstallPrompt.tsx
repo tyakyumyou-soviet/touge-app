@@ -1,14 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 
 export function InstallPrompt() {
   const [registrationError, setRegistrationError] = useState(false)
+  const updateTimer = useRef<number | null>(null)
   const { needRefresh: [needRefresh, setNeedRefresh], offlineReady: [offlineReady, setOfflineReady], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_url, registration) {
-      if (registration) window.setInterval(() => registration.update(), 60 * 60 * 1000)
+      if (!registration || updateTimer.current !== null) return
+      updateTimer.current = window.setInterval(() => void registration.update(), 60 * 60 * 1000)
     },
     onRegisterError() { setRegistrationError(true) },
   })
+  useEffect(() => () => {
+    if (updateTimer.current !== null) window.clearInterval(updateTimer.current)
+  }, [])
   // navigator.onLine is only a browser hint. In embedded browsers it may be
   // false even when this local app and Firebase are reachable, so never turn
   // the whole UI into a misleading "offline mode" based on that value alone.

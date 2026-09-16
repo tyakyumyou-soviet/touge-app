@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assignCourseColors } from './courseColors'
+import { assignCourseColors, darkCoursePalette } from './courseColors'
 
 describe('course colour assignment', () => {
   it('uses different colours for crossing or very close routes', () => {
@@ -16,5 +16,14 @@ describe('course colour assignment', () => {
       { id: 'b', route: [[138, 34], [138.01, 34.01]] },
     ])
     expect(colors.get('a')).toBe(colors.get('b'))
+  })
+
+  it('uses the accessible dark palette without weakening conflict colouring', () => {
+    const colors = assignCourseColors([
+      { id: 'a', route: [[139, 35], [139.02, 35.02]] },
+      { id: 'b', route: [[139, 35.02], [139.02, 35]] },
+    ], darkCoursePalette)
+    expect(darkCoursePalette).toContain(colors.get('a'))
+    expect(colors.get('a')).not.toBe(colors.get('b'))
   })
 })

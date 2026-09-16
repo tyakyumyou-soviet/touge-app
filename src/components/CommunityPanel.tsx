@@ -98,7 +98,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     if (!user || !profile) return
     const next = { ...profile, mapAllowedViewerIds: mapProfileViewerIds(profile) }
     setProfile(next); setSaving(true); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    void saveUserProfileSettings(user, next).then(() => setNotice(navigator.onLine ? 'プロフィールを保存しました' : 'オフラインで保存しました。接続回復後に同期します')).catch(() => setNotice('端末には保存しました。Firebaseとの同期を再試行します')).finally(() => setSaving(false))
+    void saveUserProfileSettings(user, next).then(() => setNotice('プロフィールを保存しました')).catch(() => setNotice('端末には保存しました。接続後に保存操作をもう一度行ってください。')).finally(() => setSaving(false))
   }
   async function postComment() { if (!user || !course || !body.trim()) return; try { await addCourseComment(course.id, body.trim(), user); setBody('') } catch { setNotice('コメントを保存できませんでした') } }
   async function removeComment(commentId: string) { if (!course) return; try { await deleteCourseComment(course.id, commentId) } catch { setNotice('コメントを削除できませんでした') } }

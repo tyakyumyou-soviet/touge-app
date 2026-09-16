@@ -20,6 +20,20 @@ export function useMobileSheet() {
   const [dragHeight, setDragHeight] = useState<number>()
   const isMobile = () => window.matchMedia('(max-width: 760px)').matches
 
+  function safeViewportClearance() {
+    // CSS env() values are not directly readable in JS. A short-lived probe
+    // gives the drag limiter the same Dynamic Island / home-indicator spacing
+    // as the CSS expanded-sheet rule.
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)'
+    document.body.append(probe)
+    const style = getComputedStyle(probe)
+    const top = Math.max(12, Number.parseFloat(style.paddingTop) || 0)
+    const bottom = Math.max(8, Number.parseFloat(style.paddingBottom) || 0)
+    probe.remove()
+    return top + bottom
+  }
+
   // Only one sheet may occupy the middle/full position. Opening any sheet
   // minimizes every other mounted sheet; once the active sheet is minimized,
   // the compact trays can be displayed together without overlap.
@@ -47,7 +61,10 @@ export function useMobileSheet() {
     if ((scrollSurface?.scrollTop ?? currentTarget.scrollTop) > 1) return
     const sheet = currentTarget.closest<HTMLElement>('.mobile-sheet') ?? currentTarget
     ignoreTap.current = false
-    drag.current = { source, id, y, moved: false, height: collapsed ? 54 : sheet.getBoundingClientRect().height, maximumHeight: window.innerHeight - 76 }
+    // Full sheets may use the entire viewport except for the small safe-area
+    // clearance controlled in CSS. The old 76px cap stopped drag expansion far
+    // below the top edge on phones.
+    drag.current = { source, id, y, moved: false, height: collapsed ? 54 : sheet.getBoundingClientRect().height, maximumHeight: window.innerHeight - safeViewportClearance() }
     setDragging(true)
   }
 
@@ -201,9 +218,22 @@ export function useMobileSheet() {
     setOffset(0)
   }
 
-  /** Expand only from an explicit tap on a component's designated top area. */
+  /** Advance one snap from an explicit tap on a component's top area.
+   * Components that provide their own header handler use this instead of the
+   * root tap delegate, so it must preserve the same minimized → middle → full
+   * contract and consume the synthetic click emitted after a drag. */
   function expandOnTap(event: ReactMouseEvent<HTMLElement>) {
-    if (!isMobile() || ignoreTap.current || (event.target as Element).closest('button,input,select,textarea,a,label,[data-sheet-no-drag]')) return
+    if (!isMobile()) return
+    if (ignoreTap.current) {
+      ignoreTap.current = false
+      return
+    }
+    if ((event.target as Element).closest('button,input,select,textarea,a,label,[data-sheet-no-drag]')) return
+    if (collapsed) {
+      openResting()
+      return
+    }
+    if (expanded) return
     setCollapsed(false)
     setExpanded(true)
     setOffset(0)

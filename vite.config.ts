@@ -70,6 +70,37 @@ function localRoadDiscoveryRelay() {
   }
 }
 
+/** Local equivalent of the deliberately narrow production camera-data relay. */
+function localSpeedCameraRelay() {
+  return {
+    name: 'local-speed-camera-relay',
+    configureServer(server: { middlewares: { use: (path: string, handler: (request: { url?: string }, response: { statusCode: number; setHeader: (name: string, value: string) => void; end: (body: string) => void }) => Promise<void>) => void } }) {
+      server.middlewares.use('/api/speed-cameras', async (request, response) => {
+        const params = new URL(request.url ?? '/', 'http://localhost').searchParams
+        const values = Object.fromEntries(['south', 'west', 'north', 'east'].map((key) => [key, Number(params.get(key))])) as Record<string, number>
+        const { south, west, north, east } = values
+        const valid = Object.values(values).every(Number.isFinite) && south >= -90 && north <= 90 && west >= -180 && east <= 180 && south < north && west < east && north - south <= 1 && east - west <= 1.5
+        response.setHeader('content-type', 'application/json; charset=utf-8')
+        if (!valid) { response.statusCode = 400; response.end(JSON.stringify({ error: '検索範囲が不正です' })); return }
+        const query = `[out:json][timeout:12];(node["highway"="speed_camera"](${south},${west},${north},${east});node["enforcement"="maxspeed"](${south},${west},${north},${east}););out body;`
+        const load = async (endpoint: string) => {
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), 14_000)
+          try {
+            const upstream = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: new URLSearchParams({ data: query }), signal: controller.signal })
+            if (!upstream.ok) throw new Error(`Overpass API ${upstream.status}`)
+            const data = await upstream.json() as { elements?: unknown[] }
+            if (!Array.isArray(data.elements)) throw new Error('Overpass APIの応答形式が不正です')
+            return data
+          } finally { clearTimeout(timer) }
+        }
+        try { response.statusCode = 200; response.setHeader('cache-control', 'public, max-age=300, stale-while-revalidate=86400'); response.end(JSON.stringify(await Promise.any(LOCAL_OVERPASS_ENDPOINTS.map(load)))) }
+        catch (error) { response.statusCode = 503; response.end(JSON.stringify({ error: error instanceof Error ? error.message : '速度注意情報を取得できませんでした' })) }
+      })
+    },
+  }
+}
+
 export default defineConfig({
   base: '/',
   server: {
@@ -97,6 +128,7 @@ export default defineConfig({
   plugins: [
     react(),
     localRoadDiscoveryRelay(),
+    localSpeedCameraRelay(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg', 'icons/maskable.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'],

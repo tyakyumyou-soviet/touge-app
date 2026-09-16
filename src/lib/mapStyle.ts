@@ -1,4 +1,4 @@
-import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl'
+import type { AllPaintProperties, Map as MapLibreMap, StyleSpecification } from 'maplibre-gl'
 import type { ResolvedTheme } from './theme'
 
 const darkPaint: Record<string, Record<string, unknown>> = {
@@ -118,13 +118,13 @@ export function applyTougeMapTheme(map: MapLibreMap, theme: ResolvedTheme) {
   const entries = theme === 'dark' ? { ...darkPaint, ...overlayPaint.dark } : overlayPaint.light
   Object.entries(entries).forEach(([layerId, paint]) => {
     if (!map.getLayer(layerId)) return
-    Object.entries(paint).forEach(([property, value]) => map.setPaintProperty(layerId, property, value as never))
+    Object.entries(paint).forEach(([property, value]) => map.setPaintProperty(layerId, property as keyof AllPaintProperties, value as never))
   })
   if (theme === 'light') {
     const lightStyle = createTougeMapStyle('light')
     lightStyle.layers.forEach((layer) => {
       if (!map.getLayer(layer.id) || !layer.paint) return
-      Object.entries(layer.paint).forEach(([property, value]) => map.setPaintProperty(layer.id, property, value as never))
+      Object.entries(layer.paint).forEach(([property, value]) => map.setPaintProperty(layer.id, property as keyof AllPaintProperties, value as never))
     })
   }
 }

@@ -102,6 +102,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .map-tools button { height: 39px; padding: 0 13px; background: #fff; border: 1px solid #ccd0cb; border-radius: 9px; box-shadow: 0 4px 15px #1a282130; font-size: 12px; font-weight: 700; }
 .map-tools button.active { color: #fff; background: var(--green); border-color: var(--green); }
 .map-tools span { margin-right: 6px; }
+.drive-speed-hud { position: absolute; z-index: 13; top: 74px; right: 56px; display: grid; grid-template-columns: auto auto; align-items: end; gap: 0 5px; min-width: 104px; padding: 8px 10px; color: #fff; background: #0d1713e8; border: 1px solid #5b7065; border-radius: 12px; box-shadow: 0 7px 20px #07100b55; font-variant-numeric: tabular-nums; }
+.drive-speed-hud small { grid-column: 1 / -1; color: #aad2bf; font-size: 9px; font-weight: 800; letter-spacing: .11em; }
+.drive-speed-hud strong { font-size: 28px; line-height: 1; }
+.drive-speed-hud span { padding-bottom: 2px; color: #c8d8cf; font-size: 10px; font-weight: 700; }
 .mobile-list, .mobile-close, .explore-drag-handle { display: none; }
 
 .detail-panel { position: absolute; z-index: 12; top: 18px; right: 18px; bottom: 18px; width: min(405px, calc(100% - 420px)); display: flex; flex-direction: column; overflow: hidden; background: var(--paper); border: 1px solid #d6d5ca; border-radius: 17px; box-shadow: 0 20px 70px #13211938; animation: detailIn .25s ease-out; }
@@ -835,6 +839,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .preset-chips button { border: 0; padding: 6px 9px; background: transparent; color: inherit; }
 .preset-chips button:last-child { border-left: 1px solid var(--line); color: #a33; }
 .drive-timer { width: min(440px, calc(100vw - 32px)); }
+.speed-alert-output { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 8px; padding: 11px 12px; color: var(--ink); background: var(--panel-soft); border: 1px solid var(--line); border-radius: 10px; font-weight: 700; }
+.speed-alert-output select { min-height: 34px; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; font: inherit; }
+.speed-safety-message { margin: 8px 0; padding: 10px 12px; color: #7b251e; background: #fff1ed; border: 1px solid #e7aaa2; border-radius: 10px; font-weight: 800; }
+.drive-safety-note { margin: 8px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .timer-value { margin: 26px 0 18px; font-variant-numeric: tabular-nums; font-size: clamp(42px, 10vw, 64px); font-weight: 850; letter-spacing: .04em; text-align: center; }
 .timer-mode, .timer-actions { display: flex; gap: 8px; }
 .timer-mode button { flex: 1; border: 1px solid var(--line); padding: 10px; border-radius: 10px; background: var(--panel); color: inherit; }
@@ -1165,6 +1173,8 @@ html[data-theme="dark"] .three-d-controls button { color: #111713; }
 html[data-theme="dark"] .map { background: #101713; }
 html[data-theme="dark"] .explore-panel { background: rgba(17, 24, 20, .97); box-shadow: 10px 0 40px #0007; }
 html[data-theme="dark"] :is(.course-card, .map-tools button, .nav-actions, .creation-choice-card, .join-course-picker button, .existing-route-results button, .route-order-editor li, .showcase-post, .friend-list-card, .friend-list-member-picker > label, .audience-option) { color: var(--ink); border-color: var(--line); background: var(--panel); }
+html[data-theme="dark"] .speed-alert-output { background: #19251f; }
+html[data-theme="dark"] .speed-safety-message { color: #ffc2b8; background: #35201d; border-color: #75473f; }
 html[data-theme="dark"] :is(.filter-row select, .list-toolbar select, .advanced-filter-toggle, .modal input:not([type="range"]), .modal select, .modal textarea, .course-manager-section input, .course-manager-section select, .course-manager-section textarea) { color: var(--ink); border-color: #435249; background: #1b2520; }
 html[data-theme="dark"] input::placeholder,
 html[data-theme="dark"] textarea::placeholder { color: #829088; }
@@ -1329,6 +1339,10 @@ html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
   .theme-option-check { top: 5px; right: 5px; }
 }
 
+@media (max-width: 760px) {
+  .drive-speed-hud { top: 62px; right: 54px; }
+}
+
 /* A backdrop tap moves a full mobile sheet to this clearly distinct middle
    rest. Content remains scrollable and a second backdrop tap is intentionally
    inert; only a drag can minimize it further. */
@@ -1355,4 +1369,15 @@ html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
   #root:has(.explore-panel.collapsed) .community-panel.mobile-sheet.collapsed,
   #root:has(.course-form.collapsed) .community-panel.mobile-sheet.collapsed { bottom: 56px; }
   #root:has(.explore-panel.collapsed):has(.course-form.collapsed) .community-panel.mobile-sheet.collapsed { bottom: 104px; }
+}
+
+/* A full sheet should feel full-screen, while never colliding with an iPhone
+   notch/Dynamic Island or the home indicator. This comes after each panel's
+   individual sizing rules so every bottom-sheet family shares the same cap. */
+@media (max-width: 760px) {
+  .modal-backdrop { padding: max(12px, env(safe-area-inset-top)) 7px max(8px, env(safe-area-inset-bottom)); }
+  .modal.mobile-sheet.expanded, .modal.community-panel.mobile-sheet.expanded, .modal.admin-panel.mobile-sheet.expanded {
+    height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+  }
 }

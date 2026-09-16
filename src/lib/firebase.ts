@@ -29,6 +29,7 @@ import {
   writeBatch,
   query,
   where,
+  orderBy,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseAudience, type CourseComment, type CourseEditorStop, type DraftPointRole, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
@@ -276,14 +277,21 @@ export async function deleteCourse(courseId: string): Promise<void> {
     getDocs(collection(courseRef, 'comments')),
     getDoc(doc(courseRef, 'live', 'current')),
   ])
-  const batch = writeBatch(db)
-  ratings.docs.forEach((item) => batch.delete(item.ref))
-  likes.docs.forEach((item) => batch.delete(item.ref))
-  comments.docs.forEach((item) => batch.delete(item.ref))
-  if (live.exists()) batch.delete(live.ref)
-  batch.delete(doc(db, 'courseAudiences', courseId))
-  batch.delete(courseRef)
-  await batch.commit()
+  // Firestore batches allow at most 500 writes. A course can accumulate far
+  // more ratings, likes and comments than that, so remove child documents in
+  // conservative chunks before deleting the parent and audience metadata.
+  const childReferences = [...ratings.docs, ...likes.docs, ...comments.docs].map((item) => item.ref)
+  const CHUNK_SIZE = 420
+  for (let start = 0; start < childReferences.length; start += CHUNK_SIZE) {
+    const batch = writeBatch(db)
+    childReferences.slice(start, start + CHUNK_SIZE).forEach((reference) => batch.delete(reference))
+    await batch.commit()
+  }
+  const finalBatch = writeBatch(db)
+  if (live.exists()) finalBatch.delete(live.ref)
+  finalBatch.delete(doc(db, 'courseAudiences', courseId))
+  finalBatch.delete(courseRef)
+  await finalBatch.commit()
 }
 
 export async function saveRating(rating: RatingSubmission, user: User): Promise<void> {
@@ -386,7 +394,7 @@ export async function toggleCourseLike(courseId: string, user: User): Promise<bo
 }
 
 export async function loadCourseComments(courseId: string): Promise<CourseComment[]> {
-  const snapshot = await getDocs(collection(db, 'courses', courseId, 'comments'))
+  const snapshot = await getDocs(query(collection(db, 'courses', courseId, 'comments'), orderBy('createdAt', 'desc')))
   return snapshot.docs.map((item) => ({ id: item.id, courseId, likeCount: 0, ...item.data() } as CourseComment))
 }
 
@@ -400,7 +408,7 @@ export async function deleteCourseComment(courseId: string, commentId: string): 
 }
 
 export function subscribeCourseComments(courseId: string, onChange: (comments: CourseComment[]) => void, onError?: (error: Error) => void): () => void {
-  return onSnapshot(collection(db, 'courses', courseId, 'comments'), (snapshot) => {
+  return onSnapshot(query(collection(db, 'courses', courseId, 'comments'), orderBy('createdAt', 'desc')), (snapshot) => {
     onChange(snapshot.docs.map((item) => ({ id: item.id, courseId, likeCount: 0, ...item.data() } as CourseComment)))
   }, (error) => onError?.(error))
 }

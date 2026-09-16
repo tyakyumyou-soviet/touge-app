@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
+import { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
 import type { Coordinate, Course } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 import { createTougeMapStyle } from '../lib/mapStyle'
@@ -660,7 +661,7 @@ export function Course3DView({ course, onClose, onElevationRepaired }: { course:
               if (layer.kind === 'route') return <polyline className="model-grade-segment" key={layer.key} points={layer.points} stroke={layer.color} />
               if (layer.kind === 'distance') return <g className="distance-marker" key={layer.key}><circle cx={layer.x} cy={layer.y} r="4" /><text x={layer.x + 8} y={layer.y - 8}>{layer.distance}km</text></g>
               if (layer.kind === 'highlight') return <g className="route-highlight" key={layer.key}><circle cx={layer.x} cy={layer.y} r="9" stroke={layer.color} /><text x={layer.x + 12} y={layer.y + 5}>{layer.label}</text></g>
-              if (layer.kind === 'landmark') return <g className={`model-landmark ${layer.type ?? 'place'}`} key={layer.key} role="button" tabIndex={0} aria-label={`${layer.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(layer) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(layer) }}><circle cx={layer.x} cy={layer.y} r="7" /><line x1={layer.x} y1={layer.y} x2={layer.labelX} y2={layer.labelY + 3} /><text x={layer.labelX} y={layer.labelY} textAnchor={layer.labelOnLeft ? 'end' : 'start'}>{layer.name}</text></g>
+              if (layer.kind === 'landmark') return <g className={`model-landmark ${layer.type ?? 'place'}`} key={layer.key} role="button" tabIndex={0} aria-label={`${layer.name}の地点情報を開く`} onPointerDown={(event) => { event.stopPropagation(); setActiveLandmark(layer) }} onClick={(event) => { event.stopPropagation(); setActiveLandmark(layer) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setActiveLandmark(layer) } }}><circle cx={layer.x} cy={layer.y} r="7" /><line x1={layer.x} y1={layer.y} x2={layer.labelX} y2={layer.labelY + 3} /><text x={layer.labelX} y={layer.labelY} textAnchor={layer.labelOnLeft ? 'end' : 'start'}>{layer.name}</text></g>
               return layer.terminal === 'start'
                 ? <g className="model-terminal start" key={layer.key}><circle cx={layer.x} cy={layer.y} r="10" /><text x={layer.x - 32} y={layer.y + 38}>START</text><text x={layer.x - 42} y={layer.y + 59}>{layer.elevation}m</text></g>
                 : <g className="model-terminal goal" key={layer.key}><circle cx={layer.x} cy={layer.y} r="10" /><text x={layer.x - 26} y={layer.y - 27}>GOAL</text><text x={layer.x - 31} y={layer.y - 7}>{layer.elevation}m</text></g>

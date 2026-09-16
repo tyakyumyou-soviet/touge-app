@@ -37,6 +37,7 @@ import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import { nowPlayingFromMediaMetadata } from './lib/profile'
 import { isCourseVisibleByMapPreferences } from './lib/mapRoutePreferences'
 import { normalizeThemePreference, resolveThemePreference, type ResolvedTheme } from './lib/theme'
+import { distanceMeters, loadSpeedCameras, type SpeedCamera } from './lib/speedSafety'
 import './styles.css'
 
 type PrefectureFilter = 'すべて' | string
@@ -82,6 +83,13 @@ export default function App() {
   const [nearbyQuery, setNearbyQuery] = useState('')
   const [nearbyRadiusKm, setNearbyRadiusKm] = useState(25)
   const [currentLocation, setCurrentLocation] = useState<Coordinate | null>(null)
+  const [speedCameras, setSpeedCameras] = useState<SpeedCamera[]>([])
+  const [speedAlertOutput, setSpeedAlertOutput] = useState<'off' | 'visual' | 'voice' | 'both'>(() => {
+    const saved = typeof window === 'undefined' ? null : localStorage.getItem('touge-speed-alert-output')
+    return saved === 'visual' || saved === 'voice' || saved === 'both' ? saved : 'off'
+  })
+  const [drivingSpeedKph, setDrivingSpeedKph] = useState<number | null>(null)
+  const [driveModeActive, setDriveModeActive] = useState(false)
   const [nearbyBusy, setNearbyBusy] = useState(false)
   const [nearbyError, setNearbyError] = useState('')
   const [presetName, setPresetName] = useState('')
@@ -162,6 +170,22 @@ export default function App() {
     return () => media.removeEventListener('change', applyTheme)
   }, [themePreference])
 
+  useEffect(() => { localStorage.setItem('touge-speed-alert-output', speedAlertOutput) }, [speedAlertOutput])
+  const lastSpeedCameraFetch = useRef<{ point: Coordinate; at: number } | null>(null)
+  useEffect(() => {
+    if (!driveModeActive || speedAlertOutput === 'off' || !currentLocation) return
+    const previous = lastSpeedCameraFetch.current
+    if (previous && Date.now() - previous.at < 10 * 60_000 && distanceMeters(previous.point, currentLocation) < 15_000) return
+    const controller = new AbortController()
+    lastSpeedCameraFetch.current = { point: currentLocation, at: Date.now() }
+    loadSpeedCameras(currentLocation, 35, controller.signal).then((items) => setSpeedCameras(items)).catch((error: unknown) => {
+      if (controller.signal.aborted) return
+      console.warn('速度注意情報を取得できませんでした', error)
+      setNotice('速度注意情報を取得できませんでした。通信状態を確認してください。')
+    })
+    return () => controller.abort()
+  }, [currentLocation, driveModeActive, speedAlertOutput])
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => { setUser(nextUser); setAuthReady(true) })
     completeRedirectLogin().catch((error: unknown) => {
@@ -217,7 +241,7 @@ export default function App() {
     if (!user) return
     profileDirty.current = true
     setViewerProfile((current) => current ? { ...current, themePreference: next } : current)
-    void saveUserProfileSettings(user, { themePreference: next }).catch(() => setNotice('外観はこの端末に保存しました。アカウントとの同期は接続回復後に再試行してください。'))
+    void saveUserProfileSettings(user, { themePreference: next }).catch(() => setNotice('外観はこの端末に保存しました。接続後にもう一度外観を選択してください。'))
   }, [user])
   const automaticMusicSharingEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   useEffect(() => {
@@ -225,7 +249,17 @@ export default function App() {
     let lastTrack = ''
     const syncDetectedTrack = () => {
       const playing = nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata)
-      if (!playing) return
+      if (!playing) {
+        // Do not leave the last song visible after playback ends or a player
+        // clears its Media Session metadata. The presence effect below also
+        // clears the public presence record when location sharing is off.
+        if (!lastTrack) return
+        lastTrack = ''
+        profileDirty.current = true
+        setViewerProfile((current) => current ? { ...current, nowPlaying: null } : current)
+        void saveUserProfileSettings(user, { nowPlaying: null }).catch(() => setNotice('曲名の共有を停止できませんでした。通信回復後に設定を確認してください。'))
+        return
+      }
       const track = `${playing.title}\n${playing.artist ?? ''}`
       if (track === lastTrack) return
       lastTrack = track
@@ -255,8 +289,25 @@ export default function App() {
       else void clearFriendPresence(user.uid)
       return
     }
-    if (!navigator.geolocation) return
-    const watchId = navigator.geolocation.watchPosition((position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }), () => undefined, { enableHighAccuracy: true, maximumAge: 30000 })
+    if (!navigator.geolocation) {
+      // A missing/revoked location capability must never preserve the last
+      // precise point. Music, when enabled, remains shareable by itself.
+      if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
+      else void clearFriendPresence(user.uid).catch(() => undefined)
+      return
+    }
+    // Clear any old position until this session obtains a fresh fix. This is
+    // privacy-first: an unavailable GPS must not keep a stale precise point
+    // visible to friends.
+    void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }).catch(() => undefined),
+      () => {
+        if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
+        else void clearFriendPresence(user.uid).catch(() => undefined)
+      },
+      { enableHighAccuracy: true, maximumAge: 30000 },
+    )
     return () => navigator.geolocation.clearWatch(watchId)
   }, [user, viewerProfile, acceptedFriendIds])
   useEffect(() => {
@@ -738,7 +789,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
+        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
           const id = ++recommendationActionSequence.current
           const point = { coordinate: action.point, label: '地図指定' }
           // Reflect the selected search centre immediately.  CourseForm then
@@ -802,7 +853,7 @@ export default function App() {
         {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} incorporatedProposalKeys={incorporatedProposalKeys} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onCancel={openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
-        {timerOpen && selected && <DriveTimer course={selected} onClose={() => setTimerOpen(false)} />}
+        {timerOpen && selected && <DriveTimer course={selected} speedCameras={speedCameras} alertOutput={speedAlertOutput} onAlertOutputChange={setSpeedAlertOutput} onSpeedChange={setDrivingSpeedKph} onDriveModeChange={setDriveModeActive} onClose={() => { setTimerOpen(false); setDriveModeActive(false); setDrivingSpeedKph(null) }} />}
         {tollReportOpen && selected && <TollReportForm courseName={selected.name} onCancel={() => setTollReportOpen(false)} onSave={handleTollReport} />}
         {roadReportOpen && selected && <RoadConditionReportForm courseName={selected.name} onCancel={() => setRoadReportOpen(false)} onSave={handleRoadConditionReport} />}
       </main>

@@ -16,7 +16,7 @@
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
     "firebase": "^12.2.1",
-    "maplibre-gl": "^5.7.1",
+    "maplibre-gl": "^6.10.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
