@@ -212,11 +212,11 @@ export function useMobileSheet() {
     openResting()
   }
 
-  function openResting() {
+  const openResting = useCallback(() => {
     setCollapsed(false)
     setExpanded(false)
     setOffset(0)
-  }
+  }, [])
 
   /** Advance one snap from an explicit tap on a component's top area.
    * Components that provide their own header handler use this instead of the

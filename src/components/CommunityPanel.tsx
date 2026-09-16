@@ -34,6 +34,11 @@ function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: str
 
 export function CommunityPanel({ user, course, courses = [], themePreference, resolvedTheme, onThemeChange, onClose, onLogout, onAdminOpen, onProfileSaved }: Props) {
   const sheet = useMobileSheet()
+  const { openResting } = sheet
+  // Opening the account sheet can race with the activation event that
+  // minimizes the discovery sheet. Always settle this newly mounted sheet at
+  // its middle snap instead of inheriting the sibling's minimized state.
+  useEffect(() => { openResting() }, [openResting])
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [authorProfile, setAuthorProfile] = useState<UserProfile | null>(null)
   const [comments, setComments] = useState<CourseComment[]>([])
