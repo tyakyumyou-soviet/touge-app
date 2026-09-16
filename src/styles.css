@@ -534,7 +534,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .result-count { margin-top: 12px; }
   .course-card { padding: 13px; }
   .course-card h3 { margin-bottom: 7px; }
-  .map-tools { left: 10px; top: 10px; }
+  /* Discovery/detail sheets own the foreground. The 3D toggle stays above
+     the map controls but goes behind any open sheet instead of floating over
+     its header and first row. */
+  .map-tools { left: 10px; top: 10px; z-index: 9; }
   .map-tools button { height: 38px; }
   .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 62dvh; border-radius: 18px; animation: detailUp .24s ease-out; transition: max-height .22s ease, transform .22s ease; }
   .detail-panel.expanded { max-height: calc(100dvh - 76px); }
