@@ -156,7 +156,19 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     else void clearFriendPresence(user.uid)
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
-  function patchProfile(values: Partial<UserProfile>) { if (!user) return; setProfile((p) => ({ id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0, ...p, ...values })) }
+  function patchProfile(values: Partial<UserProfile>, persistImmediately = false) {
+    if (!user) return
+    const next = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0, ...profile, ...values }
+    setProfile(next)
+    // Route visibility is a cross-device preference, not a draft form value.
+    // Publish it immediately so the map and another signed-in device observe
+    // the same setting without requiring a second Save button.
+    if (persistImmediately) {
+      localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next))
+      onProfileSaved?.(next)
+      void saveUserProfileSettings(user, values).catch(() => setNotice('地図表示設定を保存できませんでした。通信状態を確認してください'))
+    }
+  }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
   const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
   return <div className="modal-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
@@ -196,7 +208,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
         </>}
         {settingsView === 'settings' && <>
           <ThemeSettings value={themePreference} resolvedTheme={resolvedTheme} onChange={(value) => { onThemeChange(value); patchProfile({ themePreference: value }) }} />
-          {profile && <RouteDisplaySettings profile={profile} courses={courses} userId={user.uid} friendIds={friendIds} friendNames={friendNames} onChange={patchProfile} />}
+          {profile && <RouteDisplaySettings profile={profile} courses={courses} userId={user.uid} friendIds={friendIds} friendNames={friendNames} onChange={(values) => patchProfile(values, true)} />}
           {profile && <PersonalizationSettings profile={profile} onChange={patchProfile} />}
           <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '設定を保存'}</button>
         </>}
