@@ -803,7 +803,7 @@ export default function App() {
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); listSheet.openResting() } }} />
           </div>
           <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} scrollProps={listSheet.scrollProps} header={<div className="course-list-drag-area">
-            <div className="panel-heading"><div><p className="eyebrow">DISCOVER KANTO</p><h1>走りたい道を探す</h1></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">DISCOVER</p><h1>走りたい道を探す</h1></div></div>
             <div className="list-toolbar">
               <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="personalized">パーソナライズ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>
               <button type="button" className={`advanced-filter-toggle ${advancedFiltersOpen ? 'active' : ''}`} onClick={() => setAdvancedFiltersOpen((value) => !value)} aria-expanded={advancedFiltersOpen} aria-controls="advanced-course-filters">詳細検索 <span aria-hidden="true">{advancedFiltersOpen ? '−' : '+'}</span></button>

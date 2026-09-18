@@ -800,20 +800,22 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .friend-members, .presence-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .friend-members label, .toggle-row { display: flex; align-items: center; gap: 7px; }
 .presence-list span { padding: 6px 8px; background: color-mix(in srgb, var(--panel) 85%, var(--accent)); border-radius: 8px; font-size: 12px; }
-.presence-sharing-options { display: grid; gap: 10px; margin: 12px 0 16px; }
-.presence-sharing-option { padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 94%, var(--accent)); }
+.presence-settings { display: grid; gap: 14px; }
+.presence-settings > h3 { margin-bottom: 0; }
+.presence-sharing-options { display: grid; gap: 10px; margin: 0; }
+.presence-sharing-option { padding: 0 14px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--panel) 94%, var(--accent)); }
 .presence-sharing-option + .presence-sharing-option { margin-top: 0; }
 .presence-sharing-option .inline-form { margin: 0 0 12px; }
 .automatic-sharing-status { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
-.presence-audience { margin: 18px 0 12px; }
-.presence-audience h4 { margin: 0 0 2px; }
+.presence-audience { display: grid; gap: 10px; margin: 2px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
+.presence-audience h4 { margin: 0; }
 .profile-map-audience { display: grid; gap: 10px; }
 .sharing-scope-select { display: grid; gap: 7px; }
 .sharing-scope-select > span { color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .sharing-scope-select select { width: 100%; min-height: 50px; padding: 0 44px 0 15px; border: 1px solid #cbd8d0; border-radius: 14px; color: var(--ink); background: linear-gradient(135deg, #fff 0%, #f1f7f3 100%); box-shadow: 0 7px 18px rgba(25, 65, 47, .07); font: inherit; font-weight: 800; cursor: pointer; }
 .sharing-scope-select select:hover { border-color: #7db696; }
 .sharing-scope-select select:focus-visible { border-color: #237756; box-shadow: 0 0 0 3px rgba(35, 119, 86, .14); outline: 0; }
-.sharing-scope-select + .audience-list-options, .presence-audience .audience-list-options { margin: 2px 0 0; padding: 10px; border: 1px solid #dce7df; border-radius: 14px; background: #f7faf8; }
+.sharing-scope-select + .audience-list-options, .presence-audience .audience-list-options { margin: 0; padding: 10px; border: 1px solid #dce7df; border-radius: 14px; background: #f7faf8; }
 .personalization-settings label { display: grid; grid-template-columns: 72px minmax(100px, 1fr) 86px 24px; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
 .personalization-settings label > span:last-of-type { text-align: right; }
 .personalization-settings input[type="range"] { width: 100%; }
@@ -964,8 +966,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-manager-heading > div > strong { font-size: 15px; }
 .route-manager-heading button, .route-bulk-actions button, .personalization-summary button { min-height: 36px; padding: 7px 10px; border: 0; border-radius: 10px; background: #edf2ee; color: #3d4b44; font-size: 11px; font-weight: 800; }
 .route-search { display: flex; align-items: center; gap: 8px; margin-top: 13px; padding: 0 12px; border: 1px solid #dbe3dd; border-radius: 14px; background: #f7f9f7; }
-.route-search > span { color: #75827b; font-size: 19px; }
-.community-panel .community-view .route-search input { width: 100%; padding: 12px 0; border: 0; outline: 0; background: transparent; }
+.route-search > span { flex: 0 0 20px; display: grid; place-items: center; color: #75827b; font-size: 19px; line-height: 1; }
+.community-panel .community-view .route-search input { flex: 1 1 auto; width: auto; min-width: 0; box-sizing: border-box; padding: 12px 0; border: 0; outline: 0; background: transparent; box-shadow: none; }
 .route-source-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 10px 0; padding: 4px; border-radius: 13px; background: #edf2ee; }
 .route-source-tabs button { min-height: 38px; border: 0; border-radius: 10px; background: transparent; color: #5d6a63; font-size: 11px; font-weight: 800; }
 .route-source-tabs button[aria-selected="true"] { background: white; color: #176847; box-shadow: 0 2px 8px rgba(24, 72, 52, .1); }
@@ -1202,6 +1204,10 @@ html[data-theme="dark"] .community-panel .community-view textarea { color: var(-
 html[data-theme="dark"] :is(.route-source-switches > label, .route-course-list > label, .preference-traits button, .theme-options button) { color: var(--ink); border-color: #38483f; background: #1c2721; }
 html[data-theme="dark"] :is(.route-source-switches > label.active, .route-course-list > label.shown, .preference-traits button.active, .theme-options button.selected) { border-color: #579b77; background: #20352a; box-shadow: 0 7px 20px #0003; }
 html[data-theme="dark"] :is(.route-friend-scope, .route-source-tabs, .route-search, .preference-tuning, .community-segments) { color: var(--ink); border-color: #38483f; background: #151e19; }
+html[data-theme="dark"] .community-panel .community-view .route-search input { color: var(--ink); border: 0; background: transparent; box-shadow: none; }
+html[data-theme="dark"] :is(.sharing-scope-select + .audience-list-options, .presence-audience .audience-list-options) { border-color: #3a4a41; background: #17231d; }
+html[data-theme="dark"] .audience-list-options > p { margin: 0; padding: 12px; color: #b7c5bc; border-radius: 10px; background: #1e2b24; }
+html[data-theme="dark"] .presence-sharing-option { border-color: #3a4a41; background: linear-gradient(135deg, #1d3026, #17231d); }
 html[data-theme="dark"] :is(.friend-list-chips label, .preference-presets button, .preference-single, .friend-person) { color: var(--ink); border-color: #38483f; background: #202a24; }
 html[data-theme="dark"] :is(.route-source-tabs button[aria-selected="true"], .preference-tuning fieldset button.selected, .community-segments button[aria-selected="true"]) { color: #8cddb4; background: #27342d; box-shadow: 0 2px 8px #0005; }
 html[data-theme="dark"] .personalization-summary { border-color: #3f6a53; background: linear-gradient(135deg, #1c3327, #1a251f); }

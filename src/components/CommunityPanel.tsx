@@ -209,8 +209,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
         {settingsView === 'settings' && <>
           <ThemeSettings value={themePreference} resolvedTheme={resolvedTheme} onChange={(value) => { onThemeChange(value); patchProfile({ themePreference: value }) }} />
           {profile && <RouteDisplaySettings profile={profile} courses={courses} userId={user.uid} friendIds={friendIds} friendNames={friendNames} onChange={(values) => patchProfile(values, true)} />}
-          {profile && <PersonalizationSettings profile={profile} onChange={patchProfile} />}
-          <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '設定を保存'}</button>
+          {profile && <PersonalizationSettings profile={profile} onChange={(values) => patchProfile(values, true)} />}
         </>}
       </>}
       {course && <section className="social-thread">{authorProfile && <ProfileShowcase profile={authorProfile} title={`${course.authorName ?? authorProfile.displayName}のプロフィール`} />}<div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>{profile?.followingIds?.includes(course.authorId) ? 'フォロー解除' : '＋ 作成者をフォロー'}</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button danger-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
