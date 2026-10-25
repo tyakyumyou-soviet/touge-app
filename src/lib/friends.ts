@@ -9,8 +9,10 @@ export const normalizeFriendName = (name: string) => name.normalize('NFKC').trim
 export const normalizeFriendAccountId = (value: string) => normalizeAccountId(value).replace(/^@/, '')
 export function canAcceptFriend(entry: FriendEntry, uid: string) { return entry.status === 'pending' && entry.recipient === uid }
 
-export function subscribeFriends(uid: string, next: (items: FriendEntry[]) => void, error: () => void) {
-  return onSnapshot(query(collection(db, 'friendships'), where('members', 'array-contains', uid)), (snapshot) => next(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as FriendEntry))), error)
+export function subscribeFriends(uid: string, next: (items: FriendEntry[], fromCache: boolean) => void, error: () => void) {
+  return onSnapshot(query(collection(db, 'friendships'), where('members', 'array-contains', uid)), { includeMetadataChanges: true }, (snapshot) => {
+    next(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as FriendEntry)), snapshot.metadata.fromCache)
+  }, error)
 }
 export async function searchFriends(value: string): Promise<SearchPerson[]> {
   const accountId = normalizeFriendAccountId(value)

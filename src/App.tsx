@@ -139,8 +139,9 @@ export default function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
   const [acceptedFriendIds, setAcceptedFriendIds] = useState<string[]>([])
+  const [acceptedFriendsReady, setAcceptedFriendsReady] = useState(false)
   const [friendPresence, setFriendPresence] = useState<FriendPresence[]>([])
-  const presenceProfileReady = Boolean(viewerProfile)
+  const presenceProfileReady = Boolean(viewerProfile) && acceptedFriendsReady
   const locationAudience = viewerProfile?.locationSharing?.audience ?? 'friends'
   const locationSharingEnabled = Boolean(viewerProfile?.locationSharing?.enabled)
   const locationListIdsKey = [...(viewerProfile?.locationSharing?.listIds ?? [])].sort().join('|')
@@ -156,9 +157,17 @@ export default function App() {
   const musicAllowedViewerIds = useMemo(() => [...new Set(musicAudience === 'lists' ? selectedMusicLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id)), [musicAudience, selectedMusicLists, acceptedFriendIds])
   useEffect(() => {
     setAcceptedFriendIds([])
+    setAcceptedFriendsReady(false)
     setFriendPresence([])
     if (!user) return
-    return subscribeFriends(user.uid, (entries) => setAcceptedFriendIds(entries.filter((entry) => entry.status === 'accepted').map((entry) => entry.sender === user.uid ? entry.recipient : entry.sender)), () => setAcceptedFriendIds([]))
+    return subscribeFriends(user.uid, (entries, fromCache) => {
+      setAcceptedFriendIds(entries.filter((entry) => entry.status === 'accepted').map((entry) => entry.sender === user.uid ? entry.recipient : entry.sender))
+      setAcceptedFriendsReady(!fromCache)
+    }, () => {
+      // Do not publish an empty audience on a transient read failure. Keeping
+      // the previous server-side audience avoids locking active viewers out.
+      setAcceptedFriendsReady(false)
+    })
   }, [user])
   useEffect(() => {
     if (!user || !acceptedFriendIds.length) { setFriendPresence([]); return }
