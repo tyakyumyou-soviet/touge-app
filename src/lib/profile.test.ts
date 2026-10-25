@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nowPlayingFromMediaMetadata, postEmbedUrl, postUrlsFromText } from './profile'
+import { nowPlayingFromMediaMetadata, nowPlayingFromMediaSession, postEmbedUrl, postUrlsFromText } from './profile'
 
 describe('profile social helpers', () => {
   it('converts supported social posts into safe embed endpoints', () => {
@@ -14,5 +14,12 @@ describe('profile social helpers', () => {
   it('normalizes automatically detected media metadata', () => {
     expect(nowPlayingFromMediaMetadata({ title: '  Night Drive  ', artist: ' DJ Touge ' }, '2026-09-11T00:00:00.000Z')).toEqual({ title: 'Night Drive', artist: 'DJ Touge', updatedAt: '2026-09-11T00:00:00.000Z' })
     expect(nowPlayingFromMediaMetadata({ title: '   ', artist: 'Nobody' })).toBeNull()
+  })
+
+  it('shares a track only while the browser media session is playing', () => {
+    const metadata = { title: 'Night Drive', artist: 'DJ Touge' }
+    expect(nowPlayingFromMediaSession({ metadata, playbackState: 'playing' }, '2026-09-11T00:00:00.000Z')).toEqual({ title: 'Night Drive', artist: 'DJ Touge', updatedAt: '2026-09-11T00:00:00.000Z' })
+    expect(nowPlayingFromMediaSession({ metadata, playbackState: 'paused' })).toBeNull()
+    expect(nowPlayingFromMediaSession({ metadata: null, playbackState: 'playing' })).toBeNull()
   })
 })

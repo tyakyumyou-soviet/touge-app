@@ -34,7 +34,7 @@ import { reverseDraftBlock } from './lib/draftReorder'
 import { editableStopsFromCourse } from './lib/editingStops'
 import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
-import { nowPlayingFromMediaMetadata } from './lib/profile'
+import { nowPlayingFromMediaSession } from './lib/profile'
 import { isCourseVisibleByMapPreferences } from './lib/mapRoutePreferences'
 import { normalizeThemePreference, resolveThemePreference, type ResolvedTheme } from './lib/theme'
 import { distanceMeters, loadSpeedCameras, type SpeedCamera } from './lib/speedSafety'
@@ -266,32 +266,34 @@ export default function App() {
   }, [user])
   const automaticMusicSharingEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   useEffect(() => {
-    if (!user || !automaticMusicSharingEnabled || viewerProfile?.musicSharingSource === 'manual') return
+    if (!user || !automaticMusicSharingEnabled) return
     let lastTrack = ''
+    let hasStoredTrack = Boolean(viewerProfile?.nowPlaying?.title)
     const syncDetectedTrack = () => {
-      const playing = nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata)
+      const playing = nowPlayingFromMediaSession(navigator.mediaSession)
       if (!playing) {
-        // Do not leave the last song visible after playback ends or a player
-        // clears its Media Session metadata. The presence effect below also
-        // clears the public presence record when location sharing is off.
-        if (!lastTrack) return
+        // Do not retain a track from a previous app session when the browser
+        // no longer reports active Media Session metadata.
+        if (!lastTrack && !hasStoredTrack) return
         lastTrack = ''
+        hasStoredTrack = false
         profileDirty.current = true
-        setViewerProfile((current) => current ? { ...current, nowPlaying: null } : current)
-        void saveUserProfileSettings(user, { nowPlaying: null }).catch(() => setNotice('曲名の共有を停止できませんでした。通信回復後に設定を確認してください。'))
+        setViewerProfile((current) => current ? { ...current, musicSharingSource: 'automatic', nowPlaying: null } : current)
+        void saveUserProfileSettings(user, { musicSharingSource: 'automatic', nowPlaying: null }).catch(() => setNotice('曲名の共有を停止できませんでした。通信回復後に設定を確認してください。'))
         return
       }
       const track = `${playing.title}\n${playing.artist ?? ''}`
       if (track === lastTrack) return
       lastTrack = track
+      hasStoredTrack = true
       profileDirty.current = true
-      setViewerProfile((current) => current ? { ...current, nowPlaying: playing } : current)
-      void saveUserProfileSettings(user, { nowPlaying: playing })
+      setViewerProfile((current) => current ? { ...current, musicSharingSource: 'automatic', nowPlaying: playing } : current)
+      void saveUserProfileSettings(user, { musicSharingSource: 'automatic', nowPlaying: playing })
     }
     syncDetectedTrack()
     const timer = window.setInterval(syncDetectedTrack, 5000)
     return () => window.clearInterval(timer)
-  }, [user, automaticMusicSharingEnabled, viewerProfile?.musicSharingSource])
+  }, [user, automaticMusicSharingEnabled, viewerProfile?.musicSharingSource, viewerProfile?.nowPlaying?.title])
   useEffect(() => {
     if (!user || !presenceProfileReady) return
     const allowedViewerIds = presenceAllowedViewerIds

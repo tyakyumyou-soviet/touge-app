@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Course, CourseComment, FriendPresence, ThemePreference, UserProfile } from '../types'
+import type { Course, CourseComment, FriendPresence, NowPlaying, ThemePreference, UserProfile } from '../types'
 import { addCourseComment, deleteCourseComment, loadUserProfile, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { FriendsPanel } from './FriendsPanel'
 import { FriendListsPanel } from './FriendListsPanel'
 import { subscribeFriends } from '../lib/friends'
-import { nowPlayingFromMediaMetadata, postEmbedUrl, postUrlsFromText } from '../lib/profile'
+import { nowPlayingFromMediaSession, postEmbedUrl, postUrlsFromText } from '../lib/profile'
 import { RouteDisplaySettings } from './RouteDisplaySettings'
 import { PersonalizationSettings } from './PersonalizationSettings'
 import { ThemeSettings } from './ThemeSettings'
@@ -56,6 +56,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   const [saving, setSaving] = useState(false)
   const [likeState, setLikeState] = useState({ count: 0, liked: false })
   const [presence, setPresence] = useState<FriendPresence[]>([])
+  const [activeMediaTrack, setActiveMediaTrack] = useState<NowPlaying | null>(null)
   const [friendProfiles, setFriendProfiles] = useState<Record<string, UserProfile>>({})
   const [settingsView, setSettingsView] = useState<'home' | 'profile' | 'friends' | 'sharing' | 'settings'>('home')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -65,6 +66,14 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   const profileSaveTimer = useRef<number | null>(null)
   const pendingProfileChanges = useRef<Partial<UserProfile>>({})
   const profileSaveRevision = useRef(0)
+  const musicSharingEnabled = Boolean(profile?.musicSharingEnabled ?? profile?.nowPlaying)
+  useEffect(() => {
+    if (!musicSharingEnabled) { setActiveMediaTrack(null); return }
+    const syncTrack = () => setActiveMediaTrack(nowPlayingFromMediaSession(navigator.mediaSession))
+    syncTrack()
+    const timer = window.setInterval(syncTrack, 1000)
+    return () => window.clearInterval(timer)
+  }, [musicSharingEnabled])
   useEffect(() => () => {
     if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
     const pending = pendingProfileChanges.current
@@ -183,19 +192,10 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   }
   function setMusicSharing(enabled: boolean) {
     if (!user) return
-    const playing = enabled ? nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata) : null
+    const playing = enabled ? nowPlayingFromMediaSession(navigator.mediaSession) : null
     const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, musicSharingSource: 'automatic' as const, nowPlaying: playing }
     setProfile(next); queueProfileSave({ musicSharingEnabled: enabled, musicSharingSource: 'automatic', nowPlaying: playing }, next)
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
-  }
-  function setManualTrack(field: 'title' | 'artist', value: string) {
-    if (!profile || !user) return
-    const title = field === 'title' ? value.trim() : profile.nowPlaying?.title ?? ''
-    const artist = field === 'artist' ? value.trim() : profile.nowPlaying?.artist ?? ''
-    const nowPlaying = title ? { title, ...(artist ? { artist } : {}), updatedAt: new Date().toISOString() } : null
-    const next = { ...profile, musicSharingEnabled: true, musicSharingSource: 'manual' as const, nowPlaying }
-    setProfile(next)
-    queueProfileSave({ musicSharingEnabled: true, musicSharingSource: 'manual', nowPlaying }, next)
   }
   function patchProfile(values: Partial<UserProfile>) {
     if (!user) return
@@ -239,7 +239,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
               </div>
               <div className="presence-sharing-option">
                 <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
-                {(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)) && <div className="music-sharing-details"><p className="automatic-sharing-status">{profile?.musicSharingSource === 'manual' ? '手入力した曲名を共有中' : profile?.nowPlaying?.title ? `共有中: ${profile.nowPlaying.title}${profile.nowPlaying.artist ? ` / ${profile.nowPlaying.artist}` : ''}` : 'このブラウザーで再生情報を取得できる場合は自動共有します'}</p><p className="muted">他の音楽アプリの再生情報はPWAから取得できません。必要な場合は入力してください。</p><label>曲名<input value={profile?.musicSharingSource === 'manual' ? profile.nowPlaying?.title ?? '' : ''} onChange={(event) => setManualTrack('title', event.target.value)} placeholder="曲名を入力" /></label><label>アーティスト（任意）<input value={profile?.musicSharingSource === 'manual' ? profile.nowPlaying?.artist ?? '' : ''} onChange={(event) => setManualTrack('artist', event.target.value)} placeholder="アーティスト名" /></label></div>}
+                {musicSharingEnabled && activeMediaTrack?.title && <div className="music-sharing-details"><p className="automatic-sharing-status">再生中：{activeMediaTrack.title}{activeMediaTrack.artist ? ` / ${activeMediaTrack.artist}` : ''}</p></div>}
                 {profile && <ShareAudienceSelector label="曲名を共有する相手" audience={profile.musicSharingAudience ?? profile.locationSharing?.audience ?? 'friends'} listIds={profile.musicSharingListIds ?? profile.locationSharing?.listIds ?? []} lists={profile.friendLists ?? []} friendCount={friendIds.length} onChange={(audience, listIds) => patchProfile({ musicSharingAudience: audience, musicSharingListIds: listIds })} />}
               </div>
             </div>

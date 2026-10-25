@@ -10,6 +10,15 @@ export function nowPlayingFromMediaMetadata(
   return { title, ...(artist ? { artist } : {}), updatedAt }
 }
 
+/** Reads only the active media session owned by this browser page. */
+export function nowPlayingFromMediaSession(
+  session: { metadata: Pick<MediaMetadata, 'title' | 'artist'> | null; playbackState: MediaSessionPlaybackState } | null | undefined,
+  updatedAt = new Date().toISOString(),
+): NowPlaying | null {
+  if (session?.playbackState !== 'playing') return null
+  return nowPlayingFromMediaMetadata(session.metadata, updatedAt)
+}
+
 export function postEmbedUrl(value: string) {
   try {
     const url = new URL(value)
