@@ -106,11 +106,17 @@ const toFriendPresence = (items: FriendPresence[]) => ({
   features: items.flatMap((item) => {
     if (!item.location || item.location.length !== 2 || !item.location.every(Number.isFinite)) return []
     const locationTime = Date.parse(item.locationUpdatedAt ?? item.updatedAt ?? '')
-    if (!Number.isFinite(locationTime) || Date.now() - locationTime > 2 * 60 * 1000 || locationTime > Date.now() + 60 * 1000) return []
+    const ageMs = Date.now() - locationTime
+    // Keep the last known fix visible across reloads and PWA suspension, but
+    // make its age explicit and stop showing it after a day. The sharing
+    // owner's opt-out deletes the document immediately.
+    if (!Number.isFinite(locationTime) || ageMs > 24 * 60 * 60 * 1000 || ageMs < -60 * 1000) return []
+    const ageLabel = ageMs < 60 * 1000 ? '更新中' : ageMs < 60 * 60 * 1000 ? `${Math.floor(ageMs / 60 / 1000)}分前` : `${Math.floor(ageMs / 60 / 60 / 1000)}時間前`
+    const isStale = ageMs > 2 * 60 * 1000
     const title = item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title.slice(0, 40)}` : ''
     return [{
       type: 'Feature' as const,
-      properties: { label: `${item.displayName.slice(0, 24)}${title}` },
+      properties: { label: `${item.displayName.slice(0, 24)}${isStale ? ` · 最終位置 ${ageLabel}` : ''}${title}`, stale: isStale },
       geometry: { type: 'Point' as const, coordinates: item.location },
     }]
   }),
@@ -307,9 +313,9 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
       map.addLayer({ id: 'current-location-halo', type: 'circle', source: 'current-location', paint: { 'circle-radius': 14, 'circle-color': '#287bdc', 'circle-opacity': .18, 'circle-stroke-color': '#287bdc', 'circle-stroke-width': 1, 'circle-stroke-opacity': .38 } })
       map.addLayer({ id: 'current-location-dot', type: 'circle', source: 'current-location', paint: { 'circle-radius': 7, 'circle-color': '#287bdc', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
       map.addSource('friend-presence', { type: 'geojson', data: toFriendPresence([]) })
-      map.addLayer({ id: 'friend-presence-halo', type: 'circle', source: 'friend-presence', paint: { 'circle-radius': 14, 'circle-color': '#e1ac3d', 'circle-opacity': .2, 'circle-stroke-color': '#e1ac3d', 'circle-stroke-width': 1.5 } })
-      map.addLayer({ id: 'friend-presence-dot', type: 'circle', source: 'friend-presence', paint: { 'circle-radius': 8, 'circle-color': '#e1ac3d', 'circle-stroke-color': '#fff8e7', 'circle-stroke-width': 2.5 } })
-      map.addLayer({ id: 'friend-presence-label', type: 'symbol', source: 'friend-presence', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-allow-overlap': false, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#f4f7f5', 'text-halo-color': '#15251f', 'text-halo-width': 2.5 } })
+      map.addLayer({ id: 'friend-presence-halo', type: 'circle', source: 'friend-presence', paint: { 'circle-radius': 14, 'circle-color': ['case', ['get', 'stale'], '#87958e', '#e1ac3d'], 'circle-opacity': .2, 'circle-stroke-color': ['case', ['get', 'stale'], '#87958e', '#e1ac3d'], 'circle-stroke-width': 1.5 } })
+      map.addLayer({ id: 'friend-presence-dot', type: 'circle', source: 'friend-presence', paint: { 'circle-radius': 8, 'circle-color': ['case', ['get', 'stale'], '#87958e', '#e1ac3d'], 'circle-stroke-color': '#fff8e7', 'circle-stroke-width': 2.5 } })
+      map.addLayer({ id: 'friend-presence-label', type: 'symbol', source: 'friend-presence', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-allow-overlap': false, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': ['case', ['get', 'stale'], '#d2d7d4', '#f4f7f5'], 'text-halo-color': '#15251f', 'text-halo-width': 2.5 } })
       map.addSource('speed-cameras', { type: 'geojson', data: speedCameraFeatureCollection([]) })
       map.addLayer({ id: 'speed-camera-halo', type: 'circle', source: 'speed-cameras', layout: { visibility: 'none' }, paint: { 'circle-radius': 15, 'circle-color': '#d84c3f', 'circle-opacity': .22 } })
       map.addLayer({ id: 'speed-camera-marker', type: 'circle', source: 'speed-cameras', layout: { visibility: 'none' }, paint: { 'circle-radius': 9, 'circle-color': '#b9352e', 'circle-stroke-color': '#fff8e7', 'circle-stroke-width': 2 } })
