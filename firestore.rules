@@ -164,6 +164,36 @@ service cloud.firestore {
       allow delete: if hasAccountId() && request.auth.uid == userId;
     }
 
+    // Location and music are separate documents so Firestore's document-level
+    // rules cannot expose one channel to a viewer authorized for the other.
+    match /presenceLocations/{userId} {
+      allow read: if isSuperAdmin() || (signedIn() && (request.auth.uid == userId || (resource == null && friendWith(userId)) || (resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds && friendWith(userId))));
+      allow create, update: if hasAccountId()
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.allowedViewerIds is list
+        && request.resource.data.allowedViewerIds.size() <= 500
+        && (!('location' in request.resource.data) || (request.resource.data.location is list && request.resource.data.location.size() == 2 && request.resource.data.location[0] is number && request.resource.data.location[0] >= -180 && request.resource.data.location[0] <= 180 && request.resource.data.location[1] is number && request.resource.data.location[1] >= -90 && request.resource.data.location[1] <= 90));
+      allow delete: if hasAccountId() && request.auth.uid == userId;
+    }
+
+    match /presenceMusic/{userId} {
+      allow read: if isSuperAdmin() || (signedIn() && (request.auth.uid == userId || (resource == null && friendWith(userId)) || (resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds && friendWith(userId))));
+      allow create, update: if hasAccountId()
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.allowedViewerIds is list
+        && request.resource.data.allowedViewerIds.size() <= 500
+        && request.resource.data.nowPlaying is map
+        && request.resource.data.nowPlaying.title is string
+        && request.resource.data.nowPlaying.title.size() > 0
+        && request.resource.data.nowPlaying.title.size() <= 160
+        && (!('artist' in request.resource.data.nowPlaying) || (request.resource.data.nowPlaying.artist is string && request.resource.data.nowPlaying.artist.size() <= 160));
+      allow delete: if hasAccountId() && request.auth.uid == userId;
+    }
+
     match /courses/{courseId} {
       allow get, list: if canViewCourse(resource.data);
       allow create: if hasAccountId()

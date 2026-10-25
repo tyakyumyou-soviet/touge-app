@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Course, CourseComment, FriendPresence, ThemePreference, UserProfile } from '../types'
-import { addCourseComment, clearFriendPresence, deleteCourseComment, loadUserProfile, saveFriendPresence, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
+import { addCourseComment, deleteCourseComment, loadUserProfile, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { FriendsPanel } from './FriendsPanel'
@@ -15,6 +15,15 @@ import type { ResolvedTheme } from '../lib/theme'
 interface Props { user: User | null; course?: Course | null; courses?: Course[]; themePreference: ThemePreference; resolvedTheme: ResolvedTheme; onThemeChange: (value: ThemePreference) => void; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
 
 const socialNames = { x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok' } as const
+type ShareAudience = 'friends' | 'lists'
+
+function ShareAudienceSelector({ label, audience, listIds, lists, friendCount, onChange }: { label: string; audience: ShareAudience; listIds: string[]; lists: NonNullable<UserProfile['friendLists']>; friendCount: number; onChange: (audience: ShareAudience, listIds: string[]) => void }) {
+  return <div className="presence-audience">
+    <h4>{label}</h4>
+    <label className="sharing-scope-select"><span>公開範囲</span><select value={audience} onChange={(event) => onChange(event.target.value as ShareAudience, listIds)}><option value="friends">フレンド全員（{friendCount}人）</option><option value="lists">フレンドリストから選ぶ</option></select></label>
+    {audience === 'lists' && <div className="audience-list-options">{lists.length ? <>{lists.map((list) => <label key={list.id}><input type="checkbox" checked={listIds.includes(list.id)} onChange={(event) => onChange('lists', event.target.checked ? [...new Set([...listIds, list.id])] : listIds.filter((id) => id !== list.id))} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{listIds.length}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
+  </div>
+}
 
 function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: string }) {
   const socialEntries = Object.entries(profile.socialLinks ?? {}).filter(([, url]) => Boolean(url))
@@ -140,32 +149,21 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     if (!user) return
     const validListIds = new Set(friendLists.map((list) => list.id))
     const locationSharing = profile?.locationSharing ? { ...profile.locationSharing, listIds: profile.locationSharing.listIds.filter((id) => validListIds.has(id)) } : undefined
+    const musicSharingListIds = (profile?.musicSharingListIds ?? profile?.locationSharing?.listIds ?? []).filter((id) => validListIds.has(id))
     const mapProfileListIds = (profile?.mapProfileListIds ?? []).filter((id) => validListIds.has(id))
     const mapRouteFriendListIds = (profile?.mapRouteFriendListIds ?? []).filter((id) => validListIds.has(id))
-    const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, mapRouteFriendListIds, ...(locationSharing ? { locationSharing } : {}) }
+    const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingListIds, ...(locationSharing ? { locationSharing } : {}) }
     const next = { ...base, mapAllowedViewerIds: mapProfileViewerIds(base) }
     setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    await saveUserProfileSettings(user, { friendLists, mapProfileListIds, mapRouteFriendListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
+    await saveUserProfileSettings(user, { friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
     setNotice('フレンドリストを保存しました')
-  }
-  function viewerIds(nextProfile = profile) {
-    const selected = new Set(nextProfile?.locationSharing?.listIds ?? [])
-    const ids = nextProfile?.locationSharing?.audience === 'lists'
-      ? (nextProfile.friendLists ?? []).filter((list) => selected.has(list.id)).flatMap((list) => list.memberIds)
-      : friendIds
-    return [...new Set(ids)].filter((id) => friendIds.includes(id))
   }
   function setLocationSharing(enabled: boolean) {
     if (!user) return
     if (enabled && !navigator.geolocation) { setNotice('この端末では位置情報を利用できません'); return }
     const applyLocationSharing = (value: boolean) => {
       const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), locationSharing: { ...(profile?.locationSharing ?? { audience: 'friends' as const, listIds: [] }), enabled: value } }
-      setProfile(next); queueProfileSave({ locationSharing: next.locationSharing }, next)
-      const musicSharingEnabled = next.musicSharingEnabled ?? Boolean(next.nowPlaying)
-      if (!value) {
-        if (musicSharingEnabled && next.nowPlaying) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: next.nowPlaying, location: null })
-        else void clearFriendPresence(user.uid)
-      }
+      setProfile(next); queueProfileSave({ locationSharing: next.locationSharing, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds: profile?.musicSharingListIds ?? profile?.locationSharing?.listIds ?? [] }, next)
     }
     if (enabled) {
       // Request the permission from the user's switch interaction. Starting
@@ -188,8 +186,6 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     const playing = enabled ? nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata) : null
     const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, musicSharingSource: 'automatic' as const, nowPlaying: playing }
     setProfile(next); queueProfileSave({ musicSharingEnabled: enabled, musicSharingSource: 'automatic', nowPlaying: playing }, next)
-    if (next.locationSharing?.enabled || playing) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: playing, ...(next.locationSharing?.enabled ? {} : { location: null }) })
-    else void clearFriendPresence(user.uid)
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
   function setManualTrack(field: 'title' | 'artist', value: string) {
@@ -208,9 +204,14 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     setProfile(next)
     // All profile and settings changes are saved automatically. Debouncing
     // batches rapid text edits while local state updates immediately.
-    const persistedValues = 'mapVisibility' in values || 'mapProfileListIds' in values
-      ? { ...values, mapAllowedViewerIds: next.mapAllowedViewerIds }
-      : values
+    const persistedValues = {
+      ...values,
+      // Persist the legacy-derived music audience on the first settings edit,
+      // so future location-scope changes cannot silently change music scope.
+      ...(!('musicSharingAudience' in values) ? { musicSharingAudience: merged.musicSharingAudience ?? merged.locationSharing?.audience ?? 'friends' } : {}),
+      ...(!('musicSharingListIds' in values) ? { musicSharingListIds: merged.musicSharingListIds ?? merged.locationSharing?.listIds ?? [] } : {}),
+      ...('mapVisibility' in values || 'mapProfileListIds' in values ? { mapAllowedViewerIds: next.mapAllowedViewerIds } : {}),
+    }
     queueProfileSave(persistedValues, next)
   }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
@@ -234,18 +235,15 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
             <div className="presence-sharing-options">
               <div className="presence-sharing-option">
                 <label className="community-switch"><span><strong>位置情報を共有する</strong><small>現在地を共有相手の地図に表示します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="位置情報を共有する" checked={Boolean(profile?.locationSharing?.enabled)} onChange={(event) => setLocationSharing(event.target.checked)} /></label>
+                {profile && <ShareAudienceSelector label="位置情報を共有する相手" audience={profile.locationSharing?.audience ?? 'friends'} listIds={profile.locationSharing?.listIds ?? []} lists={profile.friendLists ?? []} friendCount={friendIds.length} onChange={(audience, listIds) => patchProfile({ locationSharing: { enabled: Boolean(profile.locationSharing?.enabled), audience, listIds } })} />}
               </div>
               <div className="presence-sharing-option">
                 <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
                 {(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)) && <div className="music-sharing-details"><p className="automatic-sharing-status">{profile?.musicSharingSource === 'manual' ? '手入力した曲名を共有中' : profile?.nowPlaying?.title ? `共有中: ${profile.nowPlaying.title}${profile.nowPlaying.artist ? ` / ${profile.nowPlaying.artist}` : ''}` : 'このブラウザーで再生情報を取得できる場合は自動共有します'}</p><p className="muted">他の音楽アプリの再生情報はPWAから取得できません。必要な場合は入力してください。</p><label>曲名<input value={profile?.musicSharingSource === 'manual' ? profile.nowPlaying?.title ?? '' : ''} onChange={(event) => setManualTrack('title', event.target.value)} placeholder="曲名を入力" /></label><label>アーティスト（任意）<input value={profile?.musicSharingSource === 'manual' ? profile.nowPlaying?.artist ?? '' : ''} onChange={(event) => setManualTrack('artist', event.target.value)} placeholder="アーティスト名" /></label></div>}
+                {profile && <ShareAudienceSelector label="曲名を共有する相手" audience={profile.musicSharingAudience ?? profile.locationSharing?.audience ?? 'friends'} listIds={profile.musicSharingListIds ?? profile.locationSharing?.listIds ?? []} lists={profile.friendLists ?? []} friendCount={friendIds.length} onChange={(audience, listIds) => patchProfile({ musicSharingAudience: audience, musicSharingListIds: listIds })} />}
               </div>
             </div>
-            <div className="presence-audience" aria-labelledby="presence-audience-title">
-              <h4 id="presence-audience-title">共有する相手</h4>
-              <label className="sharing-scope-select"><span>公開範囲</span><select value={profile?.locationSharing?.audience ?? 'friends'} onChange={(event) => patchProfile({ locationSharing: { enabled: Boolean(profile?.locationSharing?.enabled), audience: event.target.value as 'friends' | 'lists', listIds: profile?.locationSharing?.listIds ?? [] } })}><option value="friends">フレンド全員（{friendIds.length}人）</option><option value="lists">フレンドリストから選ぶ</option></select></label>
-              {profile?.locationSharing?.audience === 'lists' && <div className="audience-list-options">{(profile.friendLists ?? []).length ? <>{(profile.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={profile.locationSharing?.listIds.includes(list.id)} onChange={(event) => patchProfile({ locationSharing: { enabled: Boolean(profile.locationSharing?.enabled), audience: 'lists', listIds: event.target.checked ? [...new Set([...(profile.locationSharing?.listIds ?? []), list.id])] : (profile.locationSharing?.listIds ?? []).filter((id) => id !== list.id) } })} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{profile.locationSharing?.listIds.length ?? 0}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
-            </div>
-            <small>位置情報と音楽は個別にオン・オフできます。共有相手の設定は両方に適用されます。</small>
+            <small>位置情報と曲名は、それぞれ公開範囲を個別に設定できます。</small>
             {presence.length > 0 && <div className="presence-list">{presence.map((item) => <span key={item.userId}>{item.displayName}{item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title}` : ''}{item.location ? ' · 位置共有中' : ''}</span>)}</div>}
           </section>
           <p className="muted">共有・プライバシーの変更は自動で保存されます。</p>

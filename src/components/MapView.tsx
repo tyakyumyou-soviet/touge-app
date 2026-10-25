@@ -105,6 +105,8 @@ const toFriendPresence = (items: FriendPresence[]) => ({
   type: 'FeatureCollection' as const,
   features: items.flatMap((item) => {
     if (!item.location || item.location.length !== 2 || !item.location.every(Number.isFinite)) return []
+    const locationTime = Date.parse(item.locationUpdatedAt ?? item.updatedAt ?? '')
+    if (!Number.isFinite(locationTime) || Date.now() - locationTime > 2 * 60 * 1000 || locationTime > Date.now() + 60 * 1000) return []
     const title = item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title.slice(0, 40)}` : ''
     return [{
       type: 'Feature' as const,
@@ -535,7 +537,10 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map?.isStyleLoaded()) return
-    ;(map.getSource('friend-presence') as GeoJSONSource | undefined)?.setData(toFriendPresence(friendPresence))
+    const update = () => (map.getSource('friend-presence') as GeoJSONSource | undefined)?.setData(toFriendPresence(friendPresence))
+    update()
+    const timer = window.setInterval(update, 15000)
+    return () => window.clearInterval(timer)
   }, [friendPresence, mapReady])
 
   useEffect(() => {

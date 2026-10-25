@@ -181,6 +181,8 @@ export interface UserProfile {
   locationSharing?: LocationSharingSettings
   /** Controls music presence independently from precise location sharing. */
   musicSharingEnabled?: boolean
+  musicSharingAudience?: 'friends' | 'lists'
+  musicSharingListIds?: string[]
   /** Manual tracks are not overwritten by browser Media Session polling. */
   musicSharingSource?: 'automatic' | 'manual'
   nowPlaying?: NowPlaying | null
@@ -196,7 +198,7 @@ export interface PersonalizationProfile { curves: number; elevation: number; wid
 export type PersonalizationWeights = Partial<Record<RatingKey, number>>
 export interface LocationSharingSettings { enabled: boolean; audience: 'friends' | 'lists'; listIds: string[] }
 export interface NowPlaying { title: string; artist?: string; updatedAt: string }
-export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate | null; allowedViewerIds?: string[]; updatedAt?: string; nowPlaying?: NowPlaying | null }
+export interface FriendPresence { userId: string; displayName: string; photoURL?: string | null; location?: Coordinate | null; locationUpdatedAt?: string | null; allowedViewerIds?: string[]; updatedAt?: string; nowPlaying?: NowPlaying | null }
 
 export interface CourseComment {
   id: string

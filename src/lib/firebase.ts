@@ -30,6 +30,7 @@ import {
   query,
   where,
   orderBy,
+  type DocumentSnapshot,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseAudience, type CourseComment, type CourseEditorStop, type DraftPointRole, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
@@ -337,7 +338,7 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
   // Profiles saved before public map visibility was removed may still contain
   // `all`. Treat every unknown/legacy value as friend-only when it is loaded.
   const mapVisibility = data.mapVisibility === 'lists' || data.mapVisibility === 'none' ? data.mapVisibility : 'friends'
-  return { id: userId, displayName: 'ドライバー', followingIds: [], followerCount: 0, bio: '', ...data, mapVisibility, updatedAt: firestoreDate(data.updatedAt) } as UserProfile
+  return { id: userId, displayName: 'ドライバー', followingIds: [], followerCount: 0, bio: '', ...data, mapVisibility, musicSharingAudience: data.musicSharingAudience ?? data.locationSharing?.audience ?? 'friends', musicSharingListIds: data.musicSharingListIds ?? data.locationSharing?.listIds ?? [], updatedAt: firestoreDate(data.updatedAt) } as UserProfile
 }
 
 export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {
@@ -349,23 +350,73 @@ export async function saveUserProfileSettings(user: User, values: Partial<Omit<U
   await batch.commit()
 }
 
-export async function saveFriendPresence(user: User, presence: Omit<FriendPresence, 'userId' | 'displayName' | 'photoURL' | 'updatedAt'>): Promise<void> {
-  await setDoc(doc(db, 'presence', user.uid), { userId: user.uid, displayName: user.displayName ?? 'ドライバー', photoURL: user.photoURL ?? null, ...presence, updatedAt: serverTimestamp() }, { merge: true })
+const presenceWriteQueues = new Map<string, Promise<void>>()
+const legacyPresenceCleanup = new Set<string>()
+function enqueuePresenceWrite(userId: string, operation: () => Promise<void>): Promise<void> {
+  const previous = presenceWriteQueues.get(userId) ?? Promise.resolve()
+  const next = previous.catch(() => undefined).then(operation)
+  presenceWriteQueues.set(userId, next)
+  void next.then(() => { if (presenceWriteQueues.get(userId) === next) presenceWriteQueues.delete(userId) }, () => { if (presenceWriteQueues.get(userId) === next) presenceWriteQueues.delete(userId) })
+  return next
 }
 
-export async function clearFriendPresence(userId: string): Promise<void> {
+async function removeLegacyPresence(userId: string): Promise<void> {
+  if (legacyPresenceCleanup.has(userId)) return
   await deleteDoc(doc(db, 'presence', userId))
+  legacyPresenceCleanup.add(userId)
+}
+
+export function saveFriendLocation(user: User, location: Coordinate | null, allowedViewerIds: string[]): Promise<void> {
+  return enqueuePresenceWrite(user.uid, async () => {
+    await removeLegacyPresence(user.uid)
+    await setDoc(doc(db, 'presenceLocations', user.uid), { userId: user.uid, displayName: user.displayName ?? 'ドライバー', ...(location ? { location, locationUpdatedAt: new Date().toISOString() } : {}), allowedViewerIds, updatedAt: serverTimestamp() }, { merge: true })
+  })
+}
+
+export function saveFriendMusic(user: User, nowPlaying: FriendPresence['nowPlaying'], allowedViewerIds: string[]): Promise<void> {
+  if (!nowPlaying) return clearFriendMusic(user.uid)
+  return enqueuePresenceWrite(user.uid, async () => {
+    await removeLegacyPresence(user.uid)
+    await setDoc(doc(db, 'presenceMusic', user.uid), { userId: user.uid, displayName: user.displayName ?? 'ドライバー', nowPlaying, allowedViewerIds, updatedAt: serverTimestamp() }, { merge: true })
+  })
+}
+
+export function clearFriendLocation(userId: string): Promise<void> {
+  return enqueuePresenceWrite(userId, async () => { await removeLegacyPresence(userId); await deleteDoc(doc(db, 'presenceLocations', userId)) })
+}
+
+export function clearFriendMusic(userId: string): Promise<void> {
+  return enqueuePresenceWrite(userId, async () => { await removeLegacyPresence(userId); await deleteDoc(doc(db, 'presenceMusic', userId)) })
+}
+
+export function clearFriendPresence(userId: string): Promise<void> {
+  legacyPresenceCleanup.delete(userId)
+  return enqueuePresenceWrite(userId, async () => {
+    await Promise.all([deleteDoc(doc(db, 'presence', userId)), deleteDoc(doc(db, 'presenceLocations', userId)), deleteDoc(doc(db, 'presenceMusic', userId))])
+    legacyPresenceCleanup.add(userId)
+  })
 }
 
 export function subscribeFriendPresence(userIds: string[], onChange: (items: FriendPresence[]) => void, onError?: () => void): () => void {
   const viewerId = auth.currentUser?.uid
   if (!userIds.length || !viewerId) { onChange([]); return () => undefined }
   const values = new Map<string, FriendPresence>()
-  const unsubscribes = [...new Set(userIds)].map((id) => onSnapshot(doc(db, 'presence', id), (snapshot) => {
-    if (snapshot.exists()) values.set(id, { userId: id, ...snapshot.data(), updatedAt: firestoreDate(snapshot.data().updatedAt) } as FriendPresence)
-    else values.delete(id)
-    onChange([...values.values()])
-  }, () => { values.delete(id); onChange([...values.values()]); onError?.() }))
+  const emit = () => onChange([...values.values()].filter((item) => item.location || item.nowPlaying))
+  const unsubscribes = [...new Set(userIds)].flatMap((id) => {
+    const update = (kind: 'location' | 'music', snapshot?: DocumentSnapshot, failed = false) => {
+      const current = values.get(id) ?? { userId: id, displayName: 'フレンド' }
+      if (kind === 'location') {
+        if (failed || !snapshot?.exists()) values.set(id, { ...current, location: null, locationUpdatedAt: null })
+        else { const data = snapshot.data(); values.set(id, { ...current, displayName: data.displayName ?? current.displayName, location: data.location ?? null, locationUpdatedAt: data.locationUpdatedAt ?? null, updatedAt: firestoreDate(data.updatedAt) }) }
+      } else if (failed || !snapshot?.exists()) values.set(id, { ...current, nowPlaying: null })
+      else { const data = snapshot.data(); values.set(id, { ...current, displayName: data.displayName ?? current.displayName, nowPlaying: data.nowPlaying ?? null, updatedAt: firestoreDate(data.updatedAt) }) }
+      emit()
+    }
+    return [
+      onSnapshot(doc(db, 'presenceLocations', id), (snapshot) => update('location', snapshot), (error) => { update('location', undefined, true); if (error.code !== 'permission-denied') onError?.() }),
+      onSnapshot(doc(db, 'presenceMusic', id), (snapshot) => update('music', snapshot), (error) => { update('music', undefined, true); if (error.code !== 'permission-denied') onError?.() }),
+    ]
+  })
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
 }
 

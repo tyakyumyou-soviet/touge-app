@@ -17,7 +17,7 @@ import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, clearFriendPresence, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendPresence, saveRating, saveUserProfileSettings, subscribeFriendPresence, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
+import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, saveUserProfileSettings, subscribeFriendPresence, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
 import { personalizedScore } from './lib/personalization'
@@ -140,6 +140,20 @@ export default function App() {
   const [communityOpen, setCommunityOpen] = useState(false)
   const [acceptedFriendIds, setAcceptedFriendIds] = useState<string[]>([])
   const [friendPresence, setFriendPresence] = useState<FriendPresence[]>([])
+  const presenceProfileReady = Boolean(viewerProfile)
+  const locationAudience = viewerProfile?.locationSharing?.audience ?? 'friends'
+  const locationSharingEnabled = Boolean(viewerProfile?.locationSharing?.enabled)
+  const locationListIdsKey = [...(viewerProfile?.locationSharing?.listIds ?? [])].sort().join('|')
+  const locationListIds = useMemo(() => new Set(locationListIdsKey ? locationListIdsKey.split('|') : []), [locationListIdsKey])
+  const selectedLocationLists = useMemo(() => (viewerProfile?.friendLists ?? []).filter((list) => locationListIds.has(list.id)), [viewerProfile?.friendLists, locationListIds])
+  const presenceAllowedViewerIds = useMemo(() => [...new Set(locationAudience === 'lists' ? selectedLocationLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id)), [locationAudience, selectedLocationLists, acceptedFriendIds])
+  const sharedMusicEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
+  const sharedTrack = sharedMusicEnabled ? viewerProfile?.nowPlaying ?? null : null
+  const musicAudience = viewerProfile?.musicSharingAudience ?? viewerProfile?.locationSharing?.audience ?? 'friends'
+  const musicListIdsKey = [...(viewerProfile?.musicSharingListIds ?? viewerProfile?.locationSharing?.listIds ?? [])].sort().join('|')
+  const musicListIds = useMemo(() => new Set(musicListIdsKey ? musicListIdsKey.split('|') : []), [musicListIdsKey])
+  const selectedMusicLists = useMemo(() => (viewerProfile?.friendLists ?? []).filter((list) => musicListIds.has(list.id)), [viewerProfile?.friendLists, musicListIds])
+  const musicAllowedViewerIds = useMemo(() => [...new Set(musicAudience === 'lists' ? selectedMusicLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id)), [musicAudience, selectedMusicLists, acceptedFriendIds])
   useEffect(() => {
     setAcceptedFriendIds([])
     setFriendPresence([])
@@ -279,49 +293,66 @@ export default function App() {
     return () => window.clearInterval(timer)
   }, [user, automaticMusicSharingEnabled, viewerProfile?.musicSharingSource])
   useEffect(() => {
-    if (!user || !viewerProfile) return
-    const audience = viewerProfile.locationSharing?.audience ?? 'friends'
-    const listIds = new Set(viewerProfile.locationSharing?.listIds ?? [])
-    const selectedLists = (viewerProfile.friendLists ?? []).filter((list) => listIds.has(list.id))
-    const allowedViewerIds = [...new Set(audience === 'lists' ? selectedLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id))
-    const locationSharingEnabled = Boolean(viewerProfile.locationSharing?.enabled)
-    // Profiles created before the dedicated music switch keep their existing
-    // shared song enabled until the driver explicitly turns music sharing off.
-    const musicSharingEnabled = viewerProfile.musicSharingEnabled ?? Boolean(viewerProfile.nowPlaying)
-    const nowPlaying = musicSharingEnabled ? viewerProfile.nowPlaying ?? null : null
+    if (!user || !presenceProfileReady) return
+    const allowedViewerIds = presenceAllowedViewerIds
     if (!locationSharingEnabled) {
-      // Writing null is deliberate: Firestore merge writes would otherwise
-      // retain the last precise location while only the music share is on.
-      if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null })
-      else void clearFriendPresence(user.uid)
+      void clearFriendLocation(user.uid).catch(() => setNotice('位置情報の共有を停止できませんでした'))
       return
     }
     if (!navigator.geolocation) {
       // A missing/revoked location capability must never preserve the last
-      // precise point. Music, when enabled, remains shareable by itself.
-      if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
-      else void clearFriendPresence(user.uid).catch(() => undefined)
+      // precise point.
+      void clearFriendLocation(user.uid).catch(() => undefined)
       return
     }
-    // Clear any old position until this session obtains a fresh fix. This is
-    // privacy-first: an unavailable GPS must not keep a stale precise point
-    // visible to friends.
-    void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }).then(() => { presenceWriteFailed.current = false }).catch(() => {
+    // Refresh the location audience but preserve the last valid GPS fix.
+    // Clearing here made the shared marker blink during watcher restarts.
+    void saveFriendLocation(user, null, allowedViewerIds).catch(() => setNotice('位置共有の公開範囲を保存できませんでした'))
+    let active = true
+    let pendingPosition: GeolocationPosition | null = null
+    let flushTimer: number | null = null
+    let lastWriteAt = 0
+    let lastGeoErrorCode: number | null = null
+    const flushLatestPosition = () => {
+      flushTimer = null
+      if (!active || !pendingPosition) return
+      const wait = Math.max(0, 5000 - (Date.now() - lastWriteAt))
+      if (wait > 0) { flushTimer = window.setTimeout(flushLatestPosition, wait); return }
+      const position = pendingPosition
+      pendingPosition = null
+      lastWriteAt = Date.now()
+      void saveFriendLocation(user, [position.coords.longitude, position.coords.latitude], allowedViewerIds).then(() => { presenceWriteFailed.current = false }).catch(() => {
         if (!presenceWriteFailed.current) setNotice('位置情報を共有先へ保存できませんでした。接続状態とFirestoreルールを確認してください')
         presenceWriteFailed.current = true
-      }),
+      })
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => { pendingPosition = position; lastGeoErrorCode = null; flushLatestPosition() },
       (error) => {
-        const message = error.code === error.PERMISSION_DENIED ? '位置情報の許可が解除されました。共有を停止しました' : error.code === error.POSITION_UNAVAILABLE ? '位置情報を取得できません。GPSや位置情報サービスを確認してください' : '位置情報の取得がタイムアウトしました'
-        setNotice(message)
-        if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
-        else void clearFriendPresence(user.uid).catch(() => undefined)
+        if (lastGeoErrorCode !== error.code) {
+          const message = error.code === error.PERMISSION_DENIED ? '位置情報の許可が解除されました。共有位置を消去します' : error.code === error.POSITION_UNAVAILABLE ? 'GPSを一時的に取得できません。最後に取得した位置は最大2分間表示します' : '位置情報の取得がタイムアウトしました。再取得を待っています'
+          setNotice(message)
+          lastGeoErrorCode = error.code
+        }
+        if (error.code === error.PERMISSION_DENIED) void clearFriendLocation(user.uid).catch(() => undefined)
       },
-      { enableHighAccuracy: true, maximumAge: 30000 },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
     )
-    return () => navigator.geolocation.clearWatch(watchId)
-  }, [user, viewerProfile, acceptedFriendIds])
+    return () => {
+      active = false
+      if (flushTimer !== null) window.clearTimeout(flushTimer)
+      pendingPosition = null
+      navigator.geolocation.clearWatch(watchId)
+    }
+  }, [user, presenceProfileReady, locationSharingEnabled, locationAudience, locationListIdsKey, presenceAllowedViewerIds])
+  useEffect(() => {
+    if (!user || !presenceProfileReady) return
+    if (!sharedMusicEnabled || !sharedTrack) {
+      void clearFriendMusic(user.uid).catch(() => setNotice('曲名の共有を停止できませんでした'))
+      return
+    }
+    void saveFriendMusic(user, sharedTrack, musicAllowedViewerIds).catch(() => setNotice('曲名と公開範囲を保存できませんでした'))
+  }, [user, presenceProfileReady, sharedMusicEnabled, sharedTrack, musicAudience, musicListIdsKey, musicAllowedViewerIds])
   useEffect(() => {
     const courseId = new URLSearchParams(location.search).get('course')
     if (!courseId) return
