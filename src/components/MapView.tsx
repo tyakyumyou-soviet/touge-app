@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'
 import { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
 import mapLibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { Coordinate, Course, DraftPointRole, RecommendationMapAction, RecommendationMapState } from '../types'
+import type { Coordinate, Course, DraftPointRole, FriendPresence, RecommendationMapAction, RecommendationMapState } from '../types'
 import { supportsWebGL } from '../lib/webgl'
 import { routeAlongRoads } from '../lib/routing'
 import { toContourFeatureCollection, toCourseAnnotationCollection } from '../lib/mapOverlays'
@@ -37,6 +37,7 @@ interface MapViewProps {
   pendingSearchLabel: string
   recommendationMapState: RecommendationMapState
   currentLocation: Coordinate | null
+  friendPresence: FriendPresence[]
   searchCenter?: Coordinate | null
   searchRadiusKm?: number
   speedCameras: SpeedCamera[]
@@ -100,6 +101,19 @@ const toCurrentLocation = (point: Coordinate | null) => ({
   features: point ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: point } }] : [],
 })
 
+const toFriendPresence = (items: FriendPresence[]) => ({
+  type: 'FeatureCollection' as const,
+  features: items.flatMap((item) => {
+    if (!item.location || item.location.length !== 2 || !item.location.every(Number.isFinite)) return []
+    const title = item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title.slice(0, 40)}` : ''
+    return [{
+      type: 'Feature' as const,
+      properties: { label: `${item.displayName.slice(0, 24)}${title}` },
+      geometry: { type: 'Point' as const, coordinates: item.location },
+    }]
+  }),
+})
+
 /** A lightweight geodesic approximation used only for the visible search radius. */
 const toSearchRadius = (center: Coordinate | null | undefined, radiusKm: number | undefined) => ({
   type: 'FeatureCollection' as const,
@@ -147,7 +161,7 @@ function fitRouteToVisibleMap(map: MapLibreMap, container: HTMLElement, route: C
   else map.jumpTo({ center, zoom })
 }
 
-export function MapView({ theme, courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, searchCenter, searchRadiusKm, speedCameras, showSpeedCameras, drivingSpeedKph, driveModeActive, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ theme, courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, friendPresence, searchCenter, searchRadiusKm, speedCameras, showSpeedCameras, drivingSpeedKph, driveModeActive, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -290,6 +304,10 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
       map.addSource('current-location', { type: 'geojson', data: toCurrentLocation(null) })
       map.addLayer({ id: 'current-location-halo', type: 'circle', source: 'current-location', paint: { 'circle-radius': 14, 'circle-color': '#287bdc', 'circle-opacity': .18, 'circle-stroke-color': '#287bdc', 'circle-stroke-width': 1, 'circle-stroke-opacity': .38 } })
       map.addLayer({ id: 'current-location-dot', type: 'circle', source: 'current-location', paint: { 'circle-radius': 7, 'circle-color': '#287bdc', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
+      map.addSource('friend-presence', { type: 'geojson', data: toFriendPresence([]) })
+      map.addLayer({ id: 'friend-presence-halo', type: 'circle', source: 'friend-presence', paint: { 'circle-radius': 14, 'circle-color': '#e1ac3d', 'circle-opacity': .2, 'circle-stroke-color': '#e1ac3d', 'circle-stroke-width': 1.5 } })
+      map.addLayer({ id: 'friend-presence-dot', type: 'circle', source: 'friend-presence', paint: { 'circle-radius': 8, 'circle-color': '#e1ac3d', 'circle-stroke-color': '#fff8e7', 'circle-stroke-width': 2.5 } })
+      map.addLayer({ id: 'friend-presence-label', type: 'symbol', source: 'friend-presence', layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-allow-overlap': false, 'text-font': ['Noto Sans Bold'] }, paint: { 'text-color': '#f4f7f5', 'text-halo-color': '#15251f', 'text-halo-width': 2.5 } })
       map.addSource('speed-cameras', { type: 'geojson', data: speedCameraFeatureCollection([]) })
       map.addLayer({ id: 'speed-camera-halo', type: 'circle', source: 'speed-cameras', layout: { visibility: 'none' }, paint: { 'circle-radius': 15, 'circle-color': '#d84c3f', 'circle-opacity': .22 } })
       map.addLayer({ id: 'speed-camera-marker', type: 'circle', source: 'speed-cameras', layout: { visibility: 'none' }, paint: { 'circle-radius': 9, 'circle-color': '#b9352e', 'circle-stroke-color': '#fff8e7', 'circle-stroke-width': 2 } })
@@ -513,6 +531,12 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
     if (!mapReady || !map?.isStyleLoaded()) return
     ;(map.getSource('current-location') as GeoJSONSource | undefined)?.setData(toCurrentLocation(currentLocation))
   }, [currentLocation, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.isStyleLoaded()) return
+    ;(map.getSource('friend-presence') as GeoJSONSource | undefined)?.setData(toFriendPresence(friendPresence))
+  }, [friendPresence, mapReady])
 
   useEffect(() => {
     const map = mapRef.current

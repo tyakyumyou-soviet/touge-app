@@ -89,7 +89,7 @@ export function RouteDisplaySettings({ profile, courses, userId, friendIds, frie
       {counts.map(({ source, total, shown }) => <label key={source} className={sources.includes(source) ? 'active' : ''}>
         <span className={`route-source-icon ${source}`} aria-hidden="true">{sourceMeta[source].icon}</span>
         <span><strong>{sourceMeta[source].label}</strong><small>{sourceMeta[source].description} · {shown}/{total}件</small></span>
-        <input type="checkbox" role="switch" aria-label={`${sourceMeta[source].label}を表示`} checked={sources.includes(source)} onChange={(event) => toggleSource(source, event.target.checked)} />
+        <input className="state-switch" type="checkbox" role="switch" aria-label={`${sourceMeta[source].label}を表示`} checked={sources.includes(source)} onChange={(event) => toggleSource(source, event.target.checked)} />
       </label>)}
     </div>
     {sources.includes('friends') && <div className="route-friend-scope">
@@ -110,7 +110,7 @@ export function RouteDisplaySettings({ profile, courses, userId, friendIds, frie
           return <label key={course.id} className={visible ? 'shown' : ''}>
             <span className={`route-source-dot ${source}`} aria-hidden="true" />
             <span className="route-course-copy"><strong>{course.name}</strong><small>{course.prefecture} · {source === 'friends' ? (friendNames[course.authorId] ?? course.authorName) : sourceMeta[source].label}{overridden ? ' · 個別設定' : ''}</small></span>
-            <input type="checkbox" role="switch" aria-label={`${course.name}を地図に表示`} checked={visible} onChange={(event) => setCourseVisibility(course, event.target.checked)} />
+            <input className="state-switch" type="checkbox" role="switch" aria-label={`${course.name}を地図に表示`} checked={visible} onChange={(event) => setCourseVisibility(course, event.target.checked)} />
           </label>
         }) : <div className="route-list-empty"><span>⌕</span><strong>該当するコースがありません</strong><small>検索語や表示範囲を変更してください。</small></div>}
       </div>

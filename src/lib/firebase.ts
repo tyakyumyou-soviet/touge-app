@@ -341,12 +341,11 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
 }
 
 export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {
-  const displayName = values.displayName || user.displayName || 'ドライバー'
   const batch = writeBatch(db)
-  batch.set(doc(db, 'users', user.uid), { ...values, displayName, updatedAt: serverTimestamp() }, { merge: true })
+  batch.set(doc(db, 'users', user.uid), { ...values, updatedAt: serverTimestamp() }, { merge: true })
   const publicKeys = ['displayName', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
   const publicValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
-  if (Object.keys(publicValues).length) batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, displayName, photoURL: user.photoURL ?? null, updatedAt: serverTimestamp() }, { merge: true })
+  if (Object.keys(publicValues).length) batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, photoURL: user.photoURL ?? null, updatedAt: serverTimestamp() }, { merge: true })
   await batch.commit()
 }
 
@@ -358,7 +357,7 @@ export async function clearFriendPresence(userId: string): Promise<void> {
   await deleteDoc(doc(db, 'presence', userId))
 }
 
-export function subscribeFriendPresence(userIds: string[], onChange: (items: FriendPresence[]) => void): () => void {
+export function subscribeFriendPresence(userIds: string[], onChange: (items: FriendPresence[]) => void, onError?: () => void): () => void {
   const viewerId = auth.currentUser?.uid
   if (!userIds.length || !viewerId) { onChange([]); return () => undefined }
   const values = new Map<string, FriendPresence>()
@@ -366,7 +365,7 @@ export function subscribeFriendPresence(userIds: string[], onChange: (items: Fri
     if (snapshot.exists()) values.set(id, { userId: id, ...snapshot.data(), updatedAt: firestoreDate(snapshot.data().updatedAt) } as FriendPresence)
     else values.delete(id)
     onChange([...values.values()])
-  }, () => { values.delete(id); onChange([...values.values()]) }))
+  }, () => { values.delete(id); onChange([...values.values()]); onError?.() }))
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
 }
 

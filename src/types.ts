@@ -181,6 +181,8 @@ export interface UserProfile {
   locationSharing?: LocationSharingSettings
   /** Controls music presence independently from precise location sharing. */
   musicSharingEnabled?: boolean
+  /** Manual tracks are not overwritten by browser Media Session polling. */
+  musicSharingSource?: 'automatic' | 'manual'
   nowPlaying?: NowPlaying | null
   updatedAt?: string
 }

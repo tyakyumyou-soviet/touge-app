@@ -53,6 +53,15 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   const [transitionDirection, setTransitionDirection] = useState('forward')
   const [friendIds, setFriendIds] = useState<string[]>([])
   const [friendNames, setFriendNames] = useState<Record<string, string>>({})
+  const profileSaveTimer = useRef<number | null>(null)
+  const pendingProfileChanges = useRef<Partial<UserProfile>>({})
+  const profileSaveRevision = useRef(0)
+  useEffect(() => () => {
+    if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
+    const pending = pendingProfileChanges.current
+    pendingProfileChanges.current = {}
+    if (user && Object.keys(pending).length) void saveUserProfileSettings(user, pending)
+  }, [user])
   useEffect(() => {
     if (!user) return
     return subscribeFriends(user.uid, (entries) => {
@@ -99,11 +108,24 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     const selected = new Set(nextProfile.mapProfileListIds ?? [])
     return [...new Set((nextProfile.friendLists ?? []).filter((list) => selected.has(list.id)).flatMap((list) => list.memberIds))].filter((id) => friendIds.includes(id))
   }
-  function saveProfile() {
-    if (!user || !profile) return
-    const next = { ...profile, mapAllowedViewerIds: mapProfileViewerIds(profile) }
-    setProfile(next); setSaving(true); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    void saveUserProfileSettings(user, next).then(() => setNotice('プロフィールを保存しました')).catch(() => setNotice('端末には保存しました。接続後に保存操作をもう一度行ってください。')).finally(() => setSaving(false))
+  function queueProfileSave(values: Partial<UserProfile>, next: UserProfile) {
+    if (!user) return
+    pendingProfileChanges.current = { ...pendingProfileChanges.current, ...values }
+    localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next))
+    onProfileSaved?.(next)
+    setSaving(true)
+    setNotice('変更を自動保存中…')
+    if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
+    const revision = ++profileSaveRevision.current
+    profileSaveTimer.current = window.setTimeout(() => {
+      const changes = pendingProfileChanges.current
+      pendingProfileChanges.current = {}
+      profileSaveTimer.current = null
+      void saveUserProfileSettings(user, changes)
+        .then(() => { if (revision === profileSaveRevision.current) setNotice('変更を自動保存しました') })
+        .catch(() => { if (revision === profileSaveRevision.current) setNotice('自動保存できませんでした。通信状態を確認してください') })
+        .finally(() => { if (revision === profileSaveRevision.current) setSaving(false) })
+    }, 450)
   }
   async function postComment() { if (!user || !course || !body.trim()) return; try { await addCourseComment(course.id, body.trim(), user); setBody('') } catch { setNotice('コメントを保存できませんでした') } }
   async function removeComment(commentId: string) { if (!course) return; try { await deleteCourseComment(course.id, commentId) } catch { setNotice('コメントを削除できませんでした') } }
@@ -136,38 +158,60 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   function setLocationSharing(enabled: boolean) {
     if (!user) return
     if (enabled && !navigator.geolocation) { setNotice('この端末では位置情報を利用できません'); return }
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), locationSharing: { ...(profile?.locationSharing ?? { audience: 'friends' as const, listIds: [] }), enabled } }
-    setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    void saveUserProfileSettings(user, { locationSharing: next.locationSharing })
-    const musicSharingEnabled = next.musicSharingEnabled ?? Boolean(next.nowPlaying)
-    if (!enabled) {
-      if (musicSharingEnabled && next.nowPlaying) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: next.nowPlaying, location: null })
-      else void clearFriendPresence(user.uid)
+    const applyLocationSharing = (value: boolean) => {
+      const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), locationSharing: { ...(profile?.locationSharing ?? { audience: 'friends' as const, listIds: [] }), enabled: value } }
+      setProfile(next); queueProfileSave({ locationSharing: next.locationSharing }, next)
+      const musicSharingEnabled = next.musicSharingEnabled ?? Boolean(next.nowPlaying)
+      if (!value) {
+        if (musicSharingEnabled && next.nowPlaying) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: next.nowPlaying, location: null })
+        else void clearFriendPresence(user.uid)
+      }
     }
-    setNotice(enabled ? '位置共有をオンにしました。端末の許可後に更新を開始します' : '位置共有をオフにしました')
+    if (enabled) {
+      // Request the permission from the user's switch interaction. Starting
+      // watchPosition only in an effect can be blocked by some mobile browsers.
+      navigator.geolocation.getCurrentPosition(
+        () => { applyLocationSharing(true); setNotice('位置共有をオンにしました') },
+        (error) => {
+          const message = error.code === error.PERMISSION_DENIED ? '位置情報の許可が必要です。ブラウザーのサイト設定を確認してください' : error.code === error.POSITION_UNAVAILABLE ? '現在地を取得できませんでした。GPSや位置情報サービスを確認してください' : '現在地の取得がタイムアウトしました。通信・位置情報を確認して再試行してください'
+          setNotice(message)
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 },
+      )
+      return
+    }
+    applyLocationSharing(false)
+    setNotice('位置共有をオフにしました')
   }
   function setMusicSharing(enabled: boolean) {
     if (!user) return
     const playing = enabled ? nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata) : null
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, nowPlaying: playing }
-    setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    void saveUserProfileSettings(user, { musicSharingEnabled: enabled, nowPlaying: playing })
+    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, musicSharingSource: 'automatic' as const, nowPlaying: playing }
+    setProfile(next); queueProfileSave({ musicSharingEnabled: enabled, musicSharingSource: 'automatic', nowPlaying: playing }, next)
     if (next.locationSharing?.enabled || playing) void saveFriendPresence(user, { allowedViewerIds: viewerIds(next), nowPlaying: playing, ...(next.locationSharing?.enabled ? {} : { location: null }) })
     else void clearFriendPresence(user.uid)
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
-  function patchProfile(values: Partial<UserProfile>, persistImmediately = false) {
-    if (!user) return
-    const next = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0, ...profile, ...values }
+  function setManualTrack(field: 'title' | 'artist', value: string) {
+    if (!profile || !user) return
+    const title = field === 'title' ? value.trim() : profile.nowPlaying?.title ?? ''
+    const artist = field === 'artist' ? value.trim() : profile.nowPlaying?.artist ?? ''
+    const nowPlaying = title ? { title, ...(artist ? { artist } : {}), updatedAt: new Date().toISOString() } : null
+    const next = { ...profile, musicSharingEnabled: true, musicSharingSource: 'manual' as const, nowPlaying }
     setProfile(next)
-    // Route visibility is a cross-device preference, not a draft form value.
-    // Publish it immediately so the map and another signed-in device observe
-    // the same setting without requiring a second Save button.
-    if (persistImmediately) {
-      localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next))
-      onProfileSaved?.(next)
-      void saveUserProfileSettings(user, values).catch(() => setNotice('地図表示設定を保存できませんでした。通信状態を確認してください'))
-    }
+    queueProfileSave({ musicSharingEnabled: true, musicSharingSource: 'manual', nowPlaying }, next)
+  }
+  function patchProfile(values: Partial<UserProfile>) {
+    if (!user) return
+    const merged = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0, ...profile, ...values }
+    const next = { ...merged, mapAllowedViewerIds: mapProfileViewerIds(merged) }
+    setProfile(next)
+    // All profile and settings changes are saved automatically. Debouncing
+    // batches rapid text edits while local state updates immediately.
+    const persistedValues = 'mapVisibility' in values || 'mapProfileListIds' in values
+      ? { ...values, mapAllowedViewerIds: next.mapAllowedViewerIds }
+      : values
+    queueProfileSave(persistedValues, next)
   }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
   const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
@@ -177,7 +221,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     {!user ? <div className="empty-state"><p>ログインするとプロフィール編集、フォロー、コメント、いいねが使えます。</p></div> : <>
       {!course && <>
         {settingsView === 'home' && <section className="account-menu"><div className="account-summary"><div className="profile-avatar" aria-label="プロフィール画像">{profileImageUrl ? <img src={profileImageUrl} alt="Googleアカウントのプロフィール画像" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div><strong>{profile?.displayName || user.displayName || 'ドライバー'}</strong>{profile?.accountId && <span className="account-id-label">@{profile.accountId}</span>}<small>{profile?.vehicleName || '愛車を登録してプロフィールを整えよう'}</small></div></div><div className="account-menu-grid"><button type="button" onClick={() => navigate('profile')}><strong>プロフィール</strong><small>自己紹介・愛車・SNS</small><span>→</span></button><button type="button" onClick={() => navigate('friends')}><strong>フレンド</strong><small>検索・申請・共有リスト</small><span>→</span></button><button type="button" onClick={() => navigate('sharing')}><strong>共有・プライバシー</strong><small>地図・現在地・音楽</small><span>→</span></button><button type="button" onClick={() => navigate('settings')}><strong>設定</strong><small>表示・パーソナライズ</small><span>→</span></button></div>{onAdminOpen && <button type="button" className="button secondary admin-console-button" onClick={onAdminOpen}>管理コンソール</button>}{onLogout && <button type="button" className="text-button danger-button" onClick={onLogout}>ログアウト</button>}</section>}
-        {settingsView === 'profile' && <><section className="profile-editor"><div className="profile-avatar" aria-label="プロフィール画像">{profileImageUrl ? <img src={profileImageUrl} alt="Googleアカウントのプロフィール画像" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label>愛車（任意）<input value={profile?.vehicleName ?? ''} onChange={(e) => patchProfile({ vehicleName: e.target.value })} placeholder="例: 86 GT MT" /></label><label>愛車メモ（任意）<input value={profile?.vehicleDetails ?? ''} onChange={(e) => patchProfile({ vehicleDetails: e.target.value })} placeholder="例: 年式・カラー・仕様" /></label></div></section><section className="profile-social"><h3>SNS・愛車紹介（任意）</h3><p>愛車の写真・動画を紹介するためのアカウントと投稿URLです。</p><div className="form-grid"><label>X<input value={profile?.socialLinks?.x ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, x: e.target.value } })} placeholder="https://x.com/username" /></label><label>Instagram<input value={profile?.socialLinks?.instagram ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/username" /></label><label>YouTube<input value={profile?.socialLinks?.youtube ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@channel" /></label><label>TikTok<input value={profile?.socialLinks?.tiktok ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@username" /></label><label className="wide">愛車紹介の投稿URL（任意）<textarea rows={3} value={(profile?.showcasePostUrls ?? []).join('\n')} onChange={(e) => patchProfile({ showcasePostUrls: postUrlsFromText(e.target.value) })} placeholder="愛車の写真・動画が載った投稿URLを1行ずつ（最大3件）" /><small>対応投稿は埋め込み表示、その他はリンクとして表示します。</small></label></div></section>{profile && <ProfileShowcase profile={profile} />}<button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : 'プロフィールを保存'}</button></>}
+        {settingsView === 'profile' && <><section className="profile-editor"><div className="profile-avatar" aria-label="プロフィール画像">{profileImageUrl ? <img src={profileImageUrl} alt="Googleアカウントのプロフィール画像" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label>愛車（任意）<input value={profile?.vehicleName ?? ''} onChange={(e) => patchProfile({ vehicleName: e.target.value })} placeholder="例: 86 GT MT" /></label><label>愛車メモ（任意）<input value={profile?.vehicleDetails ?? ''} onChange={(e) => patchProfile({ vehicleDetails: e.target.value })} placeholder="例: 年式・カラー・仕様" /></label></div></section><section className="profile-social"><h3>SNS・愛車紹介（任意）</h3><p>愛車の写真・動画を紹介するためのアカウントと投稿URLです。</p><div className="form-grid"><label>X<input value={profile?.socialLinks?.x ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, x: e.target.value } })} placeholder="https://x.com/username" /></label><label>Instagram<input value={profile?.socialLinks?.instagram ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/username" /></label><label>YouTube<input value={profile?.socialLinks?.youtube ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@channel" /></label><label>TikTok<input value={profile?.socialLinks?.tiktok ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@username" /></label><label className="wide">愛車紹介の投稿URL（任意）<textarea rows={3} value={(profile?.showcasePostUrls ?? []).join('\n')} onChange={(e) => patchProfile({ showcasePostUrls: postUrlsFromText(e.target.value) })} placeholder="愛車の写真・動画が載った投稿URLを1行ずつ（最大3件）" /><small>対応投稿は埋め込み表示、その他はリンクとして表示します。</small></label></div></section>{profile && <ProfileShowcase profile={profile} />}<p className="muted">プロフィールの変更は自動で保存されます。</p></>}
         {settingsView === 'friends' && <FriendsPanel uid={user.uid} name={profile?.displayName || user.displayName || 'ドライバー'} listCount={profile?.friendLists?.length ?? 0} listPanel={<FriendListsPanel lists={profile?.friendLists ?? []} friendIds={friendIds} friendName={friendName} onSave={saveFriendLists} />} />}
         {settingsView === 'sharing' && <>
           <section className="presence-settings profile-map-audience" aria-labelledby="profile-map-audience-title">
@@ -189,11 +233,11 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
             <h3>位置情報と音楽の共有</h3>
             <div className="presence-sharing-options">
               <div className="presence-sharing-option">
-                <label className="community-switch"><span><strong>位置情報を共有する</strong><small>現在地を共有相手の地図に表示します</small></span><input type="checkbox" role="switch" aria-label="位置情報を共有する" checked={Boolean(profile?.locationSharing?.enabled)} onChange={(event) => setLocationSharing(event.target.checked)} /></label>
+                <label className="community-switch"><span><strong>位置情報を共有する</strong><small>現在地を共有相手の地図に表示します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="位置情報を共有する" checked={Boolean(profile?.locationSharing?.enabled)} onChange={(event) => setLocationSharing(event.target.checked)} /></label>
               </div>
               <div className="presence-sharing-option">
-                <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
-                {(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)) && <p className="automatic-sharing-status">{profile?.nowPlaying?.title ? `共有中: ${profile.nowPlaying.title}${profile.nowPlaying.artist ? ` / ${profile.nowPlaying.artist}` : ''}` : '再生情報を検出すると自動で共有します'}</p>}
+                <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
+                {(profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)) && <div className="music-sharing-details"><p className="automatic-sharing-status">{profile?.musicSharingSource === 'manual' ? '手入力した曲名を共有中' : profile?.nowPlaying?.title ? `共有中: ${profile.nowPlaying.title}${profile.nowPlaying.artist ? ` / ${profile.nowPlaying.artist}` : ''}` : 'このブラウザーで再生情報を取得できる場合は自動共有します'}</p><p className="muted">他の音楽アプリの再生情報はPWAから取得できません。必要な場合は入力してください。</p><label>曲名<input value={profile?.musicSharingSource === 'manual' ? profile.nowPlaying?.title ?? '' : ''} onChange={(event) => setManualTrack('title', event.target.value)} placeholder="曲名を入力" /></label><label>アーティスト（任意）<input value={profile?.musicSharingSource === 'manual' ? profile.nowPlaying?.artist ?? '' : ''} onChange={(event) => setManualTrack('artist', event.target.value)} placeholder="アーティスト名" /></label></div>}
               </div>
             </div>
             <div className="presence-audience" aria-labelledby="presence-audience-title">
@@ -204,17 +248,17 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
             <small>位置情報と音楽は個別にオン・オフできます。共有相手の設定は両方に適用されます。</small>
             {presence.length > 0 && <div className="presence-list">{presence.map((item) => <span key={item.userId}>{item.displayName}{item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title}` : ''}{item.location ? ' · 位置共有中' : ''}</span>)}</div>}
           </section>
-          <button className="button primary" onClick={saveProfile} disabled={saving}>{saving ? '保存中…' : '共有設定を保存'}</button>
+          <p className="muted">共有・プライバシーの変更は自動で保存されます。</p>
         </>}
         {settingsView === 'settings' && <>
           <ThemeSettings value={themePreference} resolvedTheme={resolvedTheme} onChange={(value) => { onThemeChange(value); patchProfile({ themePreference: value }) }} />
-          {profile && <RouteDisplaySettings profile={profile} courses={courses} userId={user.uid} friendIds={friendIds} friendNames={friendNames} onChange={(values) => patchProfile(values, true)} />}
-          {profile && <PersonalizationSettings profile={profile} onChange={(values) => patchProfile(values, true)} />}
+          {profile && <RouteDisplaySettings profile={profile} courses={courses} userId={user.uid} friendIds={friendIds} friendNames={friendNames} onChange={patchProfile} />}
+          {profile && <PersonalizationSettings profile={profile} onChange={patchProfile} />}
         </>}
       </>}
       {course && <section className="social-thread">{authorProfile && <ProfileShowcase profile={authorProfile} title={`${course.authorName ?? authorProfile.displayName}のプロフィール`} />}<div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>{profile?.followingIds?.includes(course.authorId) ? 'フォロー解除' : '＋ 作成者をフォロー'}</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button danger-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
     </>}
-    {notice && <p className="form-success" role="status">{notice}</p>}
+    {notice && <p className={saving ? 'form-saving' : 'form-success'} role="status">{notice}</p>}
     </div></div>
   </section></div>
 }

@@ -17,9 +17,9 @@ import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, clearFriendPresence, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendPresence, saveRating, saveUserProfileSettings, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
+import { auth, clearFriendPresence, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendPresence, saveRating, saveUserProfileSettings, subscribeFriendPresence, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
-import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
+import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
 import { personalizedScore } from './lib/personalization'
 import { useMobileSheet } from './hooks/useMobileSheet'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
@@ -139,17 +139,24 @@ export default function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [communityOpen, setCommunityOpen] = useState(false)
   const [acceptedFriendIds, setAcceptedFriendIds] = useState<string[]>([])
+  const [friendPresence, setFriendPresence] = useState<FriendPresence[]>([])
   useEffect(() => {
     setAcceptedFriendIds([])
+    setFriendPresence([])
     if (!user) return
     return subscribeFriends(user.uid, (entries) => setAcceptedFriendIds(entries.filter((entry) => entry.status === 'accepted').map((entry) => entry.sender === user.uid ? entry.recipient : entry.sender)), () => setAcceptedFriendIds([]))
   }, [user])
+  useEffect(() => {
+    if (!user || !acceptedFriendIds.length) { setFriendPresence([]); return }
+    return subscribeFriendPresence(acceptedFriendIds, setFriendPresence, () => setNotice('フレンドの共有情報を読み取れません。共有範囲と接続状態を確認してください'))
+  }, [user, acceptedFriendIds])
   const [communityCourse, setCommunityCourse] = useState<Course | null>(null)
   const [courseManagerOpen, setCourseManagerOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [timerOpen, setTimerOpen] = useState(false)
   const surfaceTimer = useRef<number | null>(null)
   const profileDirty = useRef(false)
+  const presenceWriteFailed = useRef(false)
   const administrator = accountRole === 'admin' || accountRole === 'superadmin'
   const unlimitedWaypoints = administrator
 
@@ -245,7 +252,7 @@ export default function App() {
   }, [user])
   const automaticMusicSharingEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   useEffect(() => {
-    if (!user || !automaticMusicSharingEnabled) return
+    if (!user || !automaticMusicSharingEnabled || viewerProfile?.musicSharingSource === 'manual') return
     let lastTrack = ''
     const syncDetectedTrack = () => {
       const playing = nowPlayingFromMediaMetadata(navigator.mediaSession?.metadata)
@@ -270,7 +277,7 @@ export default function App() {
     syncDetectedTrack()
     const timer = window.setInterval(syncDetectedTrack, 5000)
     return () => window.clearInterval(timer)
-  }, [user, automaticMusicSharingEnabled])
+  }, [user, automaticMusicSharingEnabled, viewerProfile?.musicSharingSource])
   useEffect(() => {
     if (!user || !viewerProfile) return
     const audience = viewerProfile.locationSharing?.audience ?? 'friends'
@@ -301,8 +308,13 @@ export default function App() {
     // visible to friends.
     void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
     const watchId = navigator.geolocation.watchPosition(
-      (position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }).catch(() => undefined),
-      () => {
+      (position) => void saveFriendPresence(user, { location: [position.coords.longitude, position.coords.latitude], allowedViewerIds, nowPlaying }).then(() => { presenceWriteFailed.current = false }).catch(() => {
+        if (!presenceWriteFailed.current) setNotice('位置情報を共有先へ保存できませんでした。接続状態とFirestoreルールを確認してください')
+        presenceWriteFailed.current = true
+      }),
+      (error) => {
+        const message = error.code === error.PERMISSION_DENIED ? '位置情報の許可が解除されました。共有を停止しました' : error.code === error.POSITION_UNAVAILABLE ? '位置情報を取得できません。GPSや位置情報サービスを確認してください' : '位置情報の取得がタイムアウトしました'
+        setNotice(message)
         if (musicSharingEnabled && nowPlaying) void saveFriendPresence(user, { allowedViewerIds, nowPlaying, location: null }).catch(() => undefined)
         else void clearFriendPresence(user.uid).catch(() => undefined)
       },
@@ -789,7 +801,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
+        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} friendPresence={friendPresence} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
           const id = ++recommendationActionSequence.current
           const point = { coordinate: action.point, label: '地図指定' }
           // Reflect the selected search centre immediately.  CourseForm then

@@ -756,6 +756,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .social-thread form { display: flex; gap: 8px; }
 .social-thread form input { flex: 1; min-width: 0; }
 .form-success { color: var(--accent); margin-bottom: 0; }
+.form-saving { color: var(--muted); margin-bottom: 0; }
 .friend-settings, .presence-settings, .route-display-settings, .personalization-settings { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .friend-settings h3, .presence-settings h3, .route-display-settings h3, .personalization-settings h3 { margin: 0 0 7px; }
 .friend-list-manager { display: grid; gap: 14px; }
@@ -807,6 +808,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .presence-sharing-option + .presence-sharing-option { margin-top: 0; }
 .presence-sharing-option .inline-form { margin: 0 0 12px; }
 .automatic-sharing-status { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.music-sharing-details { display: grid; gap: 9px; padding: 10px 0 12px; }
+.music-sharing-details > p { margin: 0; }
+.music-sharing-details > label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 800; }
+.music-sharing-details > label input { width: 100%; min-width: 0; }
 .presence-audience { display: grid; gap: 10px; margin: 2px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
 .presence-audience h4 { margin: 0; }
 .profile-map-audience { display: grid; gap: 10px; }
@@ -923,12 +928,59 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .community-panel .inline-form input, .friend-search input { flex: 1 1 150px; }
 .community-panel .community-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; font-size: 14px; }
 .community-switch > span { display: grid; gap: 4px; }
-.community-panel .community-switch input[type="checkbox"] { appearance: none; flex: 0 0 46px; width: 46px; height: 28px; border: 0; border-radius: 20px; background: #bcc6bf; position: relative; cursor: pointer; padding: 0; margin: 0; transition: background 180ms; }
-.community-switch input::after { content: ''; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; background: white; border-radius: 50%; box-shadow: 0 1px 4px #0002; transition: transform 180ms; }
-.community-panel .community-switch input:checked { background: #237756; }
-.community-switch input:checked::after { transform: translateX(18px); }
 .presence-settings .community-switch input { order: 1; margin-left: auto; }
 .community-panel input[type="checkbox"] { width: 20px; height: 20px; accent-color: #237756; }
+.state-switch,
+.community-panel .state-switch,
+.community-panel input[type="checkbox"].state-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: inline-block;
+  flex: 0 0 68px;
+  width: 68px;
+  min-width: 68px;
+  height: 34px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #89958d;
+  border-radius: 999px;
+  color: #fff;
+  background: #65716a;
+  box-shadow: inset 0 1px 2px #0002;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.state-switch::before {
+  content: 'OFF';
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  color: #fff;
+  font: 900 9px/1 system-ui, sans-serif;
+  letter-spacing: .04em;
+}
+.state-switch::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px #0005;
+  transition: transform 180ms cubic-bezier(.2,.8,.2,1);
+}
+.state-switch:checked,
+.community-panel input[type="checkbox"].state-switch:checked { border-color: #176846; background: #176846; }
+.state-switch:checked::before { content: 'ON'; right: auto; left: 8px; }
+.state-switch:checked::after { transform: translateX(34px); }
+.state-switch:focus-visible { outline: 3px solid #328dff; outline-offset: 3px; }
+.state-switch:disabled { cursor: not-allowed; opacity: .55; }
 .community-panel .personalization-settings label { display: grid; grid-template-columns: 1fr 1fr 24px; gap: 8px; padding: 12px 0; border-bottom: 1px solid #edf1ed; }
 .community-panel .personalization-settings input[type="range"] { grid-row: 2; grid-column: 1 / -1; width: 100%; accent-color: #237756; min-height: 28px; }
 .community-panel .personalization-settings label > span { font-size: 12px; }
@@ -942,7 +994,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .settings-kicker { color: #237756; font-size: 10px; font-weight: 900; letter-spacing: .16em; }
 .settings-count { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; background: #e8f3ed; color: #176847; font-size: 11px; font-weight: 900; white-space: nowrap; }
 .route-source-switches { display: grid; gap: 8px; }
-.route-source-switches > label { display: grid; grid-template-columns: 38px minmax(0, 1fr) 46px; align-items: center; gap: 11px; min-height: 66px; padding: 10px 12px; border: 1px solid #e0e7e2; border-radius: 16px; background: #f8faf8; cursor: pointer; transition: border-color 160ms, background 160ms, box-shadow 160ms; }
+.route-source-switches > label { display: grid; grid-template-columns: 38px minmax(0, 1fr) 68px; align-items: center; gap: 11px; min-height: 66px; padding: 10px 12px; border: 1px solid #e0e7e2; border-radius: 16px; background: #f8faf8; cursor: pointer; transition: border-color 160ms, background 160ms, box-shadow 160ms; }
 .route-source-switches > label.active { border-color: #78b496; background: #f0f8f3; box-shadow: 0 8px 22px rgba(30, 95, 69, .08); }
 .route-source-switches > label > span:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
 .route-source-switches strong { font-size: 14px; }
@@ -950,10 +1002,6 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-source-icon.official, .route-source-dot.official { color: #846b1f; background: #f8edc8; }
 .route-source-icon.mine, .route-source-dot.mine { color: #176847; background: #dff0e7; }
 .route-source-icon.friends, .route-source-dot.friends { color: #515b90; background: #e8e9f7; }
-.route-source-switches input[role="switch"], .route-course-list input[role="switch"] { appearance: none; width: 44px; height: 26px; margin: 0; border: 0; border-radius: 999px; background: #c8d0ca; position: relative; cursor: pointer; transition: background 160ms; }
-.route-source-switches input[role="switch"]::after, .route-course-list input[role="switch"]::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px #0003; transition: transform 160ms; }
-.route-source-switches input[role="switch"]:checked, .route-course-list input[role="switch"]:checked { background: #237756; }
-.route-source-switches input[role="switch"]:checked::after, .route-course-list input[role="switch"]:checked::after { transform: translateX(18px); }
 .route-friend-scope { margin-top: 10px; padding: 13px; border-radius: 16px; background: #eff5f1; }
 .route-friend-scope > label, .route-friend-filter { display: grid; gap: 6px; color: #526159; font-size: 11px; font-weight: 800; }
 .friend-list-chips { display: flex; gap: 7px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
@@ -976,7 +1024,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .route-bulk-actions > span { color: #65746d; font-size: 11px; font-weight: 800; }
 .route-bulk-actions > div { display: flex; gap: 5px; }
 .route-course-list { display: grid; gap: 6px; max-height: 350px; overflow-y: auto; overscroll-behavior: contain; margin: 5px -4px 0; padding: 4px; scrollbar-width: thin; }
-.route-course-list > label { display: grid; grid-template-columns: 10px minmax(0, 1fr) 44px; align-items: center; gap: 10px; min-height: 58px; padding: 9px 10px; border: 1px solid #e3e8e4; border-radius: 14px; background: #fafbfa; cursor: pointer; }
+.route-course-list > label { display: grid; grid-template-columns: 10px minmax(0, 1fr) 68px; align-items: center; gap: 10px; min-height: 58px; padding: 9px 10px; border: 1px solid #e3e8e4; border-radius: 14px; background: #fafbfa; cursor: pointer; }
 .route-course-list > label.shown { border-color: #b9d7c6; background: #f3f9f5; }
 .route-source-dot { width: 8px; height: 30px; border-radius: 8px; }
 .route-course-copy { display: grid; gap: 3px; min-width: 0; }
@@ -1030,7 +1078,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .community-panel .community-view > .button.primary:last-child { width: 100%; min-height: 50px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .route-source-switches > label, .route-source-switches input[role="switch"], .route-source-switches input[role="switch"]::after, .route-course-list input[role="switch"], .route-course-list input[role="switch"]::after { transition: none; }
+  .route-source-switches > label, .state-switch, .state-switch::after { transition: none; }
 }
 .community-segments { display: flex; padding: 4px; background: #e6ece7; border-radius: 14px; gap: 4px; margin-bottom: 18px; }
 .community-segments button { flex: 1; padding: 10px 3px; border: 0; border-radius: 10px; background: transparent; font-size: 13px; min-height: 44px; }
@@ -1201,6 +1249,8 @@ html[data-theme="dark"] .community-panel .account-menu-grid button { color: var(
 html[data-theme="dark"] .community-panel .community-view input:not([type="checkbox"]):not([type="range"]),
 html[data-theme="dark"] .community-panel .community-view select,
 html[data-theme="dark"] .community-panel .community-view textarea { color: var(--ink); border-color: #435249; background: #202a24; }
+html[data-theme="dark"] .community-panel input[type="checkbox"].state-switch { color: #f2f6f3; border-color: #738078; background: #59645d; }
+html[data-theme="dark"] .community-panel input[type="checkbox"].state-switch:checked { border-color: #53ae7e; background: #167249; }
 html[data-theme="dark"] :is(.route-source-switches > label, .route-course-list > label, .preference-traits button, .theme-options button) { color: var(--ink); border-color: #38483f; background: #1c2721; }
 html[data-theme="dark"] :is(.route-source-switches > label.active, .route-course-list > label.shown, .preference-traits button.active, .theme-options button.selected) { border-color: #579b77; background: #20352a; box-shadow: 0 7px 20px #0003; }
 html[data-theme="dark"] :is(.route-friend-scope, .route-source-tabs, .route-search, .preference-tuning, .community-segments) { color: var(--ink); border-color: #38483f; background: #151e19; }

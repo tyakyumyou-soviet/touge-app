@@ -150,7 +150,9 @@ service cloud.firestore {
     }
 
     match /presence/{userId} {
-      allow read: if isSuperAdmin() || (signedIn() && (request.auth.uid == userId || (
+      // Allow accepted friends to subscribe while no presence document exists.
+      // Once it exists, the materialized audience list remains mandatory.
+      allow read: if isSuperAdmin() || (signedIn() && (request.auth.uid == userId || (resource == null && friendWith(userId)) || (
         resource.data.allowedViewerIds is list
         && request.auth.uid in resource.data.allowedViewerIds
         && friendWith(userId)
