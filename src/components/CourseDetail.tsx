@@ -85,6 +85,16 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         </div>
         <div className="tag-row"><span className={`toll-chip ${tollStatus}`}>{tollStatusLabels[tollStatus]}</span>{course.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
         <p className="description">{course.description}</p>
+        {!isPreview && onToggleMapRoute && <button
+          type="button"
+          className={`detail-map-visibility ${mapHidden ? '' : 'is-visible'}`}
+          role="switch"
+          aria-checked={!mapHidden}
+          onClick={onToggleMapRoute}
+        >
+          <span className="detail-map-visibility-copy"><strong>マップにコースを表示</strong><small>{mapHidden ? '現在は地図に表示されていません' : 'このコースを地図に表示中です'}</small></span>
+          <span className="detail-map-visibility-state" aria-hidden="true"><i />{mapHidden ? 'OFF' : 'ON'}</span>
+        </button>}
         <button className="three-d-cta" onClick={onOpen3d}><span>3D</span><div><strong>立体コースビュー</strong><small>地形と高低差を俯瞰して確認</small></div><b>→</b></button>
         <ElevationChart values={course.elevationProfile} />
         {!isPreview && <section className={`live-road-info ${liveInfo?.status ?? 'caution'}`} aria-label="走行前の道路情報">
@@ -118,7 +128,6 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
           <button onClick={onShare}>コースを共有</button>
           <button onClick={onCommunity}>コメント・いいね</button>
           <button onClick={onReportRoad}>道路状況を報告</button>
-          {onToggleMapRoute && <button onClick={onToggleMapRoute}>{mapHidden ? '地図に表示する' : '地図から隠す'}</button>}
         </div>}
       </div>
       <footer className="nav-actions">

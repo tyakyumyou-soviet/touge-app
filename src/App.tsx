@@ -17,7 +17,7 @@ import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, saveUserProfileSettings, subscribeFriendPresence, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
+import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, publishFriendProfile, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, saveUserProfileSettings, subscribeFriendPresence, subscribeGlobalMusicDisplay, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
 import { personalizedScore } from './lib/personalization'
@@ -35,6 +35,7 @@ import { editableStopsFromCourse } from './lib/editingStops'
 import { JAPANESE_PREFECTURES } from './lib/administrativeAreas'
 import { ProposalGoalDialog } from './components/ProposalGoalDialog'
 import { nowPlayingFromMediaSession } from './lib/profile'
+import { isMusicRecognitionRequestFresh, MUSIC_RECOGNITION_PENDING_KEY, parseMusicRecognitionResult, type MusicRecognitionRequest } from './lib/iosMusicRecognition'
 import { isCourseVisibleByMapPreferences } from './lib/mapRoutePreferences'
 import { normalizeThemePreference, resolveThemePreference, type ResolvedTheme } from './lib/theme'
 import { distanceMeters, loadSpeedCameras, type SpeedCamera } from './lib/speedSafety'
@@ -97,6 +98,7 @@ export default function App() {
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [viewerProfile, setViewerProfile] = useState<UserProfile | null>(null)
+  const [musicDisplayEnabled, setMusicDisplayEnabled] = useState(true)
   const [themePreference, setThemePreference] = useState<ThemePreference>(initialThemePreference)
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveThemePreference(initialThemePreference(), systemDarkMode()))
   const [profileChecked, setProfileChecked] = useState(false)
@@ -148,13 +150,25 @@ export default function App() {
   const locationListIds = useMemo(() => new Set(locationListIdsKey ? locationListIdsKey.split('|') : []), [locationListIdsKey])
   const selectedLocationLists = useMemo(() => (viewerProfile?.friendLists ?? []).filter((list) => locationListIds.has(list.id)), [viewerProfile?.friendLists, locationListIds])
   const presenceAllowedViewerIds = useMemo(() => [...new Set(locationAudience === 'lists' ? selectedLocationLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id)), [locationAudience, selectedLocationLists, acceptedFriendIds])
-  const sharedMusicEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
+  const sharedMusicEnabled = musicDisplayEnabled && Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   const sharedTrack = sharedMusicEnabled ? viewerProfile?.nowPlaying ?? null : null
   const musicAudience = viewerProfile?.musicSharingAudience ?? viewerProfile?.locationSharing?.audience ?? 'friends'
   const musicListIdsKey = [...(viewerProfile?.musicSharingListIds ?? viewerProfile?.locationSharing?.listIds ?? [])].sort().join('|')
   const musicListIds = useMemo(() => new Set(musicListIdsKey ? musicListIdsKey.split('|') : []), [musicListIdsKey])
   const selectedMusicLists = useMemo(() => (viewerProfile?.friendLists ?? []).filter((list) => musicListIds.has(list.id)), [viewerProfile?.friendLists, musicListIds])
   const musicAllowedViewerIds = useMemo(() => [...new Set(musicAudience === 'lists' ? selectedMusicLists.flatMap((list) => list.memberIds) : acceptedFriendIds)].filter((id) => acceptedFriendIds.includes(id)), [musicAudience, selectedMusicLists, acceptedFriendIds])
+  const mapFriendPresence = useMemo(() => musicDisplayEnabled ? friendPresence : friendPresence.map((item) => { const visibleItem = { ...item }; delete visibleItem.nowPlaying; return visibleItem }), [friendPresence, musicDisplayEnabled])
+  useEffect(() => {
+    setMusicDisplayEnabled(true)
+    if (!user) return
+    return subscribeGlobalMusicDisplay(setMusicDisplayEnabled, () => setNotice('全体設定を読み取れません。音楽表示は通常設定のままです。'))
+  }, [user])
+  useEffect(() => {
+    if (!user || musicDisplayEnabled || !viewerProfile?.nowPlaying) return
+    profileDirty.current = true
+    setViewerProfile((current) => current ? { ...current, nowPlaying: null } : current)
+    void saveUserProfileSettings(user, { nowPlaying: null }).catch(() => setNotice('音楽表示の停止後に再生情報を消去できませんでした'))
+  }, [user, musicDisplayEnabled, viewerProfile?.nowPlaying])
   useEffect(() => {
     setAcceptedFriendIds([])
     setAcceptedFriendsReady(false)
@@ -182,6 +196,19 @@ export default function App() {
   const presenceWriteFailed = useRef(false)
   const administrator = accountRole === 'admin' || accountRole === 'superadmin'
   const unlimitedWaypoints = administrator
+
+  // The blue dot is a local map aid, independent from the opt-in friend
+  // location-sharing feature. This watcher only updates React state and is
+  // never written to Firebase.
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => setCurrentLocation([position.coords.longitude, position.coords.latitude]),
+      (error) => { if (error.code === error.PERMISSION_DENIED) setCurrentLocation(null) },
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },
+    )
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [])
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -257,6 +284,7 @@ export default function App() {
     } catch { /* ignore invalid local cache */ }
     loadUserProfile(user.uid).then((profile) => {
       const remote = profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }
+      void publishFriendProfile(user, remote).catch(() => undefined)
       // Keep any newer offline/local interaction that happened while the
       // Firestore request was in flight. Remote-only fields still fill gaps.
       setViewerProfile((current) => profileDirty.current && current ? { ...remote, ...current } : remote)
@@ -268,12 +296,55 @@ export default function App() {
   }, [viewerProfile?.themePreference])
   const changeThemePreference = useCallback((next: ThemePreference) => {
     setThemePreference(next)
-    if (!user) return
     profileDirty.current = true
     setViewerProfile((current) => current ? { ...current, themePreference: next } : current)
-    void saveUserProfileSettings(user, { themePreference: next }).catch(() => setNotice('外観はこの端末に保存しました。接続後にもう一度外観を選択してください。'))
-  }, [user])
-  const automaticMusicSharingEnabled = Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
+    // CommunityPanel persists this through its ordered, debounced profile
+    // writer. Keeping a second write here could race and restore an older mode.
+  }, [])
+  useEffect(() => {
+    if (!user || !profileChecked) return
+    const receiveShortcutResult = () => {
+      const params = new URLSearchParams(window.location.search)
+      const requestId = params.get('tougeMusicRequest')
+      if (!requestId) return
+
+      let pending: MusicRecognitionRequest | null = null
+      try { pending = JSON.parse(localStorage.getItem(MUSIC_RECOGNITION_PENDING_KEY) ?? 'null') as MusicRecognitionRequest | null } catch { /* Ignore a malformed pending request. */ }
+      if (pending?.id !== requestId || !isMusicRecognitionRequestFresh(pending)) return
+
+      const removeCallbackFromAddress = () => {
+        localStorage.removeItem(MUSIC_RECOGNITION_PENDING_KEY)
+        const cleanUrl = new URL(window.location.href)
+        for (const key of ['tougeMusicRequest', 'tougeMusicCancelled', 'tougeMusicError', 'result', 'errorMessage']) cleanUrl.searchParams.delete(key)
+        window.history.replaceState(window.history.state, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+      }
+
+      if (params.has('tougeMusicCancelled') || params.has('tougeMusicError')) {
+        setNotice(params.has('tougeMusicCancelled') ? '曲の認識をキャンセルしました' : '曲を認識できませんでした')
+        removeCallbackFromAddress()
+        return
+      }
+      const recognized = parseMusicRecognitionResult(requestId, params.get('result'))
+      if (!recognized) {
+        setNotice('曲を認識できませんでした。ショートカットの出力設定を確認してください')
+        removeCallbackFromAddress()
+        return
+      }
+
+      const track = { title: recognized.title, ...(recognized.artist ? { artist: recognized.artist } : {}), updatedAt: new Date().toISOString() }
+      const base = viewerProfile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }
+      profileDirty.current = true
+      setViewerProfile({ ...base, musicSharingSource: 'shortcut', nowPlaying: track })
+      void saveUserProfileSettings(user, { musicSharingSource: 'shortcut', nowPlaying: track })
+        .then(() => setNotice(viewerProfile?.musicSharingEnabled ? `再生中の曲を共有しました：${track.title}` : `曲を認識しました：${track.title}（曲名共有はオフです）`))
+        .catch(() => setNotice('曲は認識しましたが保存できませんでした。通信状態を確認してください'))
+      removeCallbackFromAddress()
+    }
+    receiveShortcutResult()
+    window.addEventListener('pageshow', receiveShortcutResult)
+    return () => window.removeEventListener('pageshow', receiveShortcutResult)
+  }, [user, profileChecked, viewerProfile])
+  const automaticMusicSharingEnabled = musicDisplayEnabled && Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   useEffect(() => {
     if (!user || !automaticMusicSharingEnabled) return
     let lastTrack = ''
@@ -281,6 +352,10 @@ export default function App() {
     const syncDetectedTrack = () => {
       const playing = nowPlayingFromMediaSession(navigator.mediaSession)
       if (!playing) {
+        // Shazam Shortcuts provide a one-time match from the iPhone's system
+        // recognition. Keep that result until another match replaces it; this
+        // page cannot observe the external app's paused/ended state.
+        if (viewerProfile?.musicSharingSource === 'shortcut') return
         // Do not retain a track from a previous app session when the browser
         // no longer reports active Media Session metadata.
         if (!lastTrack && !hasStoredTrack) return
@@ -677,6 +752,15 @@ export default function App() {
     setDraftFocus(stops.route[0] ?? null)
   }
 
+  function returnToCourseManager() {
+    setDrawing(false)
+    setSurfaceMotion('idle')
+    setCourseManagerOpen(true)
+    setRecommendationMapState({ active: false, start: null, goal: null, vias: [] })
+    setRecommendationMapAction(null)
+    setProposalPreviews([]); setProposalDefinitions([]); setProposalEditSnapshot(null); setIncorporatedProposalKeys([])
+  }
+
   async function handleCreate(draft: CourseDraft) {
     const activeUser = auth.currentUser
     if (!activeUser) throw new Error('Authentication required')
@@ -838,12 +922,12 @@ export default function App() {
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="コース名・地名・タグ・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
           <button className="new-route" onClick={openCreateFlow}><span>＋</span>コース登録</button>
-          {user ? <button className="user-button" onClick={() => { setCommunityCourse(null); setCommunityOpen(true) }} title="アカウント" aria-label="アカウント">{user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
+          {user ? <button className="user-button" onClick={() => { setCommunityCourse(null); setCommunityOpen(true) }} title="アカウント" aria-label="アカウント">{viewerProfile?.photoURL || user.photoURL ? <img src={viewerProfile?.photoURL || user.photoURL || ''} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
         </div>
       </header>
 
       <main>
-        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} friendPresence={friendPresence} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
+        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} friendPresence={mapFriendPresence} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
           const id = ++recommendationActionSequence.current
           const point = { coordinate: action.point, label: '地図指定' }
           // Reflect the selected search centre immediately.  CourseForm then
@@ -897,14 +981,21 @@ export default function App() {
             const mapRouteOverrides = { ...(viewerProfile.mapRouteOverrides ?? {}), [selected.id]: visible ? 'hide' as const : 'show' as const }
             const hiddenRouteIds = (viewerProfile.hiddenRouteIds ?? []).filter((id) => id !== selected.id)
             const next = { ...viewerProfile, mapRouteOverrides, hiddenRouteIds }
-            profileDirty.current = true; setViewerProfile(next); await saveUserProfileSettings(user, { mapRouteOverrides, hiddenRouteIds })
+            profileDirty.current = true
+            setViewerProfile(next)
+            try {
+              await saveUserProfileSettings(user, { mapRouteOverrides, hiddenRouteIds })
+            } catch {
+              setViewerProfile((current) => current?.mapRouteOverrides?.[selected.id] === mapRouteOverrides[selected.id] ? viewerProfile : current)
+              setNotice('地図表示設定を保存できませんでした。通信状態を確認して再度お試しください。')
+            }
           } : undefined}
           isPreview={selected.authorId === '__proposal_preview__'}
           onReversePreview={reverseProposalPreview}
           previewNavigation={selectedPreviewIndex >= 0 ? { index: selectedPreviewIndex, total: proposalPreviews.length, onPrevious: () => { const next = proposalPreviews[selectedPreviewIndex - 1]; if (next) selectCourse(next) }, onNext: () => { const next = proposalPreviews[selectedPreviewIndex + 1]; if (next) selectCourse(next) }, onReturn: () => setSelected(null) } : undefined}
           onEditPreview={() => { const id = selected.id.replace('proposal-preview-', ''); const proposal = proposalDefinitions.find((item) => item.id === id); if (proposal) handleUseProposal(proposal) }}
         />}
-        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} incorporatedProposalKeys={incorporatedProposalKeys} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onCancel={openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
+        {drawing && <CourseForm transitionState={surfaceMotion === 'leaving-form' ? 'leaving' : surfaceMotion === 'entering-form' ? 'entering' : 'idle'} previewActive={selected?.authorId === '__proposal_preview__'} editingCourse={editingCourse} route={draftRoute} pointLabels={draftPointLabels} pointRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} courses={courses} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} canUseUnlimitedWaypoints={unlimitedWaypoints} hasProposalEditSnapshot={Boolean(proposalEditSnapshot)} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onIncorporateCourse={incorporateCourse} onFocusPoint={setDraftFocus} onCurrentLocationChange={setCurrentLocation} onPendingPointChange={(point, label = '') => setDraftPendingSearch(point ? { point, label } : null)} recommendationMapAction={recommendationMapAction} incorporatedProposalKeys={incorporatedProposalKeys} onRecommendationMapStateChange={setRecommendationMapState} onUseProposal={handleUseProposal} onUndoProposalEdit={undoProposalEdit} onSetProposalPreviews={(proposals) => { setProposalEditSnapshot(null); setProposalDefinitions(proposals); setProposalPreviews(proposals.map(previewCourseFromProposal)) }} onOpenProposalPreview={(proposalId) => { const proposal = proposalDefinitions.find((item) => item.id === proposalId); if (proposal) selectCourse(previewCourseFromProposal(proposal)) }} onRemovePoint={(index) => { setDraftRoute((route) => route.filter((_, pointIndex) => pointIndex !== index)); setDraftPointLabels((labels) => labels.filter((_, labelIndex) => labelIndex !== index)); setDraftPointRoles((roles) => roles.filter((_, roleIndex) => roleIndex !== index)); setDraftViaInsertAfter(null) }} onSetFinalPointAsGoal={setFinalPointAsGoal} onReverseRoute={reverseDraftRoute} onMoveRouteBlock={moveRouteBlock} onReverseRouteBlock={reverseRouteBlock} onChooseViaInsertion={setDraftViaInsertAfter} onCancel={editingCourse ? returnToCourseManager : openCourseList} onSave={editingCourse ? handleCourseRouteUpdate : handleCreate} />}
         {ratingOpen && selected && <RatingForm courseId={selected.id} courseName={selected.name} onCancel={() => setRatingOpen(false)} onSave={handleRating} />}
         {course3dOpen && selected && <Course3DView course={selected} theme={resolvedTheme} onClose={() => setCourse3dOpen(false)} onElevationRepaired={handleElevationRepair} />}
         {timerOpen && selected && <DriveTimer course={selected} speedCameras={speedCameras} alertOutput={speedAlertOutput} onAlertOutputChange={setSpeedAlertOutput} onSpeedChange={setDrivingSpeedKph} onDriveModeChange={setDriveModeActive} onClose={() => { setTimerOpen(false); setDriveModeActive(false); setDrivingSpeedKph(null) }} />}
@@ -921,7 +1012,7 @@ export default function App() {
         </section>
       </div>}
       {courseManagerOpen && selected && user && (user.uid === selected.authorId || administrator) && <CourseManageForm course={selected} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} audienceReadOnly={user.uid !== selected.authorId} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} onEditRoute={() => void openRouteEditor(selected)} />}
-      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} course={communityCourse} courses={courses} themePreference={themePreference} resolvedTheme={resolvedTheme} onThemeChange={changeThemePreference} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
+      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} course={communityCourse} courses={courses} musicDisplayEnabled={musicDisplayEnabled} themePreference={themePreference} resolvedTheme={resolvedTheme} onThemeChange={changeThemePreference} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
       {adminOpen && user && administrator && <AdminPanel user={user} role={accountRole} courses={courses} onClose={() => setAdminOpen(false)} />}
       <InstallPrompt />
     </div>

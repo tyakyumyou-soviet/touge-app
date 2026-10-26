@@ -184,7 +184,7 @@ export interface UserProfile {
   musicSharingAudience?: 'friends' | 'lists'
   musicSharingListIds?: string[]
   /** Manual tracks are not overwritten by browser Media Session polling. */
-  musicSharingSource?: 'automatic' | 'manual'
+  musicSharingSource?: 'automatic' | 'manual' | 'shortcut'
   nowPlaying?: NowPlaying | null
   updatedAt?: string
 }

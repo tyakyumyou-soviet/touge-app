@@ -3,18 +3,48 @@ import { backdropSheetSnap, boundedDownwardSheetOffset, nextSheetSnap, raisedShe
 
 const handleSelector = '.mobile-sheet-drag-region,.detail-sheet-top,.detail-peek-handle,.explore-panel-top,.course-list-drag-area'
 const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-drag]'
-const sheetActivationEvent = 'touge-mobile-sheet-activate'
+type SheetController = { setForeground: (value: boolean) => void; minimize: () => void }
+const sheetControllers = new Map<string, SheetController>()
+const sheetStack: string[] = []
+
+function focusSheet(sheetId: string) {
+  if (typeof window === 'undefined' || !window.matchMedia('(max-width: 760px)').matches) {
+    sheetControllers.forEach((controller) => controller.setForeground(true))
+    return
+  }
+  const previousIndex = sheetStack.indexOf(sheetId)
+  if (previousIndex >= 0) sheetStack.splice(previousIndex, 1)
+  sheetStack.push(sheetId)
+  sheetControllers.forEach((controller, id) => {
+    controller.setForeground(id === sheetId)
+    if (id !== sheetId) controller.minimize()
+  })
+}
+
+function removeSheet(sheetId: string) {
+  sheetControllers.delete(sheetId)
+  const wasActive = sheetStack.at(-1) === sheetId
+  const index = sheetStack.indexOf(sheetId)
+  if (index >= 0) sheetStack.splice(index, 1)
+  if (!wasActive) return
+  const fallback = sheetStack.at(-1)
+  if (fallback) {
+    sheetControllers.get(fallback)?.setForeground(true)
+    sheetControllers.forEach((controller, id) => { if (id !== fallback) controller.setForeground(false) })
+  } else sheetControllers.forEach((controller) => controller.setForeground(true))
+}
 
 /** Shared gesture contract for every mobile bottom sheet (機能A).
  * Attach dragProps to the sheet's entire non-interactive top region and apply
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet() {
   const sheetId = useId()
-  const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; height: number; maximumHeight: number } | null>(null)
+  const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; startedMinimized: boolean; height: number; maximumHeight: number } | null>(null)
   const scrollDrag = useRef<{ y: number; active: boolean; height: number } | null>(null)
   const ignoreTap = useRef(false)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [foreground, setForeground] = useState(true)
   const [dragging, setDragging] = useState(false)
   const [offset, setOffset] = useState(0)
   const [dragHeight, setDragHeight] = useState<number>()
@@ -34,25 +64,30 @@ export function useMobileSheet() {
     return top + bottom
   }
 
-  // Only one sheet may occupy the middle/full position. Opening any sheet
-  // minimizes every other mounted sheet; once the active sheet is minimized,
-  // the compact trays can be displayed together without overlap.
   useEffect(() => {
-    const minimizeForActiveSheet = (event: Event) => {
-      const activeId = (event as CustomEvent<string>).detail
-      if (!isMobile() || activeId === sheetId) return
+    sheetControllers.set(sheetId, {
+      setForeground,
+      minimize: () => {
       setCollapsed(true)
       setExpanded(false)
       setOffset(0)
       setDragHeight(undefined)
-    }
-    window.addEventListener(sheetActivationEvent, minimizeForActiveSheet)
-    return () => window.removeEventListener(sheetActivationEvent, minimizeForActiveSheet)
+      },
+    })
+    return () => removeSheet(sheetId)
   }, [sheetId])
 
   useEffect(() => {
-    if (!isMobile() || collapsed) return
-    window.dispatchEvent(new CustomEvent(sheetActivationEvent, { detail: sheetId }))
+    const syncForeground = () => {
+      if (!isMobile()) sheetControllers.forEach((controller) => controller.setForeground(true))
+      else if (sheetStack.length) focusSheet(sheetStack[sheetStack.length - 1])
+    }
+    window.addEventListener('resize', syncForeground)
+    return () => window.removeEventListener('resize', syncForeground)
+  }, [])
+
+  useEffect(() => {
+    if (isMobile() && !collapsed) focusSheet(sheetId)
   }, [collapsed, expanded, sheetId])
 
   function startGesture(target: Element, currentTarget: HTMLElement, y: number, source: 'pointer' | 'touch', id: number) {
@@ -64,7 +99,7 @@ export function useMobileSheet() {
     // Full sheets may use the entire viewport except for the small safe-area
     // clearance controlled in CSS. The old 76px cap stopped drag expansion far
     // below the top edge on phones.
-    drag.current = { source, id, y, moved: false, height: collapsed ? 54 : sheet.getBoundingClientRect().height, maximumHeight: window.innerHeight - safeViewportClearance() }
+    drag.current = { source, id, y, moved: false, startedMinimized: collapsed, height: collapsed ? 54 : sheet.getBoundingClientRect().height, maximumHeight: Math.min(window.innerHeight - 76, window.innerHeight - safeViewportClearance()) }
     setDragging(true)
   }
 
@@ -74,6 +109,11 @@ export function useMobileSheet() {
     const distance = y - active.y
     if (Math.abs(distance) > 8) active.moved = true
     if (distance < 0) {
+      if (collapsed) {
+        focusSheet(sheetId)
+        setCollapsed(false)
+        setExpanded(false)
+      }
       setDragHeight(raisedSheetHeight(active.height, distance, active.maximumHeight))
       setOffset(0)
       return
@@ -93,7 +133,7 @@ export function useMobileSheet() {
     setDragging(false)
     setOffset(0)
     ignoreTap.current = active.moved
-    settle(distance)
+    settle(distance, active.startedMinimized)
   }
 
   function start(event: ReactPointerEvent<HTMLElement>) {
@@ -147,9 +187,13 @@ export function useMobileSheet() {
     setOffset(0)
   }
 
-  function settle(distance: number) {
+  function settle(distance: number, startedMinimized = false) {
     const current: SheetSnap = collapsed ? 'minimized' : expanded ? 'full' : 'middle'
-    const next = nextSheetSnap(current, distance)
+    // A deliberate long upward swipe from the compact tray should open the
+    // sheet fully in one continuous move, not stop at an intermediate step
+    // that forces the user to drag again.
+    const next = startedMinimized && distance < -120 ? 'full' : nextSheetSnap(current, distance)
+    if (next !== 'minimized') focusSheet(sheetId)
     setCollapsed(next === 'minimized')
     setExpanded(next === 'full')
   }
@@ -213,10 +257,11 @@ export function useMobileSheet() {
   }
 
   const openResting = useCallback(() => {
+    focusSheet(sheetId)
     setCollapsed(false)
     setExpanded(false)
     setOffset(0)
-  }, [])
+  }, [sheetId])
 
   /** Advance one snap from an explicit tap on a component's top area.
    * Components that provide their own header handler use this instead of the
@@ -234,6 +279,7 @@ export function useMobileSheet() {
       return
     }
     if (expanded) return
+    focusSheet(sheetId)
     setCollapsed(false)
     setExpanded(true)
     setOffset(0)
@@ -266,7 +312,7 @@ export function useMobileSheet() {
     setCollapsed(true)
   }, [reset])
 
-  const className = `mobile-sheet ${expanded ? 'expanded' : ''} ${collapsed ? 'collapsed' : ''} ${dragging ? 'dragging' : ''}`
+  const className = `mobile-sheet ${expanded ? 'expanded' : ''} ${collapsed ? 'collapsed' : ''} ${dragging ? 'dragging' : ''} ${foreground ? '' : 'sheet-backgrounded'}`
   const style: CSSProperties | undefined = dragHeight !== undefined
     ? { height: dragHeight, maxHeight: dragHeight, transform: 'none' }
     : collapsed

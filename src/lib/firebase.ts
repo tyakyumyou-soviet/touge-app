@@ -59,6 +59,23 @@ export const auth = getAuth(app)
 export const storage = getStorage(app)
 export { db }
 
+/** Global feature switches are readable by signed-in clients and writable only by super administrators (Firestore rules). */
+export function subscribeGlobalMusicDisplay(onChange: (enabled: boolean) => void, onError?: () => void) {
+  return onSnapshot(doc(db, 'appSettings', 'features'), (snapshot) => {
+    const value = snapshot.data()?.musicDisplayEnabled
+    // Keep the current behavior for projects that have not created the setting yet.
+    onChange(typeof value === 'boolean' ? value : true)
+  }, () => { onChange(true); onError?.() })
+}
+
+export async function setGlobalMusicDisplay(enabled: boolean, actor: User) {
+  await setDoc(doc(db, 'appSettings', 'features'), {
+    musicDisplayEnabled: enabled,
+    updatedBy: actor.uid,
+    updatedAt: serverTimestamp(),
+  })
+}
+
 type StoredCoordinate = { lng: number; lat: number }
 
 // Firestore does not allow an array to contain another array. Routes are used
@@ -341,13 +358,32 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
   return { id: userId, displayName: 'ドライバー', followingIds: [], followerCount: 0, bio: '', ...data, mapVisibility, musicSharingAudience: data.musicSharingAudience ?? data.locationSharing?.audience ?? 'friends', musicSharingListIds: data.musicSharingListIds ?? data.locationSharing?.listIds ?? [], updatedAt: firestoreDate(data.updatedAt) } as UserProfile
 }
 
-export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'photoURL' | 'followingIds' | 'followerCount'>>): Promise<void> {
+export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'followingIds' | 'followerCount'>>): Promise<void> {
   const batch = writeBatch(db)
   batch.set(doc(db, 'users', user.uid), { ...values, updatedAt: serverTimestamp() }, { merge: true })
-  const publicKeys = ['displayName', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
+  const publicKeys = ['displayName', 'photoURL', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
   const publicValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
-  if (Object.keys(publicValues).length) batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, photoURL: user.photoURL ?? null, updatedAt: serverTimestamp() }, { merge: true })
+  if (Object.keys(publicValues).length) {
+    if ('photoURL' in values) publicValues.photoURL = values.photoURL || user.photoURL || null
+    batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, updatedAt: serverTimestamp() }, { merge: true })
+  }
+  const friendProfileValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
+  if ('photoURL' in friendProfileValues) friendProfileValues.photoURL = values.photoURL || user.photoURL || null
+  if (Object.keys(friendProfileValues).length) batch.set(doc(db, 'friendProfiles', user.uid), { ...friendProfileValues, updatedAt: serverTimestamp() }, { merge: true })
   await batch.commit()
+}
+
+export async function loadFriendProfile(userId: string): Promise<UserProfile | null> {
+  const snapshot = await getDoc(doc(db, 'friendProfiles', userId))
+  if (!snapshot.exists()) return null
+  const data = snapshot.data()
+  return { id: userId, displayName: 'ドライバー', followingIds: [], followerCount: 0, bio: '', mapVisibility: 'friends', ...data } as UserProfile
+}
+
+export async function publishFriendProfile(user: User, profile: UserProfile): Promise<void> {
+  const keys = ['accountId', 'displayName', 'photoURL', 'bio', 'homeArea', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
+  const values = Object.fromEntries(keys.map((key) => [key, profile[key] ?? (key === 'photoURL' ? user.photoURL ?? null : key === 'displayName' ? user.displayName ?? 'ドライバー' : key === 'bio' ? '' : undefined)]).filter(([, value]) => value !== undefined))
+  await setDoc(doc(db, 'friendProfiles', user.uid), { ...values, updatedAt: serverTimestamp() }, { merge: true })
 }
 
 const presenceWriteQueues = new Map<string, Promise<void>>()

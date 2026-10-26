@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
 import type { AccountRole, AdminReport, Course } from '../types'
-import { loadAllCoursesForAdministration, loadPendingAdminReports, reviewAdminReport } from '../lib/firebase'
+import { loadAllCoursesForAdministration, loadPendingAdminReports, reviewAdminReport, setGlobalMusicDisplay, subscribeGlobalMusicDisplay } from '../lib/firebase'
 import { isPrimarySuperAdmin, loadRegisteredAccounts, PRIMARY_SUPER_ADMIN_EMAIL, setAccountRole, type RegisteredAccount } from '../lib/account'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 
@@ -9,10 +9,16 @@ export function AdminPanel({ user, role, courses, onClose }: { user: User; role:
   const sheet = useMobileSheet(); const [reports, setReports] = useState<AdminReport[]>([]); const [notice, setNotice] = useState('')
   const [accounts, setAccounts] = useState<RegisteredAccount[]>([]); const [query, setQuery] = useState(''); const [busyId, setBusyId] = useState('')
   const [allCourses, setAllCourses] = useState<Course[]>([])
-  const [tab, setTab] = useState<'reports' | 'roles' | 'users'>('reports')
+  const [tab, setTab] = useState<'reports' | 'roles' | 'users' | 'features'>('reports')
+  const [musicDisplayEnabled, setMusicDisplayEnabled] = useState(true)
+  const [featureBusy, setFeatureBusy] = useState(false)
   const refresh = () => loadPendingAdminReports().then(setReports).catch(() => setNotice('確認待ち情報を読み込めませんでした'))
   useEffect(() => { refresh() }, [])
   useEffect(() => { if (role === 'superadmin') Promise.all([loadRegisteredAccounts(isPrimarySuperAdmin(user) ? user.uid : undefined), loadAllCoursesForAdministration()]).then(([users, registeredCourses]) => { setAccounts(users); setAllCourses(registeredCourses) }).catch(() => setNotice('ユーザー情報を読み込めませんでした')) }, [role, user])
+  useEffect(() => {
+    if (role !== 'superadmin') return
+    return subscribeGlobalMusicDisplay(setMusicDisplayEnabled, () => setNotice('全体設定を読み込めませんでした'))
+  }, [role])
   async function review(report: AdminReport, status: 'approved' | 'rejected') { try { await reviewAdminReport(report.id, status, user); setReports((items) => items.filter((item) => item.id !== report.id)); setNotice(status === 'approved' ? '承認しました。コース情報への反映は内容を編集して行ってください。' : '差し戻しました。') } catch { setNotice('更新できませんでした。Firestoreルールを確認してください。') } }
   async function changeRole(account: RegisteredAccount, nextRole: AccountRole) {
     setBusyId(account.uid); setNotice('')
@@ -20,14 +26,21 @@ export function AdminPanel({ user, role, courses, onClose }: { user: User; role:
     catch { setNotice('権限を更新できませんでした') }
     finally { setBusyId('') }
   }
+  async function changeMusicDisplay(enabled: boolean) {
+    setFeatureBusy(true); setNotice('')
+    try { await setGlobalMusicDisplay(enabled, user); setMusicDisplayEnabled(enabled); setNotice(enabled ? '音楽情報の表示を全ユーザーで有効にしました' : '音楽情報の表示を全ユーザーで無効にしました') }
+    catch { setNotice('全体設定を保存できませんでした。Firestoreルールを確認してください') }
+    finally { setFeatureBusy(false) }
+  }
   const visibleAccounts = accounts.filter((account) => `${account.accountId} ${account.displayName}`.toLowerCase().includes(query.trim().toLowerCase()))
   const roleLabel = (value: AccountRole) => value === 'superadmin' ? '上位管理者' : value === 'admin' ? '管理者' : '一般ユーザー'
   return <div className="modal-backdrop" {...sheet.backdropProps}><section data-map-occlusion="bottom-sheet" className={`modal admin-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="admin-title"><div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ADMIN</p><h2 id="admin-title">管理コンソール</h2></div><button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></header></div>
-    <div className={`admin-tabs ${role === 'superadmin' ? 'superadmin' : ''}`} role="tablist"><button role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}>情報承認</button>{role === 'superadmin' && <><button role="tab" aria-selected={tab === 'users'} onClick={() => setTab('users')}>ユーザー情報</button><button role="tab" aria-selected={tab === 'roles'} onClick={() => setTab('roles')}>権限管理</button></>}</div>
+    <div className={`admin-tabs ${role === 'superadmin' ? 'superadmin' : ''}`} role="tablist"><button role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}>情報承認</button>{role === 'superadmin' && <><button role="tab" aria-selected={tab === 'users'} onClick={() => setTab('users')}>ユーザー情報</button><button role="tab" aria-selected={tab === 'roles'} onClick={() => setTab('roles')}>権限管理</button><button role="tab" aria-selected={tab === 'features'} onClick={() => setTab('features')}>機能設定</button></>}</div>
     {tab === 'reports' && <div className="admin-report-list"><p>ユーザー報告を情報源と照合して承認・差し戻しできます。</p>{reports.length ? reports.map((report) => <article key={report.id}><strong>{courses.find((course) => course.id === report.courseId)?.name ?? report.courseId}</strong><span>{report.type} · {report.observedAt ?? report.createdAt ?? '日付不明'}</span>{report.comment && <p>{report.comment}</p>}<a href={report.sourceUrl} target="_blank" rel="noreferrer">情報源を開く ↗</a><footer><button className="button secondary" onClick={() => void review(report, 'rejected')}>差し戻し</button><button className="button primary" onClick={() => void review(report, 'approved')}>承認</button></footer></article>) : <p className="muted">確認待ちの情報はありません。</p>}</div>}
     {tab === 'roles' && role === 'superadmin' && <section className="role-manager"><header><div><h3>管理者を選定</h3><p>上位管理者だけが管理者・上位管理者の権限を付与、変更、解除できます。固定上位管理者は {PRIMARY_SUPER_ADMIN_EMAIL} です。</p></div></header><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="アカウントID・表示名で検索" aria-label="権限を変更するユーザーを検索" />
       <div className="role-account-list">{visibleAccounts.map((account) => <article key={account.uid}><div><strong>{account.displayName}</strong><small>@{account.accountId}</small></div><label><span className={`role-badge ${account.role}`}>{roleLabel(account.role)}</span><select value={account.role} disabled={busyId === account.uid || account.uid === user.uid} onChange={(event) => void changeRole(account, event.target.value as AccountRole)} aria-label={`@${account.accountId}の権限`}><option value="user">一般ユーザー</option><option value="admin">管理者</option><option value="superadmin">上位管理者</option></select></label></article>)}</div>
     </section>}
     {tab === 'users' && role === 'superadmin' && <section className="superadmin-users"><header><div><h3>すべてのユーザー情報</h3><p>上位管理者専用です。登録プロフィールとコース保有状況を確認できます。</p></div></header><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="アカウントID・表示名で検索" aria-label="ユーザー情報を検索" /><div className="superadmin-user-list">{visibleAccounts.map((account) => { const profile = account.profile; const ownedCourses = allCourses.filter((course) => course.authorId === account.uid); return <details key={account.uid}><summary><span className="friend-avatar" aria-hidden="true">{account.displayName.slice(0, 1)}</span><span><strong>{account.displayName}</strong><small>@{account.accountId} · {roleLabel(account.role)}</small></span><b>{ownedCourses.length}コース</b></summary><div className="superadmin-user-detail"><dl><div><dt>ユーザーUID</dt><dd>{account.uid}</dd></div><div><dt>ホームエリア</dt><dd>{profile.homeArea || '未登録'}</dd></div><div><dt>自己紹介</dt><dd>{profile.bio || '未登録'}</dd></div><div><dt>愛車</dt><dd>{profile.vehicleName || '未登録'}</dd></div><div><dt>プロフィール公開</dt><dd>{profile.mapVisibility}</dd></div><div><dt>フレンドリスト</dt><dd>{profile.friendLists?.length ?? 0}件</dd></div></dl>{ownedCourses.length > 0 && <div className="admin-owned-courses"><strong>登録コース</strong>{ownedCourses.map((course) => <span key={course.id}>{course.name} · {course.distanceKm}km</span>)}</div>}</div></details> })}</div></section>}
+    {tab === 'features' && role === 'superadmin' && <section className="admin-feature-settings"><header><div><h3>全体機能の表示</h3><p>アプリ全体の機能を切り替えます。変更はFirebaseに保存され、ログイン中のユーザーへリアルタイムに反映されます。</p></div></header><article className="admin-feature-card"><div className="admin-feature-copy"><span className={`admin-feature-status ${musicDisplayEnabled ? 'enabled' : 'disabled'}`}>{musicDisplayEnabled ? '全ユーザーに表示中' : '全ユーザーで非表示'}</span><h4>音楽情報・共有画面</h4><p>共有・プライバシー設定の音楽項目、フレンドの曲名、地図上の再生情報表示をまとめて切り替えます。</p></div><label className="admin-feature-switch"><span>{musicDisplayEnabled ? '有効' : '無効'}</span><input className="state-switch" type="checkbox" role="switch" aria-label="全ユーザーの音楽情報表示" checked={musicDisplayEnabled} disabled={featureBusy} onChange={(event) => void changeMusicDisplay(event.target.checked)} /></label></article><p className="admin-feature-note">この設定を変更できるのは上位管理者だけです。各ユーザーの共有許可設定は、この機能設定とは別に保持されます。</p></section>}
     {notice && <p className="form-success" role="status">{notice}</p>}</section></div>
 }

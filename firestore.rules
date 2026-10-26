@@ -11,6 +11,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/adminRoles/$(request.auth.uid)).data.role == role;
     }
     function isSuperAdmin() { return isPrimarySuperAdmin() || assignedRole('superadmin'); }
+    function globalMusicDisplayEnabled() {
+      let settingsPath = /databases/$(database)/documents/appSettings/features;
+      return !exists(settingsPath) || get(settingsPath).data.musicDisplayEnabled == true;
+    }
     function isAdmin() {
       return isSuperAdmin() || assignedRole('admin');
     }
@@ -88,6 +92,16 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(userId)).data.accountId == request.resource.data.accountId;
       allow delete: if hasAccountId() && isSuperAdmin() && userId != request.auth.uid;
     }
+    match /appSettings/{settingId} {
+      allow read: if signedIn() && settingId == 'features';
+      allow create, update: if hasAccountId() && isSuperAdmin() && settingId == 'features'
+        && request.resource.data.keys().hasOnly(['musicDisplayEnabled', 'updatedBy', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['musicDisplayEnabled', 'updatedBy', 'updatedAt'])
+        && request.resource.data.musicDisplayEnabled is bool
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
     match /friendships/{pairId} {
       allow get: if isSuperAdmin() || (signedIn() && (!exists(/databases/$(database)/documents/friendships/$(pairId)) || request.auth.uid in resource.data.members));
       allow list: if isSuperAdmin() || (signedIn() && request.auth.uid in resource.data.members);
@@ -149,6 +163,26 @@ service cloud.firestore {
       allow delete: if hasAccountId() && request.auth.uid == userId;
     }
 
+    // Profile card data is visible only to accepted friends and remains
+    // independent of the user's location-sharing audience.
+    match /friendProfiles/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || isSuperAdmin() || friendWith(userId));
+      allow list: if false;
+      allow create, update: if hasAccountId() && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['accountId', 'displayName', 'photoURL', 'bio', 'homeArea', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls', 'updatedAt'])
+        && (!('accountId' in request.resource.data) || request.resource.data.accountId is string)
+        && (!('displayName' in request.resource.data) || request.resource.data.displayName is string)
+        && (!('photoURL' in request.resource.data) || request.resource.data.photoURL == null || request.resource.data.photoURL is string)
+        && (!('bio' in request.resource.data) || request.resource.data.bio is string)
+        && (!('homeArea' in request.resource.data) || request.resource.data.homeArea is string)
+        && (!('vehicleName' in request.resource.data) || request.resource.data.vehicleName is string)
+        && (!('vehicleDetails' in request.resource.data) || request.resource.data.vehicleDetails is string)
+        && (!('socialLinks' in request.resource.data) || request.resource.data.socialLinks is map)
+        && (!('showcasePostUrls' in request.resource.data) || request.resource.data.showcasePostUrls is list)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if hasAccountId() && request.auth.uid == userId;
+    }
+
     match /presence/{userId} {
       // Allow accepted friends to subscribe while no presence document exists.
       // Once it exists, the materialized audience list remains mandatory.
@@ -179,8 +213,8 @@ service cloud.firestore {
     }
 
     match /presenceMusic/{userId} {
-      allow read: if isSuperAdmin() || (signedIn() && (request.auth.uid == userId || (resource == null && friendWith(userId)) || (resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds && friendWith(userId))));
-      allow create, update: if hasAccountId()
+      allow read: if isSuperAdmin() || (globalMusicDisplayEnabled() && signedIn() && (request.auth.uid == userId || (resource == null && friendWith(userId)) || (resource.data.allowedViewerIds is list && request.auth.uid in resource.data.allowedViewerIds && friendWith(userId))));
+      allow create, update: if globalMusicDisplayEnabled() && hasAccountId()
         && request.auth.uid == userId
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.displayName is string

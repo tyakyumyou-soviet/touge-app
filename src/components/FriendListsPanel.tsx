@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { FriendList } from '../types'
+import { UserAvatar } from './UserAvatar'
 
 interface Props {
   lists: FriendList[]
   friendIds: string[]
   friendName: (id: string) => string
+  friendPhotoURL?: (id: string) => string | null
   onSave: (lists: FriendList[]) => Promise<void>
 }
 
 type View = 'list' | 'create' | 'detail'
 
-export function FriendListsPanel({ lists, friendIds, friendName, onSave }: Props) {
+export function FriendListsPanel({ lists, friendIds, friendName, friendPhotoURL = () => null, onSave }: Props) {
   const [view, setView] = useState<View>('list')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
@@ -84,7 +86,7 @@ export function FriendListsPanel({ lists, friendIds, friendName, onSave }: Props
   return <section className="friend-list-manager friend-list-editor" aria-labelledby="friend-list-editor-title">
     <header className="friend-list-editor-heading"><button type="button" className="friend-list-back" onClick={closeEditor} aria-label="フレンドリスト一覧へ戻る">←</button><div><p className="eyebrow">{view === 'create' ? 'NEW LIST' : 'LIST DETAILS'}</p><h3 id="friend-list-editor-title">{view === 'create' ? 'フレンドリストを作成' : 'フレンドリスト詳細'}</h3></div></header>
     <label className="friend-list-name-field"><span>リスト名</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={40} placeholder="例：伊豆ドライブ仲間" autoFocus /></label>
-    <div className="friend-list-member-picker"><div><strong>メンバー</strong><small>{draftMemberIds.length}人を選択中</small></div>{friendIds.length ? friendIds.map((id) => <label key={id} className={draftMemberIds.includes(id) ? 'selected' : ''}><span className="friend-avatar" aria-hidden="true">{friendName(id).slice(0, 1)}</span><span><strong>{friendName(id)}</strong><small>{draftMemberIds.includes(id) ? 'このリストに追加済み' : 'フレンド'}</small></span><input type="checkbox" checked={draftMemberIds.includes(id)} onChange={() => toggleMember(id)} /></label>) : <p className="friend-list-no-friends">リストへ追加できるフレンドがまだいません。</p>}</div>
+    <div className="friend-list-member-picker"><div><strong>メンバー</strong><small>{draftMemberIds.length}人を選択中</small></div>{friendIds.length ? friendIds.map((id) => <label key={id} className={draftMemberIds.includes(id) ? 'selected' : ''}><UserAvatar name={friendName(id)} photoURL={friendPhotoURL(id)} /><span><strong>{friendName(id)}</strong><small>{draftMemberIds.includes(id) ? 'このリストに追加済み' : 'フレンド'}</small></span><input type="checkbox" checked={draftMemberIds.includes(id)} onChange={() => toggleMember(id)} /></label>) : <p className="friend-list-no-friends">リストへ追加できるフレンドがまだいません。</p>}</div>
     {error && <p className="form-error" role="alert">{error}</p>}
     <div className="friend-list-editor-actions"><button type="button" className="button primary" disabled={busy || !draftName.trim()} onClick={() => void commit()}>{busy ? '保存中…' : view === 'create' ? 'リストを作成' : '変更を保存'}</button>{view === 'detail' && <button type="button" className="text-button danger-button" disabled={busy} onClick={() => setConfirmDelete(true)}>このリストを削除</button>}</div>
     {confirmDelete && selected && <div className="friend-list-delete-confirm" role="alert"><strong>「{selected.name}」を削除しますか？</strong><p>フレンド関係そのものは解除されません。共有先からこのリストだけが削除されます。</p><div><button type="button" onClick={() => setConfirmDelete(false)}>キャンセル</button><button type="button" className="danger-button" disabled={busy} onClick={() => void removeSelected()}>削除する</button></div></div>}

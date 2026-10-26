@@ -464,6 +464,9 @@ export function Course3DView({ course, theme = 'light', onClose, onElevationRepa
       progressMarkerRef.current = new maplibregl.Marker({ color: '#fff', scale: .8 }).setLngLat(course.route[0]).addTo(map)
       const bounds = course.route.reduce((value, point) => value.extend(point), new maplibregl.LngLatBounds(course.route[0], course.route[0]))
       map.fitBounds(bounds, { padding: 90, pitch: 70, bearing: -28, maxZoom: 13, duration: 1200 })
+      // The theme effect may run before this MapLibre style has finished
+      // loading. Reapply after all 3D-specific overlay layers are installed.
+      applyTougeMapTheme(map, theme)
     })
     mapRef.current = map
     return () => { progressMarkerRef.current?.remove(); progressMarkerRef.current = null; map.remove() }

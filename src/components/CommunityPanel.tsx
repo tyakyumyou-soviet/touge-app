@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Course, CourseComment, FriendPresence, NowPlaying, ThemePreference, UserProfile } from '../types'
-import { addCourseComment, deleteCourseComment, loadUserProfile, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
+import { addCourseComment, deleteCourseComment, loadFriendProfile, loadUserProfile, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { FriendsPanel } from './FriendsPanel'
+import { UserAvatar } from './UserAvatar'
 import { FriendListsPanel } from './FriendListsPanel'
 import { subscribeFriends } from '../lib/friends'
 import { nowPlayingFromMediaSession, postEmbedUrl, postUrlsFromText } from '../lib/profile'
+import { buildMusicRecognitionShortcutUrl, MUSIC_RECOGNITION_PENDING_KEY, MUSIC_RECOGNITION_SHORTCUT_NAME } from '../lib/iosMusicRecognition'
 import { RouteDisplaySettings } from './RouteDisplaySettings'
 import { PersonalizationSettings } from './PersonalizationSettings'
 import { ThemeSettings } from './ThemeSettings'
 import type { ResolvedTheme } from '../lib/theme'
 
-interface Props { user: User | null; course?: Course | null; courses?: Course[]; themePreference: ThemePreference; resolvedTheme: ResolvedTheme; onThemeChange: (value: ThemePreference) => void; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
+interface Props { user: User | null; course?: Course | null; courses?: Course[]; musicDisplayEnabled?: boolean; themePreference: ThemePreference; resolvedTheme: ResolvedTheme; onThemeChange: (value: ThemePreference) => void; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
 
 const socialNames = { x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok' } as const
 type ShareAudience = 'friends' | 'lists'
@@ -27,11 +29,13 @@ function ShareAudienceSelector({ label, audience, listIds, lists, friendCount, o
 
 function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: string }) {
   const socialEntries = Object.entries(profile.socialLinks ?? {}).filter(([, url]) => Boolean(url))
-  const hasContent = profile.vehicleName || socialEntries.length > 0 || profile.showcasePostUrls?.length
+  const hasContent = profile.bio || profile.homeArea || profile.vehicleName || socialEntries.length > 0 || profile.showcasePostUrls?.length
   if (!hasContent) return null
 
   return <section className="profile-showcase" aria-label={title ?? 'プロフィールの公開プレビュー'}>
     {title && <div className="profile-showcase-heading">{profile.photoURL ? <img src={profile.photoURL} alt="" /> : <span aria-hidden="true">{profile.displayName.slice(0, 1)}</span>}<h3>{title}</h3></div>}
+    {profile.homeArea && <p className="friend-profile-area">📍 {profile.homeArea}</p>}
+    {profile.bio && <p className="friend-profile-bio">{profile.bio}</p>}
     {profile.vehicleName && <div className="vehicle-card"><span>MY CAR</span><strong>{profile.vehicleName}</strong>{profile.vehicleDetails && <small>{profile.vehicleDetails}</small>}</div>}
     {socialEntries.length > 0 && <div className="social-link-row">{socialEntries.map(([network, url]) => <a key={network} href={url} target="_blank" rel="noreferrer">{socialNames[network as keyof typeof socialNames]}</a>)}</div>}
     {profile.showcasePostUrls?.map((url) => {
@@ -41,7 +45,7 @@ function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: str
   </section>
 }
 
-export function CommunityPanel({ user, course, courses = [], themePreference, resolvedTheme, onThemeChange, onClose, onLogout, onAdminOpen, onProfileSaved }: Props) {
+export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled = true, themePreference, resolvedTheme, onThemeChange, onClose, onLogout, onAdminOpen, onProfileSaved }: Props) {
   const sheet = useMobileSheet()
   const { openResting } = sheet
   // Opening the account sheet can race with the activation event that
@@ -49,6 +53,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   // its middle snap instead of inheriting the sibling's minimized state.
   useEffect(() => { openResting() }, [openResting])
   const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [profilePhotoDraft, setProfilePhotoDraft] = useState('')
   const [authorProfile, setAuthorProfile] = useState<UserProfile | null>(null)
   const [comments, setComments] = useState<CourseComment[]>([])
   const [body, setBody] = useState('')
@@ -58,7 +63,10 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   const [presence, setPresence] = useState<FriendPresence[]>([])
   const [activeMediaTrack, setActiveMediaTrack] = useState<NowPlaying | null>(null)
   const [friendProfiles, setFriendProfiles] = useState<Record<string, UserProfile>>({})
-  const [settingsView, setSettingsView] = useState<'home' | 'profile' | 'friends' | 'sharing' | 'settings'>('home')
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState<UserProfile | null>(null)
+  const [friendProfileLoading, setFriendProfileLoading] = useState(false)
+  const [friendProfileError, setFriendProfileError] = useState('')
+  const [settingsView, setSettingsView] = useState<'home' | 'profile' | 'friends' | 'friend-profile' | 'sharing' | 'settings'>('home')
   const contentRef = useRef<HTMLDivElement>(null)
   const [transitionDirection, setTransitionDirection] = useState('forward')
   const [friendIds, setFriendIds] = useState<string[]>([])
@@ -66,7 +74,10 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   const profileSaveTimer = useRef<number | null>(null)
   const pendingProfileChanges = useRef<Partial<UserProfile>>({})
   const profileSaveRevision = useRef(0)
-  const musicSharingEnabled = Boolean(profile?.musicSharingEnabled ?? profile?.nowPlaying)
+  const profileWriteQueue = useRef<Promise<void>>(Promise.resolve())
+  const failedProfileChanges = useRef<Partial<UserProfile>>({})
+  const locationIntentRevision = useRef(0)
+  const musicSharingEnabled = musicDisplayEnabled && Boolean(profile?.musicSharingEnabled ?? profile?.nowPlaying)
   useEffect(() => {
     if (!musicSharingEnabled) { setActiveMediaTrack(null); return }
     const syncTrack = () => setActiveMediaTrack(nowPlayingFromMediaSession(navigator.mediaSession))
@@ -78,7 +89,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
     const pending = pendingProfileChanges.current
     pendingProfileChanges.current = {}
-    if (user && Object.keys(pending).length) void saveUserProfileSettings(user, pending)
+    if (user && Object.keys(pending).length) void persistProfileChanges(user, pending)
   }, [user])
   useEffect(() => {
     if (!user) return
@@ -89,11 +100,40 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     }, () => { setFriendIds([]); setNotice('フレンドを同期できませんでした') })
   }, [user])
   function navigate(view: typeof settingsView) {
-    setTransitionDirection(view === 'home' ? 'back' : 'forward')
+    setTransitionDirection(view === 'home' || (settingsView === 'friend-profile' && view === 'friends') ? 'back' : 'forward')
     setSettingsView(view)
     contentRef.current?.scrollTo({ top: 0 })
   }
-  const profileImageUrl = profile?.photoURL ?? user?.photoURL
+  async function openFriendProfile(id: string) {
+    setSelectedFriendProfile(friendProfiles[id] ?? null)
+    setFriendProfileError('')
+    setFriendProfileLoading(true)
+    navigate('friend-profile')
+    try {
+      const next = await loadFriendProfile(id)
+      if (next) setSelectedFriendProfile(next)
+      else setFriendProfileError('プロフィールをまだ確認できません。相手がアプリを更新すると表示されます。')
+    } catch {
+      setFriendProfileError('プロフィールを読み込めませんでした。接続状態とFirestoreルールをご確認ください。')
+    } finally { setFriendProfileLoading(false) }
+  }
+  function persistProfileChanges(targetUser: User, changes: Partial<UserProfile>) {
+    const write = profileWriteQueue.current.catch(() => undefined).then(async () => {
+      const values = { ...failedProfileChanges.current, ...changes }
+      failedProfileChanges.current = {}
+      try {
+        await saveUserProfileSettings(targetUser, values)
+      } catch (error) {
+        failedProfileChanges.current = { ...values, ...failedProfileChanges.current }
+        throw error
+      }
+    })
+    profileWriteQueue.current = write
+    return write
+  }
+  const profileImageUrl = profile?.photoURL || user?.photoURL
+  const profileEditorImageUrl = profilePhotoDraft.trim() || user?.photoURL
+  useEffect(() => { setProfilePhotoDraft(profile?.photoURL ?? '') }, [profile?.photoURL])
   useEffect(() => {
     if (!user) return
     let active = true
@@ -118,9 +158,13 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     return subscribeFriendPresence(friendIds, setPresence)
   }, [profile?.followingIds, friendIds])
   useEffect(() => {
-    if (!profile?.followingIds?.length) { setFriendProfiles({}); return }
-    Promise.all(profile.followingIds.map((id) => loadUserProfile(id).then((item) => [id, item] as const).catch(() => [id, null] as const))).then((items) => setFriendProfiles(Object.fromEntries(items.filter((item): item is readonly [string, UserProfile] => Boolean(item[1])))))
-  }, [profile?.followingIds])
+    let active = true
+    if (!friendIds.length) { setFriendProfiles({}); return () => { active = false } }
+    Promise.all(friendIds.map((id) => loadFriendProfile(id).then((item) => [id, item] as const).catch(() => [id, null] as const))).then((items) => {
+      if (active) setFriendProfiles(Object.fromEntries(items.filter((item): item is readonly [string, UserProfile] => Boolean(item[1]))))
+    })
+    return () => { active = false }
+  }, [friendIds])
   function mapProfileViewerIds(nextProfile = profile) {
     if (nextProfile?.mapVisibility !== 'lists') return []
     const selected = new Set(nextProfile.mapProfileListIds ?? [])
@@ -139,9 +183,14 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
       const changes = pendingProfileChanges.current
       pendingProfileChanges.current = {}
       profileSaveTimer.current = null
-      void saveUserProfileSettings(user, changes)
+      void persistProfileChanges(user, changes)
         .then(() => { if (revision === profileSaveRevision.current) setNotice('変更を自動保存しました') })
-        .catch(() => { if (revision === profileSaveRevision.current) setNotice('自動保存できませんでした。通信状態を確認してください') })
+        .catch(() => {
+          // Keep failed values available for the next edit or when the sheet
+          // closes, without replacing any newer edits made during the write.
+          pendingProfileChanges.current = { ...changes, ...pendingProfileChanges.current }
+          if (revision === profileSaveRevision.current) setNotice('自動保存できませんでした。通信状態を確認して、もう一度変更してください')
+        })
         .finally(() => { if (revision === profileSaveRevision.current) setSaving(false) })
     }, 450)
   }
@@ -164,11 +213,12 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingListIds, ...(locationSharing ? { locationSharing } : {}) }
     const next = { ...base, mapAllowedViewerIds: mapProfileViewerIds(base) }
     setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    await saveUserProfileSettings(user, { friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
+    await persistProfileChanges(user, { friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
     setNotice('フレンドリストを保存しました')
   }
   function setLocationSharing(enabled: boolean) {
     if (!user) return
+    const intentRevision = ++locationIntentRevision.current
     if (enabled && !navigator.geolocation) { setNotice('この端末では位置情報を利用できません'); return }
     const applyLocationSharing = (value: boolean) => {
       const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), locationSharing: { ...(profile?.locationSharing ?? { audience: 'friends' as const, listIds: [] }), enabled: value } }
@@ -178,7 +228,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
       // Request the permission from the user's switch interaction. Starting
       // watchPosition only in an effect can be blocked by some mobile browsers.
       navigator.geolocation.getCurrentPosition(
-        () => { applyLocationSharing(true); setNotice('位置共有をオンにしました') },
+        () => { if (intentRevision === locationIntentRevision.current) { applyLocationSharing(true); setNotice('位置共有をオンにしました') } },
         (error) => {
           const message = error.code === error.PERMISSION_DENIED ? '位置情報の許可が必要です。ブラウザーのサイト設定を確認してください' : error.code === error.POSITION_UNAVAILABLE ? '現在地を取得できませんでした。GPSや位置情報サービスを確認してください' : '現在地の取得がタイムアウトしました。通信・位置情報を確認して再試行してください'
           setNotice(message)
@@ -192,10 +242,19 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
   }
   function setMusicSharing(enabled: boolean) {
     if (!user) return
-    const playing = enabled ? nowPlayingFromMediaSession(navigator.mediaSession) : null
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, musicSharingSource: 'automatic' as const, nowPlaying: playing }
-    setProfile(next); queueProfileSave({ musicSharingEnabled: enabled, musicSharingSource: 'automatic', nowPlaying: playing }, next)
+    const sessionTrack = enabled ? nowPlayingFromMediaSession(navigator.mediaSession) : null
+    const preserveShortcutTrack = enabled && !sessionTrack && profile?.musicSharingSource === 'shortcut'
+    const playing = enabled ? sessionTrack ?? (preserveShortcutTrack ? profile?.nowPlaying ?? null : null) : null
+    const source = preserveShortcutTrack ? 'shortcut' as const : 'automatic' as const
+    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, musicSharingSource: source, nowPlaying: playing }
+    setProfile(next); queueProfileSave({ musicSharingEnabled: enabled, musicSharingSource: source, nowPlaying: playing }, next)
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
+  }
+  function recognizeCurrentSong() {
+    const id = crypto.randomUUID()
+    const request = { id, createdAt: Date.now() }
+    localStorage.setItem(MUSIC_RECOGNITION_PENDING_KEY, JSON.stringify(request))
+    window.location.assign(buildMusicRecognitionShortcutUrl(window.location.origin, id))
   }
   function patchProfile(values: Partial<UserProfile>) {
     if (!user) return
@@ -214,16 +273,31 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
     }
     queueProfileSave(persistedValues, next)
   }
+  function saveProfilePhotoUrl() {
+    const value = profilePhotoDraft.trim()
+    if (!value) { patchProfile({ photoURL: null }); return }
+    try {
+      const parsed = new URL(value)
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password || value.length > 2048) throw new Error('invalid image URL')
+    } catch {
+      setNotice('画像URLはHTTPS形式で入力してください')
+      setProfilePhotoDraft(profile?.photoURL ?? '')
+      return
+    }
+    patchProfile({ photoURL: value })
+  }
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
-  const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
+  const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'friend-profile' ? selectedFriendProfile?.displayName || 'プロフィール' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
+  const recognizedTrack = activeMediaTrack ?? profile?.nowPlaying
   return <div className="modal-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
-    <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">{course ? 'コメント・いいね' : viewTitle}</h2></div><div className="community-header-actions">{!course && settingsView !== 'home' && <button type="button" className="icon-button" onClick={() => navigate('home')} aria-label="アカウントメニューへ戻る">←</button>}<button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></div></header></div>
+    <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">{course ? 'コメント・いいね' : viewTitle}</h2></div><div className="community-header-actions">{!course && settingsView !== 'home' && <button type="button" className="icon-button" onClick={() => navigate(settingsView === 'friend-profile' ? 'friends' : 'home')} aria-label={settingsView === 'friend-profile' ? 'フレンド一覧へ戻る' : 'アカウントメニューへ戻る'}>←</button>}<button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></div></header></div>
     <div className="community-scroll" ref={contentRef} data-sheet-scroll {...sheet.scrollProps}><div key={course?.id ?? settingsView} className={`community-view ${transitionDirection}`}>
     {!user ? <div className="empty-state"><p>ログインするとプロフィール編集、フォロー、コメント、いいねが使えます。</p></div> : <>
       {!course && <>
-        {settingsView === 'home' && <section className="account-menu"><div className="account-summary"><div className="profile-avatar" aria-label="プロフィール画像">{profileImageUrl ? <img src={profileImageUrl} alt="Googleアカウントのプロフィール画像" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div><strong>{profile?.displayName || user.displayName || 'ドライバー'}</strong>{profile?.accountId && <span className="account-id-label">@{profile.accountId}</span>}<small>{profile?.vehicleName || '愛車を登録してプロフィールを整えよう'}</small></div></div><div className="account-menu-grid"><button type="button" onClick={() => navigate('profile')}><strong>プロフィール</strong><small>自己紹介・愛車・SNS</small><span>→</span></button><button type="button" onClick={() => navigate('friends')}><strong>フレンド</strong><small>検索・申請・共有リスト</small><span>→</span></button><button type="button" onClick={() => navigate('sharing')}><strong>共有・プライバシー</strong><small>地図・現在地・音楽</small><span>→</span></button><button type="button" onClick={() => navigate('settings')}><strong>設定</strong><small>表示・パーソナライズ</small><span>→</span></button></div>{onAdminOpen && <button type="button" className="button secondary admin-console-button" onClick={onAdminOpen}>管理コンソール</button>}{onLogout && <button type="button" className="text-button danger-button" onClick={onLogout}>ログアウト</button>}</section>}
-        {settingsView === 'profile' && <><section className="profile-editor"><div className="profile-avatar" aria-label="プロフィール画像">{profileImageUrl ? <img src={profileImageUrl} alt="Googleアカウントのプロフィール画像" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label>愛車（任意）<input value={profile?.vehicleName ?? ''} onChange={(e) => patchProfile({ vehicleName: e.target.value })} placeholder="例: 86 GT MT" /></label><label>愛車メモ（任意）<input value={profile?.vehicleDetails ?? ''} onChange={(e) => patchProfile({ vehicleDetails: e.target.value })} placeholder="例: 年式・カラー・仕様" /></label></div></section><section className="profile-social"><h3>SNS・愛車紹介（任意）</h3><p>愛車の写真・動画を紹介するためのアカウントと投稿URLです。</p><div className="form-grid"><label>X<input value={profile?.socialLinks?.x ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, x: e.target.value } })} placeholder="https://x.com/username" /></label><label>Instagram<input value={profile?.socialLinks?.instagram ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/username" /></label><label>YouTube<input value={profile?.socialLinks?.youtube ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@channel" /></label><label>TikTok<input value={profile?.socialLinks?.tiktok ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@username" /></label><label className="wide">愛車紹介の投稿URL（任意）<textarea rows={3} value={(profile?.showcasePostUrls ?? []).join('\n')} onChange={(e) => patchProfile({ showcasePostUrls: postUrlsFromText(e.target.value) })} placeholder="愛車の写真・動画が載った投稿URLを1行ずつ（最大3件）" /><small>対応投稿は埋め込み表示、その他はリンクとして表示します。</small></label></div></section>{profile && <ProfileShowcase profile={profile} />}<p className="muted">プロフィールの変更は自動で保存されます。</p></>}
-        {settingsView === 'friends' && <FriendsPanel uid={user.uid} name={profile?.displayName || user.displayName || 'ドライバー'} listCount={profile?.friendLists?.length ?? 0} listPanel={<FriendListsPanel lists={profile?.friendLists ?? []} friendIds={friendIds} friendName={friendName} onSave={saveFriendLists} />} />}
+        {settingsView === 'home' && <section className="account-menu"><button type="button" className="account-summary account-summary-action" onClick={() => navigate('profile')} aria-label="プロフィールを表示・編集"><div className="profile-avatar" aria-hidden="true">{profileImageUrl ? <img src={profileImageUrl} alt="" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div><strong>{profile?.displayName || user.displayName || 'ドライバー'}</strong>{profile?.accountId && <span className="account-id-label">@{profile.accountId}</span>}<small>{profile?.vehicleName || '愛車を登録してプロフィールを整えよう'}</small></div><span className="account-summary-arrow" aria-hidden="true">→</span></button><div className="account-menu-grid"><button type="button" onClick={() => navigate('friends')}><strong>フレンド</strong><small>検索・申請・共有リスト</small><span>→</span></button><button type="button" onClick={() => navigate('sharing')}><strong>共有・プライバシー</strong><small>{musicDisplayEnabled ? '地図・現在地・音楽' : '地図・現在地'}</small><span>→</span></button><button type="button" onClick={() => navigate('settings')}><strong>設定</strong><small>表示・パーソナライズ</small><span>→</span></button></div>{onAdminOpen && <button type="button" className="button secondary admin-console-button" onClick={onAdminOpen}>管理コンソール</button>}{onLogout && <button type="button" className="text-button danger-button" onClick={onLogout}>ログアウト</button>}</section>}
+        {settingsView === 'profile' && <><section className="profile-editor"><div className="profile-avatar" aria-label="プロフィール画像">{profileEditorImageUrl ? <img src={profileEditorImageUrl} alt="プロフィール画像プレビュー" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div className="form-grid"><label className="wide">プロフィール画像URL<input type="url" value={profilePhotoDraft} onChange={(e) => setProfilePhotoDraft(e.target.value)} onBlur={saveProfilePhotoUrl} placeholder="https://example.com/profile.jpg" /><small>HTTPSの画像URLを入力してください。空欄にするとGoogleアカウントの画像に戻ります。</small></label><label>表示名<input value={profile?.displayName ?? user.displayName ?? ''} onChange={(e) => patchProfile({ displayName: e.target.value })} /></label><label>ホームエリア<input value={profile?.homeArea ?? ''} onChange={(e) => patchProfile({ homeArea: e.target.value })} /></label><label className="wide">自己紹介<textarea rows={2} value={profile?.bio ?? ''} onChange={(e) => patchProfile({ bio: e.target.value })} /></label><label>愛車（任意）<input value={profile?.vehicleName ?? ''} onChange={(e) => patchProfile({ vehicleName: e.target.value })} placeholder="例: 86 GT MT" /></label><label>愛車メモ（任意）<input value={profile?.vehicleDetails ?? ''} onChange={(e) => patchProfile({ vehicleDetails: e.target.value })} placeholder="例: 年式・カラー・仕様" /></label></div></section><section className="profile-social"><h3>SNS・愛車紹介（任意）</h3><p>愛車の写真・動画を紹介するためのアカウントと投稿URLです。</p><div className="form-grid"><label>X<input value={profile?.socialLinks?.x ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, x: e.target.value } })} placeholder="https://x.com/username" /></label><label>Instagram<input value={profile?.socialLinks?.instagram ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/username" /></label><label>YouTube<input value={profile?.socialLinks?.youtube ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@channel" /></label><label>TikTok<input value={profile?.socialLinks?.tiktok ?? ''} onChange={(e) => patchProfile({ socialLinks: { ...profile?.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@username" /></label><label className="wide">愛車紹介の投稿URL（任意）<textarea rows={3} value={(profile?.showcasePostUrls ?? []).join('\n')} onChange={(e) => patchProfile({ showcasePostUrls: postUrlsFromText(e.target.value) })} placeholder="愛車の写真・動画が載った投稿URLを1行ずつ（最大3件）" /><small>対応投稿は埋め込み表示、その他はリンクとして表示します。</small></label></div></section>{profile && <ProfileShowcase profile={profile} />}<p className="muted">プロフィールの変更は自動で保存されます。</p></>}
+        {settingsView === 'friends' && <FriendsPanel uid={user.uid} name={profile?.displayName || user.displayName || 'ドライバー'} friendPhotoURL={(id) => friendProfiles[id]?.photoURL ?? null} onViewProfile={(id) => void openFriendProfile(id)} listCount={profile?.friendLists?.length ?? 0} listPanel={<FriendListsPanel lists={profile?.friendLists ?? []} friendIds={friendIds} friendName={friendName} friendPhotoURL={(id) => friendProfiles[id]?.photoURL ?? null} onSave={saveFriendLists} />} />}
+        {settingsView === 'friend-profile' && <section className="friend-profile-view" aria-label="フレンドのプロフィール">{friendProfileLoading && !selectedFriendProfile && <p role="status">プロフィールを読み込み中…</p>}{friendProfileError && <p className={selectedFriendProfile ? 'muted' : 'form-error'} role="status">{friendProfileError}</p>}{selectedFriendProfile && <><header className="friend-profile-header"><UserAvatar className="friend-profile-avatar" name={selectedFriendProfile.displayName} photoURL={selectedFriendProfile.photoURL} /><div><h3>{selectedFriendProfile.displayName}</h3>{selectedFriendProfile.accountId && <span>@{selectedFriendProfile.accountId}</span>}</div></header><ProfileShowcase profile={selectedFriendProfile} />{!selectedFriendProfile.bio && !selectedFriendProfile.homeArea && !selectedFriendProfile.vehicleName && !selectedFriendProfile.showcasePostUrls?.length && !Object.values(selectedFriendProfile.socialLinks ?? {}).some(Boolean) && <div className="friend-profile-empty"><strong>プロフィール情報はまだありません</strong><p>自己紹介や愛車、SNSが登録されるとここに表示されます。</p></div>}</>}</section>}
         {settingsView === 'sharing' && <>
           <section className="presence-settings profile-map-audience" aria-labelledby="profile-map-audience-title">
             <h3 id="profile-map-audience-title">プロフィールを地図に表示</h3>
@@ -231,20 +305,24 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
             {profile?.mapVisibility === 'lists' && <div className="audience-list-options">{(profile.friendLists ?? []).length ? <>{(profile.friendLists ?? []).map((list) => <label key={list.id}><input type="checkbox" checked={profile.mapProfileListIds?.includes(list.id)} onChange={(event) => patchProfile({ mapProfileListIds: event.target.checked ? [...new Set([...(profile.mapProfileListIds ?? []), list.id])] : (profile.mapProfileListIds ?? []).filter((id) => id !== list.id) })} /><span><strong>{list.name}</strong><small>{list.memberIds.length}人</small></span></label>)}<small>{profile.mapProfileListIds?.length ?? 0}件のリストを選択中</small></> : <p>フレンド画面でリストを作成すると選択できます。</p>}</div>}
           </section>
           <section className="presence-settings">
-            <h3>位置情報と音楽の共有</h3>
+            <h3>{musicDisplayEnabled ? '位置情報と音楽の共有' : '位置情報の共有'}</h3>
             <div className="presence-sharing-options">
               <div className="presence-sharing-option">
                 <label className="community-switch"><span><strong>位置情報を共有する</strong><small>現在地を共有相手の地図に表示します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="位置情報を共有する" checked={Boolean(profile?.locationSharing?.enabled)} onChange={(event) => setLocationSharing(event.target.checked)} /></label>
                 {profile && <ShareAudienceSelector label="位置情報を共有する相手" audience={profile.locationSharing?.audience ?? 'friends'} listIds={profile.locationSharing?.listIds ?? []} lists={profile.friendLists ?? []} friendCount={friendIds.length} onChange={(audience, listIds) => patchProfile({ locationSharing: { enabled: Boolean(profile.locationSharing?.enabled), audience, listIds } })} />}
               </div>
-              <div className="presence-sharing-option">
+              {musicDisplayEnabled && <div className="presence-sharing-option">
                 <label className="community-switch"><span><strong>曲名を共有する</strong><small>再生中の曲名とアーティスト名だけを共有します</small></span><input className="state-switch" type="checkbox" role="switch" aria-label="曲名を共有する" checked={profile?.musicSharingEnabled ?? Boolean(profile?.nowPlaying)} onChange={(event) => setMusicSharing(event.target.checked)} /></label>
-                {musicSharingEnabled && activeMediaTrack?.title && <div className="music-sharing-details"><p className="automatic-sharing-status">再生中：{activeMediaTrack.title}{activeMediaTrack.artist ? ` / ${activeMediaTrack.artist}` : ''}</p></div>}
+                {musicSharingEnabled && <div className="music-sharing-details">
+                  {recognizedTrack?.title && <p className="automatic-sharing-status">再生中：{recognizedTrack.title}{recognizedTrack.artist ? ` / ${recognizedTrack.artist}` : ''}</p>}
+                  <button type="button" className="button secondary music-recognition-button" onClick={recognizeCurrentSong}>iPhoneで今の曲を認識</button>
+                  <details className="music-recognition-help"><summary>初回設定（iPhoneショートカット）</summary><ol><li>「ショートカット」アプリで新規ショートカットを作り、名前を <strong>{MUSIC_RECOGNITION_SHORTCUT_NAME}</strong> にします。</li><li>「ミュージックを認識」（Shazam）を追加します。</li><li>続けて「ミュージックの詳細を取得」で名前とアーティストを取り、「テキスト」に「名前」「改行」「アーティスト」の順で入れます。</li><li>保存後、この画面のボタンを押します。認識結果がこのアプリに戻り、共有設定がオンならフレンドに共有されます。</li></ol><p>曲が変わったときは再度ボタンを押してください。PWAが裏で常時監視する方式ではありません。</p></details>
+                </div>}
                 {profile && <ShareAudienceSelector label="曲名を共有する相手" audience={profile.musicSharingAudience ?? profile.locationSharing?.audience ?? 'friends'} listIds={profile.musicSharingListIds ?? profile.locationSharing?.listIds ?? []} lists={profile.friendLists ?? []} friendCount={friendIds.length} onChange={(audience, listIds) => patchProfile({ musicSharingAudience: audience, musicSharingListIds: listIds })} />}
-              </div>
+              </div>}
             </div>
-            <small>位置情報と曲名は、それぞれ公開範囲を個別に設定できます。</small>
-            {presence.length > 0 && <div className="presence-list">{presence.map((item) => <span key={item.userId}>{item.displayName}{item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title}` : ''}{item.location ? ' · 位置共有中' : ''}</span>)}</div>}
+            <small>{musicDisplayEnabled ? '位置情報と曲名は、それぞれ公開範囲を個別に設定できます。' : '位置情報は個別に公開範囲を設定できます。'}</small>
+            {presence.length > 0 && <div className="presence-list">{presence.map((item) => <span key={item.userId}>{item.displayName}{musicDisplayEnabled && item.nowPlaying?.title ? ` · ♪ ${item.nowPlaying.title}` : ''}{item.location ? ' · 位置共有中' : ''}</span>)}</div>}
           </section>
           <p className="muted">共有・プライバシーの変更は自動で保存されます。</p>
         </>}
@@ -256,7 +334,7 @@ export function CommunityPanel({ user, course, courses = [], themePreference, re
       </>}
       {course && <section className="social-thread">{authorProfile && <ProfileShowcase profile={authorProfile} title={`${course.authorName ?? authorProfile.displayName}のプロフィール`} />}<div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>{profile?.followingIds?.includes(course.authorId) ? 'フォロー解除' : '＋ 作成者をフォロー'}</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button danger-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
     </>}
-    {notice && <p className={saving ? 'form-saving' : 'form-success'} role="status">{notice}</p>}
+    {notice && <p className={`${saving ? 'form-saving' : 'form-success'}${!course && settingsView === 'home' ? ' account-menu-status' : ''}`} role="status">{notice}</p>}
     </div></div>
   </section></div>
 }

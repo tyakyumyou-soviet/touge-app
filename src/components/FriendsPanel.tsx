@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { acceptFriend, canAcceptFriend, removeFriend, requestFriend, searchFriends, subscribeFriends, type FriendEntry, type SearchPerson } from '../lib/friends'
 import { validAccountId } from '../lib/account'
+import { UserAvatar } from './UserAvatar'
 
-export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: string; name: string; listPanel: ReactNode; listCount?: number }) {
+export function FriendsPanel({ uid, name, listPanel, listCount = 0, friendPhotoURL = () => null, onViewProfile }: { uid: string; name: string; listPanel: ReactNode; listCount?: number; friendPhotoURL?: (id: string) => string | null; onViewProfile?: (id: string) => void }) {
   const [tab, setTab] = useState<'friends' | 'requests' | 'search' | 'lists'>('friends')
   const [entries, setEntries] = useState<FriendEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,10 +60,10 @@ export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: str
   const incoming = pending.filter((entry) => canAcceptFriend(entry, uid))
   const otherId = (entry: FriendEntry) => entry.sender === uid ? entry.recipient : entry.sender
   const personName = (entry: FriendEntry) => entry.names[otherId(entry)] || 'ドライバー'
-  const avatar = (title: string) => <span className="friend-avatar" aria-hidden="true">{title.slice(0, 1)}</span>
+  const avatar = (title: string, photoURL?: string | null) => <UserAvatar name={title} photoURL={photoURL} />
   return <section className="friends-hub" aria-label="フレンド管理">
     <div className="community-segments" role="tablist" aria-label="フレンドの表示">
-      {([['friends', 'フレンド', accepted.length], ['requests', '申請', incoming.length], ['search', '探す', 0], ['lists', 'リスト', listCount]] as const).map(([id, title, count]) => <button key={id} id={`friend-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="friend-tab-panel" onClick={() => { setTab(id); setRemoving(null) }}>{title}{count > 0 && <span className="count-badge">{count}</span>}</button>)}
+      {([['friends', 'フレンド', accepted.length], ['requests', '申請', incoming.length], ['search', '探す', 0], ['lists', 'リスト', listCount]] as const).map(([id, title, count]) => <button key={id} id={`friend-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="friend-tab-panel" onClick={() => { setTab(id); setRemoving(null) }}>{title}{count > 0 && <span className={id === 'requests' ? 'count-badge' : 'count-badge friends-count'}>{count}{id === 'friends' ? '人' : id === 'lists' ? '件' : ''}</span>}</button>)}
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {notice && <p className="form-success" role="status">{notice}</p>}
@@ -70,12 +71,12 @@ export function FriendsPanel({ uid, name, listPanel, listCount = 0 }: { uid: str
       {tab !== 'lists' && loading && <p role="status">フレンドを読み込み中…</p>}
       {tab === 'friends' && <>
         {!loading && !accepted.length && <div className="community-empty"><span aria-hidden="true">◎</span><h3>一緒に走る仲間を見つけよう</h3><p>アカウントIDで検索して申請できます。相手が承認するとフレンドになります。</p><button className="button primary" onClick={() => setTab('search')}>フレンドを探す</button></div>}
-        {accepted.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry))}<div><strong>{personName(entry)}</strong><small>フレンド</small></div><button className="text-button" disabled={busy} onClick={() => setRemoving(entry)}>解除</button></article>)}
+        {accepted.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry), friendPhotoURL(otherId(entry)))}<div><strong>{personName(entry)}</strong><small>フレンド</small></div>{onViewProfile && <button type="button" className="text-button" onClick={() => onViewProfile(otherId(entry))}>プロフィール</button>}<button className="text-button" disabled={busy} onClick={() => setRemoving(entry)}>解除</button></article>)}
         {removing && <section className="friend-confirm" role="alert"><p>「{personName(removing)}」とのフレンド関係を解除しますか？位置情報のフレンド共有対象からも外れます。</p><div className="social-actions"><button disabled={busy} onClick={() => setRemoving(null)}>キャンセル</button><button className="danger-button" disabled={busy} onClick={() => void perform(() => removeFriend(removing), 'フレンドを解除しました')}>解除する</button></div></section>}
       </>}
       {tab === 'requests' && <>
         {!loading && !pending.length && <div className="community-empty"><h3>申請はありません</h3><p>受信した申請と、承認待ちの申請をここで確認できます。</p></div>}
-        {pending.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry))}<div><strong>{personName(entry)}</strong><small>{canAcceptFriend(entry, uid) ? 'フレンド申請が届いています' : '承認待ち'}</small><div className="social-actions">{canAcceptFriend(entry, uid) && <button disabled={busy} className="button primary" onClick={() => void perform(() => acceptFriend(entry, uid), 'フレンドになりました')}>承認</button>}<button disabled={busy} onClick={() => void perform(() => removeFriend(entry), canAcceptFriend(entry, uid) ? '申請を拒否しました' : '申請を取り消しました')}>{canAcceptFriend(entry, uid) ? '拒否' : '申請を取り消す'}</button></div></div></article>)}
+        {pending.map((entry) => <article className="friend-person" key={entry.id}>{avatar(personName(entry), friendPhotoURL(otherId(entry)))}<div><strong>{personName(entry)}</strong><small>{canAcceptFriend(entry, uid) ? 'フレンド申請が届いています' : '承認待ち'}</small><div className="social-actions">{canAcceptFriend(entry, uid) && <button disabled={busy} className="button primary" onClick={() => void perform(() => acceptFriend(entry, uid), 'フレンドになりました')}>承認</button>}<button disabled={busy} onClick={() => void perform(() => removeFriend(entry), canAcceptFriend(entry, uid) ? '申請を拒否しました' : '申請を取り消しました')}>{canAcceptFriend(entry, uid) ? '拒否' : '申請を取り消す'}</button></div></div></article>)}
       </>}
       {tab === 'search' && <>
         <form className="friend-search" onSubmit={(event) => event.preventDefault()}><input aria-label="フレンドのアカウントID" placeholder="@touge_driver" value={query} maxLength={21} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(event) => { revision.current++; setQuery(event.target.value); setResults([]); setSearched(false); setError('') }} /></form>
