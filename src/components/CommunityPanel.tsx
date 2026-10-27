@@ -74,6 +74,7 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   const profileSaveTimer = useRef<number | null>(null)
   const pendingProfileChanges = useRef<Partial<UserProfile>>({})
   const profileSaveRevision = useRef(0)
+  const profileEditRevision = useRef(0)
   const profileWriteQueue = useRef<Promise<void>>(Promise.resolve())
   const failedProfileChanges = useRef<Partial<UserProfile>>({})
   const locationIntentRevision = useRef(0)
@@ -137,8 +138,9 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   useEffect(() => {
     if (!user) return
     let active = true
+    const editRevision = profileEditRevision.current
     const fallback: UserProfile = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0 }
-    loadUserProfile(user.uid).then((value) => { if (active) setProfile(value ?? fallback) }).catch(() => { if (active) setNotice('プロフィールを読み込めませんでした。接続状態を確認してください') })
+    loadUserProfile(user.uid).then((value) => { if (active && profileEditRevision.current === editRevision) setProfile(value ?? fallback) }).catch(() => { if (active && profileEditRevision.current === editRevision) setNotice('プロフィールを読み込めませんでした。接続状態を確認してください') })
     return () => { active = false }
   }, [user])
   useEffect(() => {
@@ -258,6 +260,7 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   }
   function patchProfile(values: Partial<UserProfile>) {
     if (!user) return
+    profileEditRevision.current += 1
     const merged = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0, ...profile, ...values }
     const next = { ...merged, mapAllowedViewerIds: mapProfileViewerIds(merged) }
     setProfile(next)
@@ -271,7 +274,29 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
       ...(!('musicSharingListIds' in values) ? { musicSharingListIds: merged.musicSharingListIds ?? merged.locationSharing?.listIds ?? [] } : {}),
       ...('mapVisibility' in values || 'mapProfileListIds' in values ? { mapAllowedViewerIds: next.mapAllowedViewerIds } : {}),
     }
-    queueProfileSave(persistedValues, next)
+    const routeSettingKeys: Array<keyof UserProfile> = ['mapRouteSources', 'mapRouteOverrides', 'hiddenRouteIds', 'mapRouteFriendScope', 'mapRouteFriendListIds']
+    if (!Object.keys(values).some((key) => routeSettingKeys.includes(key as keyof UserProfile))) {
+      queueProfileSave(persistedValues, next)
+      return
+    }
+    // Route visibility is used by MapView immediately. Flush it to Firebase in
+    // the same interaction instead of the general profile debounce, and flush
+    // any pending settings first so quick toggles cannot be reordered.
+    pendingProfileChanges.current = { ...pendingProfileChanges.current, ...persistedValues }
+    if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
+    profileSaveTimer.current = null
+    const changes = pendingProfileChanges.current
+    pendingProfileChanges.current = {}
+    const revision = ++profileSaveRevision.current
+    setSaving(true)
+    setNotice('地図表示設定を保存中…')
+    void persistProfileChanges(user, changes)
+      .then(() => { if (revision === profileSaveRevision.current) setNotice('地図表示設定を保存しました') })
+      .catch(() => {
+        pendingProfileChanges.current = { ...changes, ...pendingProfileChanges.current }
+        if (revision === profileSaveRevision.current) setNotice('地図表示設定を保存できませんでした。接続を確認して再度変更してください')
+      })
+      .finally(() => { if (revision === profileSaveRevision.current) setSaving(false) })
   }
   function saveProfilePhotoUrl() {
     const value = profilePhotoDraft.trim()

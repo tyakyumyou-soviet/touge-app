@@ -494,11 +494,9 @@ export default function App() {
   }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization, viewerProfile?.personalizationWeights])
   const mapCourses = useMemo(() => {
     const visible = courses.filter((course) => isCourseVisibleByMapPreferences(course, viewerProfile, user?.uid, acceptedFriendIds))
-    // A course picked from the list must remain visible even when the user's
-    // background-map preference hides that category. Otherwise its detail can
-    // open with no corresponding route on the map, which is especially
-    // confusing for shared and proposal previews.
-    const selectedCourse = selected ? [selected] : []
+    // Proposal previews are temporary overlays. A saved course, however, must
+    // obey its explicit map visibility setting even while its detail is open.
+    const selectedCourse = selected && (selected.authorId === '__proposal_preview__' || isCourseVisibleByMapPreferences(selected, viewerProfile, user?.uid, acceptedFriendIds)) ? [selected] : []
     return [...new Map([...visible, ...proposalPreviews, ...selectedCourse].map((course) => [course.id, course])).values()]
   }, [courses, proposalPreviews, selected, user?.uid, acceptedFriendIds, viewerProfile])
 
@@ -926,7 +924,7 @@ export default function App() {
       </header>
 
       <main>
-        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} friendPresence={mapFriendPresence} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
+        <MapView theme={resolvedTheme} courses={mapCourses} selected={selected} selectedRouteVisible={Boolean(selected && (selected.authorId === '__proposal_preview__' || isCourseVisibleByMapPreferences(selected, viewerProfile, user?.uid, acceptedFriendIds)))} previewCourseIds={proposalPreviews.map((course) => course.id)} focusRequest={mapFocusRequest} draftFitRequest={draftFitRequest} is3d={is3d} drawing={drawing} draftRoute={draftRoute} draftLabels={draftPointLabels} draftRoles={draftPointRoles} viaInsertAfter={draftViaInsertAfter} focusPoint={draftFocus} pendingSearchPoint={draftPendingSearch?.point ?? null} pendingSearchLabel={draftPendingSearch?.label ?? ''} recommendationMapState={recommendationMapState} currentLocation={currentLocation} friendPresence={mapFriendPresence} searchCenter={nearbyCenter?.point} searchRadiusKm={nearbyCenter ? nearbyRadiusKm : undefined} speedCameras={speedCameras} showSpeedCameras={driveModeActive && speedAlertOutput !== 'off'} drivingSpeedKph={drivingSpeedKph} driveModeActive={driveModeActive} onCurrentLocationChange={setCurrentLocation} onSelect={selectCourse} onRecommendationMapAction={(action) => {
           const id = ++recommendationActionSequence.current
           const point = { coordinate: action.point, label: '地図指定' }
           // Reflect the selected search centre immediately.  CourseForm then

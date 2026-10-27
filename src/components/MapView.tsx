@@ -23,6 +23,7 @@ interface MapViewProps {
   theme: ResolvedTheme
   courses: Course[]
   selected: Course | null
+  selectedRouteVisible: boolean
   previewCourseIds: string[]
   focusRequest?: number
   draftFitRequest?: number
@@ -169,7 +170,7 @@ function fitRouteToVisibleMap(map: MapLibreMap, container: HTMLElement, route: C
   else map.jumpTo({ center, zoom })
 }
 
-export function MapView({ theme, courses, selected, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, friendPresence, searchCenter, searchRadiusKm, speedCameras, showSpeedCameras, drivingSpeedKph, driveModeActive, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
+export function MapView({ theme, courses, selected, selectedRouteVisible, previewCourseIds, focusRequest = 0, draftFitRequest = 0, is3d, drawing, draftRoute, draftLabels, draftRoles, viaInsertAfter, focusPoint, pendingSearchPoint, pendingSearchLabel, recommendationMapState, currentLocation, friendPresence, searchCenter, searchRadiusKm, speedCameras, showSpeedCameras, drivingSpeedKph, driveModeActive, onCurrentLocationChange, onSelect, onRecommendationMapAction, onAddPoint, onMovePoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const coursesRef = useRef(courses)
@@ -610,10 +611,10 @@ export function MapView({ theme, courses, selected, previewCourseIds, focusReque
     const container = containerRef.current
     if (!map?.isStyleLoaded() || !container) return
     const source = map.getSource('selected-course') as GeoJSONSource | undefined
-    source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected?.route ?? [] } })
+    source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: selected && selectedRouteVisible ? selected.route : [] } })
     ;(map.getSource('selected-contours') as GeoJSONSource | undefined)?.setData(toContourFeatureCollection(selected))
     ;(map.getSource('course-annotations') as GeoJSONSource | undefined)?.setData(toCourseAnnotationCollection(selected))
-  }, [selected, mapReady])
+  }, [selected, selectedRouteVisible, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
