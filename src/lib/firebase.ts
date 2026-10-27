@@ -250,6 +250,36 @@ export async function loadPublicCourses(userId?: string, onPartialFailure?: (err
   return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))
 }
 
+/** Keep saved routes synchronized with Firestore after initial load and across
+ * tabs/devices. A one-time getDocs() leaves the map stale until a full reload,
+ * and can race a newly-created route against an older in-flight result. */
+export function subscribePublicCourses(userId: string | undefined, onChange: (courses: Course[]) => void, onPartialFailure?: (error: unknown) => void) {
+  const snapshots = new Map<string, Awaited<ReturnType<typeof getDocs>>>()
+  let revision = 0
+  let disposed = false
+  const publish = () => {
+    const currentRevision = ++revision
+    const documents = [...new Map([...snapshots.values()].flatMap((snapshot) => snapshot.docs).map((item) => [item.id, item])).values()]
+    void hydrateCourses(documents).then((courses) => {
+      if (disposed || currentRevision !== revision) return
+      onChange(courses.filter((course) => course.route.length >= 2))
+    }).catch((error: unknown) => onPartialFailure?.(error))
+  }
+  const watch = (key: string, courseQuery: ReturnType<typeof query>) => onSnapshot(courseQuery, (snapshot) => {
+    snapshots.set(key, snapshot)
+    publish()
+  }, (error) => onPartialFailure?.(error))
+  const unsubscribers = [watch('seed', query(collection(db, 'courses'), where('isSeed', '==', true)))]
+  if (userId) {
+    unsubscribers.push(watch('own', query(collection(db, 'courses'), where('authorId', '==', userId))))
+    unsubscribers.push(watch('shared', query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId))))
+  }
+  return () => {
+    disposed = true
+    unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }
+}
+
 export async function loadAllCoursesForAdministration(): Promise<Course[]> {
   const snapshot = await getDocs(collection(db, 'courses'))
   return hydrateCourses(snapshot.docs).then((courses) => courses.filter((course) => course.route.length >= 2))

@@ -17,7 +17,7 @@ import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadPublicCourses, loadUserProfile, loginWithGoogle, logout, publishFriendProfile, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, saveUserProfileSettings, subscribeFriendPresence, subscribeGlobalMusicDisplay, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
+import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadUserProfile, loginWithGoogle, logout, publishFriendProfile, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, saveUserProfileSettings, subscribeFriendPresence, subscribeGlobalMusicDisplay, subscribePublicCourses, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
 import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
 import { personalizedScore } from './lib/personalization'
@@ -259,19 +259,16 @@ export default function App() {
   }, [user])
   useEffect(() => {
     if (!authReady) return
-    let cancelled = false
-    loadPublicCourses(user?.uid, () => {
-      if (!cancelled) setNotice('一部の経路を読み込めませんでした。表示できる経路を先に表示しています。')
-    }).then((remote) => {
-      if (cancelled) return
+    let partialFailureReported = false
+    return subscribePublicCourses(user?.uid, (remote) => {
       const seedIds = new Set(remote.map((course) => course.id))
       setCourses([...remote, ...sampleCourses.filter((course) => !seedIds.has(course.id))])
-    }).catch((error: unknown) => {
-      if (cancelled) return
+    }, (error: unknown) => {
+      if (partialFailureReported) return
+      partialFailureReported = true
       const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
       setNotice(code === 'permission-denied' ? 'Firebaseからコースを読み込めませんでした。Firestoreルールの公開設定を確認してください。' : 'Firebaseからコースを読み込めませんでした。通信状態を確認してください。')
     })
-    return () => { cancelled = true }
   }, [authReady, user?.uid])
   useEffect(() => {
     setProfileChecked(false)

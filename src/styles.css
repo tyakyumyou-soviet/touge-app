@@ -529,6 +529,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .maplibregl-ctrl-top-right { top: 59px; right: 10px; }
   .explore-panel { inset: auto 8px 8px; width: auto; max-height: 68%; padding: 0 12px 0; transform: translateY(calc(100% + 20px)); transition: max-height .22s ease, transform .25s ease; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 15px 50px #101d1760; }
   .explore-panel.open { transform: translateY(0); }
+  /* The map fills only the area below the fixed top bar. Anchor discovery to
+     the viewport itself so its middle snap doesn't inherit that 62px offset
+     and appear to float above the phone's bottom edge. */
+  .explore-panel.mobile-sheet { position: fixed; inset: auto 8px 0; z-index: 52; }
   /* A detail sheet replaces discovery while it is open. Leaving the collapsed
      tray visible underneath made the two sheets look stacked and gave the map
      an accidental second interaction target. */
@@ -1481,11 +1485,6 @@ html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
      minimized. Keeping background sheets mounted preserves their state, while
      preventing a stack of overlapping compact handles. */
   #root .mobile-sheet.sheet-backgrounded { visibility: hidden !important; pointer-events: none !important; }
-  /* Keep the compact discovery handle flush with the visible viewport edge;
-     anchoring it to `main` leaves a noticeable gap on mobile browsers whose
-     dynamic viewport and app-shell heights differ. */
-  .explore-panel.mobile-sheet.collapsed { position: fixed; inset: auto 8px 0; z-index: 52; }
-  .explore-panel.mobile-sheet.expanded { position: fixed; inset: auto 8px 0; }
   .explore-panel.drawing.mobile-sheet.collapsed { display: flex; }
   .course-form.mobile-sheet.collapsed { bottom: 8px; z-index: 53; }
   .modal-backdrop:has(.course-form.collapsed) { z-index: 53; }
