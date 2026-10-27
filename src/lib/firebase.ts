@@ -202,25 +202,49 @@ async function hydrateCourses(documents: Awaited<ReturnType<typeof getDocs>>['do
     .map(async (item) => {
       const raw = courseFromFirestore(item.id, item.data() as Record<string, unknown>)
       const systemRatings = raw.systemRatings ?? raw.ratings
-      const ratingSnapshot = await getDocs(collection(db, 'courses', item.id, 'ratings'))
+      // Ratings are supplemental. A missing/temporarily unreadable ratings
+      // subcollection must not make an otherwise readable saved route vanish.
+      const ratingSnapshot = await retryFirestoreRead(() => getDocs(collection(db, 'courses', item.id, 'ratings'))).catch(() => null)
       const sums = Object.fromEntries(Object.keys(ratingLabels).map((key) => [key, 0])) as Ratings
-      for (const rating of ratingSnapshot.docs) {
+      for (const rating of ratingSnapshot?.docs ?? []) {
         const values = rating.data() as Partial<Record<RatingKey, unknown>>
         for (const key of Object.keys(ratingLabels) as RatingKey[]) {
           if (typeof values[key] === 'number') sums[key] += values[key] as number
         }
       }
-      const ratingCount = ratingSnapshot.size
+      const ratingCount = ratingSnapshot?.size ?? 0
       const userRatings = ratingCount ? userRatingAverage(sums, ratingCount) : undefined
       return { ...raw, systemRatings, userRatings, ratingCount, ratings: combinedRatings({ ...raw, systemRatings, userRatings, ratingCount }) }
     }))
 }
 
+const retryableFirestoreReadCodes = new Set(['unavailable', 'deadline-exceeded', 'resource-exhausted', 'internal', 'unknown', 'aborted'])
+
+/** Retry brief Firestore read outages rather than silently dropping courses. */
+async function retryFirestoreRead<T>(read: () => Promise<T>, retries = 2): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await read()
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code).replace(/^firestore\//, '') : ''
+      if (attempt >= retries || (code && !retryableFirestoreReadCodes.has(code))) throw error
+      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)))
+    }
+  }
+}
+
 /** Load official seed routes plus the signed-in driver's own/shared routes. */
-export async function loadPublicCourses(userId?: string): Promise<Course[]> {
-  const seedSnapshot = await getDocs(query(collection(db, 'courses'), where('isSeed', '==', true))).catch(() => null)
-  const ownSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('authorId', '==', userId))).catch(() => null) : null
-  const sharedSnapshot = userId ? await getDocs(query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId))).catch(() => null) : null
+export async function loadPublicCourses(userId?: string, onPartialFailure?: (error: unknown) => void): Promise<Course[]> {
+  const reads = await Promise.allSettled([
+    retryFirestoreRead(() => getDocs(query(collection(db, 'courses'), where('isSeed', '==', true)))),
+    userId ? retryFirestoreRead(() => getDocs(query(collection(db, 'courses'), where('authorId', '==', userId)))) : Promise.resolve(null),
+    userId ? retryFirestoreRead(() => getDocs(query(collection(db, 'courses'), where('allowedViewerIds', 'array-contains', userId)))) : Promise.resolve(null),
+  ])
+  const failures = reads.flatMap((result) => result.status === 'rejected' ? [result.reason] : [])
+  failures.forEach((error) => onPartialFailure?.(error))
+  const snapshots = reads.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
+  if (!snapshots.length && failures.length) throw failures[0]
+  const [seedSnapshot, ownSnapshot, sharedSnapshot] = reads.map((result) => result.status === 'fulfilled' ? result.value : null)
   const documents = [...(seedSnapshot?.docs ?? []), ...(ownSnapshot?.docs ?? []), ...(sharedSnapshot?.docs ?? [])]
   const uniqueDocuments = [...new Map(documents.map((item) => [item.id, item])).values()]
   return hydrateCourses(uniqueDocuments).then((courses) => courses.filter((course) => course.route.length >= 2))

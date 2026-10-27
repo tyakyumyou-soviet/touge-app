@@ -260,7 +260,9 @@ export default function App() {
   useEffect(() => {
     if (!authReady) return
     let cancelled = false
-    loadPublicCourses(user?.uid).then((remote) => {
+    loadPublicCourses(user?.uid, () => {
+      if (!cancelled) setNotice('一部の経路を読み込めませんでした。表示できる経路を先に表示しています。')
+    }).then((remote) => {
       if (cancelled) return
       const seedIds = new Set(remote.map((course) => course.id))
       setCourses([...remote, ...sampleCourses.filter((course) => !seedIds.has(course.id))])
