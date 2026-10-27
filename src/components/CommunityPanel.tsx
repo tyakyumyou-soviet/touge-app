@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Course, CourseComment, FriendPresence, NowPlaying, ThemePreference, UserProfile } from '../types'
-import { addCourseComment, deleteCourseComment, loadFriendProfile, loadUserProfile, saveUserProfileSettings, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
+import { addCourseComment, deleteCourseComment, loadFriendProfile, loadUserProfile, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { FriendsPanel } from './FriendsPanel'
@@ -13,8 +13,9 @@ import { RouteDisplaySettings } from './RouteDisplaySettings'
 import { PersonalizationSettings } from './PersonalizationSettings'
 import { ThemeSettings } from './ThemeSettings'
 import type { ResolvedTheme } from '../lib/theme'
+import type { ProfileChanges } from '../lib/profileSettings'
 
-interface Props { user: User | null; course?: Course | null; courses?: Course[]; musicDisplayEnabled?: boolean; themePreference: ThemePreference; resolvedTheme: ResolvedTheme; onThemeChange: (value: ThemePreference) => void; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void; onProfileSaved?: (profile: UserProfile) => void }
+interface Props { user: User | null; profile: UserProfile | null; saving: boolean; profileError: string; onProfileChange: (values: ProfileChanges) => Promise<void>; course?: Course | null; courses?: Course[]; musicDisplayEnabled?: boolean; themePreference: ThemePreference; resolvedTheme: ResolvedTheme; onThemeChange: (value: ThemePreference) => void; onClose: () => void; onLogout?: () => void; onAdminOpen?: () => void }
 
 const socialNames = { x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok' } as const
 type ShareAudience = 'friends' | 'lists'
@@ -45,20 +46,13 @@ function ProfileShowcase({ profile, title }: { profile: UserProfile; title?: str
   </section>
 }
 
-export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled = true, themePreference, resolvedTheme, onThemeChange, onClose, onLogout, onAdminOpen, onProfileSaved }: Props) {
-  const sheet = useMobileSheet()
-  const { openResting } = sheet
-  // Opening the account sheet can race with the activation event that
-  // minimizes the discovery sheet. Always settle this newly mounted sheet at
-  // its middle snap instead of inheriting the sibling's minimized state.
-  useEffect(() => { openResting() }, [openResting])
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+export function CommunityPanel({ user, profile, saving, profileError, onProfileChange, course, courses = [], musicDisplayEnabled = true, themePreference, resolvedTheme, onThemeChange, onClose, onLogout, onAdminOpen }: Props) {
+  const sheet = useMobileSheet(true, 'account')
   const [profilePhotoDraft, setProfilePhotoDraft] = useState('')
   const [authorProfile, setAuthorProfile] = useState<UserProfile | null>(null)
   const [comments, setComments] = useState<CourseComment[]>([])
   const [body, setBody] = useState('')
   const [notice, setNotice] = useState('')
-  const [saving, setSaving] = useState(false)
   const [likeState, setLikeState] = useState({ count: 0, liked: false })
   const [presence, setPresence] = useState<FriendPresence[]>([])
   const [activeMediaTrack, setActiveMediaTrack] = useState<NowPlaying | null>(null)
@@ -68,15 +62,12 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   const [friendProfileError, setFriendProfileError] = useState('')
   const [settingsView, setSettingsView] = useState<'home' | 'profile' | 'friends' | 'friend-profile' | 'sharing' | 'settings'>('home')
   const contentRef = useRef<HTMLDivElement>(null)
+  const profileRef = useRef(profile)
+  useEffect(() => { profileRef.current = profile }, [profile])
   const [transitionDirection, setTransitionDirection] = useState('forward')
   const [friendIds, setFriendIds] = useState<string[]>([])
   const [friendNames, setFriendNames] = useState<Record<string, string>>({})
-  const profileSaveTimer = useRef<number | null>(null)
-  const pendingProfileChanges = useRef<Partial<UserProfile>>({})
   const profileSaveRevision = useRef(0)
-  const profileEditRevision = useRef(0)
-  const profileWriteQueue = useRef<Promise<void>>(Promise.resolve())
-  const failedProfileChanges = useRef<Partial<UserProfile>>({})
   const locationIntentRevision = useRef(0)
   const musicSharingEnabled = musicDisplayEnabled && Boolean(profile?.musicSharingEnabled ?? profile?.nowPlaying)
   useEffect(() => {
@@ -86,12 +77,6 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
     const timer = window.setInterval(syncTrack, 1000)
     return () => window.clearInterval(timer)
   }, [musicSharingEnabled])
-  useEffect(() => () => {
-    if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
-    const pending = pendingProfileChanges.current
-    pendingProfileChanges.current = {}
-    if (user && Object.keys(pending).length) void persistProfileChanges(user, pending)
-  }, [user])
   useEffect(() => {
     if (!user) return
     return subscribeFriends(user.uid, (entries) => {
@@ -118,45 +103,9 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
       setFriendProfileError('プロフィールを読み込めませんでした。接続状態とFirestoreルールをご確認ください。')
     } finally { setFriendProfileLoading(false) }
   }
-  function persistProfileChanges(targetUser: User, changes: Partial<UserProfile>) {
-    const write = profileWriteQueue.current.catch(() => undefined).then(async () => {
-      const values = { ...failedProfileChanges.current, ...changes }
-      failedProfileChanges.current = {}
-      try {
-        await saveUserProfileSettings(targetUser, values)
-      } catch (error) {
-        failedProfileChanges.current = { ...values, ...failedProfileChanges.current }
-        throw error
-      }
-    })
-    profileWriteQueue.current = write
-    return write
-  }
   const profileImageUrl = profile?.photoURL || user?.photoURL
   const profileEditorImageUrl = profilePhotoDraft.trim() || user?.photoURL
   useEffect(() => { setProfilePhotoDraft(profile?.photoURL ?? '') }, [profile?.photoURL])
-  useEffect(() => {
-    if (!user) return
-    let active = true
-    const editRevision = profileEditRevision.current
-    const fallback: UserProfile = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0 }
-    let cached: UserProfile | null = null
-    try {
-      const raw = localStorage.getItem(`touge-profile-${user.uid}`)
-      if (raw) cached = JSON.parse(raw) as UserProfile
-    } catch { /* Ignore an invalid local cache and use the server value. */ }
-    if (cached) setProfile(cached)
-    loadUserProfile(user.uid).then((value) => {
-      // The account sheet has its own profile read. Never let that initial
-      // read overwrite a setting the user changed while Firestore was loading.
-      if (active && profileEditRevision.current === editRevision) setProfile(value ?? cached ?? fallback)
-    }).catch(() => {
-      if (active && profileEditRevision.current === editRevision) {
-        if (!cached) setNotice('プロフィールを読み込めませんでした。接続状態を確認してください')
-      }
-    })
-    return () => { active = false }
-  }, [user])
   useEffect(() => {
     if (!course?.authorId || course.authorId === user?.uid) { setAuthorProfile(null); return }
     loadUserProfile(course.authorId).then(setAuthorProfile).catch(() => setAuthorProfile(null))
@@ -186,33 +135,12 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
     const selected = new Set(nextProfile.mapProfileListIds ?? [])
     return [...new Set((nextProfile.friendLists ?? []).filter((list) => selected.has(list.id)).flatMap((list) => list.memberIds))].filter((id) => friendIds.includes(id))
   }
-  function queueProfileSave(values: Partial<UserProfile>, next: UserProfile) {
+  function saveProfileChanges(values: ProfileChanges) {
     if (!user) return
-    // Switches and selectors also use this path (not just patchProfile).
-    // Advancing the revision here prevents the profile's initial Firestore
-    // read from restoring stale values over those interactions.
-    profileEditRevision.current += 1
-    pendingProfileChanges.current = { ...pendingProfileChanges.current, ...values }
-    localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next))
-    onProfileSaved?.(next)
-    setSaving(true)
-    setNotice('変更を自動保存中…')
-    if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
     const revision = ++profileSaveRevision.current
-    profileSaveTimer.current = window.setTimeout(() => {
-      const changes = pendingProfileChanges.current
-      pendingProfileChanges.current = {}
-      profileSaveTimer.current = null
-      void persistProfileChanges(user, changes)
-        .then(() => { if (revision === profileSaveRevision.current) setNotice('変更を自動保存しました') })
-        .catch(() => {
-          // Keep failed values available for the next edit or when the sheet
-          // closes, without replacing any newer edits made during the write.
-          pendingProfileChanges.current = { ...changes, ...pendingProfileChanges.current }
-          if (revision === profileSaveRevision.current) setNotice('自動保存できませんでした。通信状態を確認して、もう一度変更してください')
-        })
-        .finally(() => { if (revision === profileSaveRevision.current) setSaving(false) })
-    }, 450)
+    void onProfileChange(values)
+      .then(() => { if (revision === profileSaveRevision.current) setNotice('変更を自動保存しました') })
+      .catch(() => { if (revision === profileSaveRevision.current) setNotice('変更を保存できませんでした。接続状態を確認してください。') })
   }
   async function postComment() { if (!user || !course || !body.trim()) return; try { await addCourseComment(course.id, body.trim(), user); setBody('') } catch { setNotice('コメントを保存できませんでした') } }
   async function removeComment(commentId: string) { if (!course) return; try { await deleteCourseComment(course.id, commentId) } catch { setNotice('コメントを削除できませんでした') } }
@@ -225,7 +153,6 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   }
   async function saveFriendLists(friendLists: NonNullable<UserProfile['friendLists']>) {
     if (!user) return
-    profileEditRevision.current += 1
     const validListIds = new Set(friendLists.map((list) => list.id))
     const locationSharing = profile?.locationSharing ? { ...profile.locationSharing, listIds: profile.locationSharing.listIds.filter((id) => validListIds.has(id)) } : undefined
     const musicSharingListIds = (profile?.musicSharingListIds ?? profile?.locationSharing?.listIds ?? []).filter((id) => validListIds.has(id))
@@ -233,27 +160,26 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
     const mapRouteFriendListIds = (profile?.mapRouteFriendListIds ?? []).filter((id) => validListIds.has(id))
     const base = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingListIds, ...(locationSharing ? { locationSharing } : {}) }
     const next = { ...base, mapAllowedViewerIds: mapProfileViewerIds(base) }
-    setProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); onProfileSaved?.(next)
-    await persistProfileChanges(user, { friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
+    await onProfileChange({ friendLists, mapProfileListIds, mapRouteFriendListIds, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds, mapAllowedViewerIds: next.mapAllowedViewerIds, ...(locationSharing ? { locationSharing } : {}) })
     setNotice('フレンドリストを保存しました')
   }
   function setLocationSharing(enabled: boolean) {
     if (!user) return
-    // The geolocation permission callback may take seconds; mark the edit at
-    // the switch interaction, before the profile read can resolve.
-    profileEditRevision.current += 1
     const intentRevision = ++locationIntentRevision.current
     if (enabled && !navigator.geolocation) { setNotice('この端末では位置情報を利用できません'); return }
     const applyLocationSharing = (value: boolean) => {
-      const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), locationSharing: { ...(profile?.locationSharing ?? { audience: 'friends' as const, listIds: [] }), enabled: value } }
-      setProfile(next); queueProfileSave({ locationSharing: next.locationSharing, musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds: profile?.musicSharingListIds ?? profile?.locationSharing?.listIds ?? [] }, next)
+      const latest = profileRef.current
+      saveProfileChanges({ locationSharing: { ...(latest?.locationSharing ?? { audience: 'friends' as const, listIds: [] }), enabled: value }, musicSharingAudience: latest?.musicSharingAudience ?? latest?.locationSharing?.audience ?? 'friends', musicSharingListIds: latest?.musicSharingListIds ?? latest?.locationSharing?.listIds ?? [] })
     }
+    applyLocationSharing(enabled)
     if (enabled) {
       // Request the permission from the user's switch interaction. Starting
       // watchPosition only in an effect can be blocked by some mobile browsers.
       navigator.geolocation.getCurrentPosition(
-        () => { if (intentRevision === locationIntentRevision.current) { applyLocationSharing(true); setNotice('位置共有をオンにしました') } },
+        () => { if (intentRevision === locationIntentRevision.current) setNotice('位置共有をオンにしました') },
         (error) => {
+          if (intentRevision !== locationIntentRevision.current) return
+          if (error.code === error.PERMISSION_DENIED) applyLocationSharing(false)
           const message = error.code === error.PERMISSION_DENIED ? '位置情報の許可が必要です。ブラウザーのサイト設定を確認してください' : error.code === error.POSITION_UNAVAILABLE ? '現在地を取得できませんでした。GPSや位置情報サービスを確認してください' : '現在地の取得がタイムアウトしました。通信・位置情報を確認して再試行してください'
           setNotice(message)
         },
@@ -261,7 +187,6 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
       )
       return
     }
-    applyLocationSharing(false)
     setNotice('位置共有をオフにしました')
   }
   function setMusicSharing(enabled: boolean) {
@@ -270,8 +195,7 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
     const preserveShortcutTrack = enabled && !sessionTrack && profile?.musicSharingSource === 'shortcut'
     const playing = enabled ? sessionTrack ?? (preserveShortcutTrack ? profile?.nowPlaying ?? null : null) : null
     const source = preserveShortcutTrack ? 'shortcut' as const : 'automatic' as const
-    const next = { ...(profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }), musicSharingEnabled: enabled, musicSharingSource: source, nowPlaying: playing }
-    setProfile(next); queueProfileSave({ musicSharingEnabled: enabled, musicSharingSource: source, nowPlaying: playing }, next)
+    saveProfileChanges({ musicSharingEnabled: enabled, musicSharingSource: source, nowPlaying: playing })
     setNotice(enabled ? (playing ? '音楽共有をオンにし、再生中の曲を共有しました' : '音楽共有をオンにしました。再生情報を検出すると自動で共有します') : '音楽共有をオフにしました')
   }
   function recognizeCurrentSong() {
@@ -280,45 +204,18 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
     localStorage.setItem(MUSIC_RECOGNITION_PENDING_KEY, JSON.stringify(request))
     window.location.assign(buildMusicRecognitionShortcutUrl(window.location.origin, id))
   }
-  function patchProfile(values: Partial<UserProfile>) {
+  function patchProfile(values: ProfileChanges) {
     if (!user) return
     const merged = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0, ...profile, ...values }
     const next = { ...merged, mapAllowedViewerIds: mapProfileViewerIds(merged) }
-    setProfile(next)
-    // All profile and settings changes are saved automatically. Debouncing
-    // batches rapid text edits while local state updates immediately.
     const persistedValues = {
       ...values,
-      // Persist the legacy-derived music audience on the first settings edit,
+      // Persist the legacy-derived music audience when editing location scope,
       // so future location-scope changes cannot silently change music scope.
-      ...(!('musicSharingAudience' in values) ? { musicSharingAudience: merged.musicSharingAudience ?? merged.locationSharing?.audience ?? 'friends' } : {}),
-      ...(!('musicSharingListIds' in values) ? { musicSharingListIds: merged.musicSharingListIds ?? merged.locationSharing?.listIds ?? [] } : {}),
+      ...('locationSharing' in values ? { musicSharingAudience: profile?.musicSharingAudience ?? profile?.locationSharing?.audience ?? 'friends', musicSharingListIds: profile?.musicSharingListIds ?? profile?.locationSharing?.listIds ?? [] } : {}),
       ...('mapVisibility' in values || 'mapProfileListIds' in values ? { mapAllowedViewerIds: next.mapAllowedViewerIds } : {}),
     }
-    const routeSettingKeys: Array<keyof UserProfile> = ['mapRouteSources', 'mapRouteOverrides', 'hiddenRouteIds', 'mapRouteFriendScope', 'mapRouteFriendListIds']
-    if (!Object.keys(values).some((key) => routeSettingKeys.includes(key as keyof UserProfile))) {
-      queueProfileSave(persistedValues, next)
-      return
-    }
-    profileEditRevision.current += 1
-    // Route visibility is used by MapView immediately. Flush it to Firebase in
-    // the same interaction instead of the general profile debounce, and flush
-    // any pending settings first so quick toggles cannot be reordered.
-    pendingProfileChanges.current = { ...pendingProfileChanges.current, ...persistedValues }
-    if (profileSaveTimer.current !== null) window.clearTimeout(profileSaveTimer.current)
-    profileSaveTimer.current = null
-    const changes = pendingProfileChanges.current
-    pendingProfileChanges.current = {}
-    const revision = ++profileSaveRevision.current
-    setSaving(true)
-    setNotice('地図表示設定を保存中…')
-    void persistProfileChanges(user, changes)
-      .then(() => { if (revision === profileSaveRevision.current) setNotice('地図表示設定を保存しました') })
-      .catch(() => {
-        pendingProfileChanges.current = { ...changes, ...pendingProfileChanges.current }
-        if (revision === profileSaveRevision.current) setNotice('地図表示設定を保存できませんでした。接続を確認して再度変更してください')
-      })
-      .finally(() => { if (revision === profileSaveRevision.current) setSaving(false) })
+    saveProfileChanges(persistedValues)
   }
   function saveProfilePhotoUrl() {
     const value = profilePhotoDraft.trim()
@@ -381,7 +278,7 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
       </>}
       {course && <section className="social-thread">{authorProfile && <ProfileShowcase profile={authorProfile} title={`${course.authorName ?? authorProfile.displayName}のプロフィール`} />}<div className="social-actions"><button onClick={like}>{likeState.liked ? '♥ いいね済み' : '♡ いいね'} ({likeState.count})</button><button onClick={follow}>{profile?.followingIds?.includes(course.authorId) ? 'フォロー解除' : '＋ 作成者をフォロー'}</button></div><h3>{course.name}へのコメント</h3><div className="comment-list">{comments.length ? comments.map((item) => <article key={item.id}><strong>{item.authorName}</strong><p>{item.body}</p>{item.authorId === user.uid && <button type="button" className="text-button danger-button" onClick={() => removeComment(item.id)}>削除</button>}</article>) : <p className="muted">まだコメントはありません。</p>}</div><form onSubmit={(e) => { e.preventDefault(); postComment() }}><input value={body} onChange={(e) => setBody(e.target.value)} placeholder="走行後の感想を書く" /><button className="button primary">投稿</button></form></section>}
     </>}
-    {notice && <p className={`${saving ? 'form-saving' : 'form-success'}${!course && settingsView === 'home' ? ' account-menu-status' : ''}`} role="status">{notice}</p>}
+    {(notice || saving || profileError) && <p className={`${profileError ? 'form-error' : saving ? 'form-saving' : 'form-success'}${!course && settingsView === 'home' ? ' account-menu-status' : ''}`} role="status">{profileError || (saving ? '変更を保存中…' : notice)}</p>}
     </div></div>
   </section></div>
 }

@@ -29,7 +29,7 @@ interface Props {
 }
 
 export function DriveTimer({ course, speedCameras, alertOutput, onAlertOutputChange, onSpeedChange, onDriveModeChange, onClose }: Props) {
-  const sheet = useMobileSheet()
+  const sheet = useMobileSheet(true, 'timer')
   const [mode, setMode] = useState<'manual' | 'auto'>('manual')
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)

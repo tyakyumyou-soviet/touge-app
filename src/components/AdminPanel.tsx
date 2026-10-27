@@ -6,7 +6,7 @@ import { isPrimarySuperAdmin, loadRegisteredAccounts, PRIMARY_SUPER_ADMIN_EMAIL,
 import { useMobileSheet } from '../hooks/useMobileSheet'
 
 export function AdminPanel({ user, role, courses, onClose }: { user: User; role: AccountRole; courses: Course[]; onClose: () => void }) {
-  const sheet = useMobileSheet(); const [reports, setReports] = useState<AdminReport[]>([]); const [notice, setNotice] = useState('')
+  const sheet = useMobileSheet(true, 'admin'); const [reports, setReports] = useState<AdminReport[]>([]); const [notice, setNotice] = useState('')
   const [accounts, setAccounts] = useState<RegisteredAccount[]>([]); const [query, setQuery] = useState(''); const [busyId, setBusyId] = useState('')
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [tab, setTab] = useState<'reports' | 'roles' | 'users' | 'features'>('reports')

@@ -85,7 +85,7 @@ function editorStopsForSave(route: Coordinate[], labels: string[], roles: DraftP
 }
 
 export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, incorporatedProposalKeys, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onCancel, onSave }: Props) {
-  const sheet = useMobileSheet()
+  const sheet = useMobileSheet(true, 'builder')
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
     const uid = auth.currentUser?.uid

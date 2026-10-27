@@ -10,7 +10,7 @@ export interface TollReport {
 }
 
 export function TollReportForm({ courseName, onCancel, onSave }: { courseName: string; onCancel: () => void; onSave: (report: TollReport) => Promise<void> }) {
-  const sheet = useMobileSheet()
+  const sheet = useMobileSheet(true, 'toll-report')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event: FormEvent<HTMLFormElement>) {

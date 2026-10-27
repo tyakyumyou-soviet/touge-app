@@ -4,7 +4,7 @@ import { ratingLabels, type RatingKey, type RatingSubmission } from '../types'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 
 export function RatingForm({ courseId, courseName, onCancel, onSave }: { courseId: string; courseName: string; onCancel: () => void; onSave: (rating: RatingSubmission) => Promise<void> }) {
-  const sheet = useMobileSheet()
+  const sheet = useMobileSheet(true, 'rating')
   const [ratings, setRatings] = useState(emptyRatings())
   const [busy, setBusy] = useState(false)
   async function submit(event: FormEvent<HTMLFormElement>) {

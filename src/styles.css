@@ -577,6 +577,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .nav-actions { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
   .modal-backdrop { padding: 7px; place-items: end center; }
   .modal-backdrop:has(.mobile-sheet.collapsed) { pointer-events: none; background: transparent; backdrop-filter: none; }
+  .modal-backdrop:has(> .mobile-sheet.sheet-backgrounded) { pointer-events: none; background: transparent; backdrop-filter: none; }
   /* Map sheets own their positioning. Keep modal defaults at low specificity
      so they cannot override the detail's absolute or builder's fixed anchor. */
   :where(.mobile-sheet:not(.detail-panel):not(.course-form):not(.explore-panel)) { position: relative; }

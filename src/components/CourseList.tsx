@@ -5,7 +5,6 @@ import { courseTollStatus, tollStatusLabels } from '../lib/toll'
 
 type ScrollProps = {
   onTouchStart: (event: ReactTouchEvent<HTMLDivElement>) => void
-  onTouchMove: (event: ReactTouchEvent<HTMLDivElement>) => void
   onTouchEnd: (event: ReactTouchEvent<HTMLDivElement>) => void
   onTouchCancel: (event: ReactTouchEvent<HTMLDivElement>) => void
 }

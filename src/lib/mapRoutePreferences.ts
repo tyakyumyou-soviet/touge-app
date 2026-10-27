@@ -1,8 +1,9 @@
 import type { Course, UserProfile } from '../types'
 
 export type MapRouteSource = 'official' | 'mine' | 'friends'
+export type MapRoutePreferences = Pick<UserProfile, 'mapRouteVisibility' | 'mapRouteSources' | 'mapRouteFriendScope' | 'mapRouteFriendListIds' | 'mapRouteOverrides' | 'hiddenRouteIds' | 'friendLists'>
 
-export function mapRouteSourcesFromProfile(profile: UserProfile | null | undefined): MapRouteSource[] {
+export function mapRouteSourcesFromProfile(profile: MapRoutePreferences | null | undefined): MapRouteSource[] {
   if (profile?.mapRouteSources) return [...new Set(profile.mapRouteSources)]
   switch (profile?.mapRouteVisibility ?? 'all') {
     case 'friends': return ['mine', 'friends']
@@ -12,7 +13,7 @@ export function mapRouteSourcesFromProfile(profile: UserProfile | null | undefin
   }
 }
 
-export function visibleMapFriendIds(profile: UserProfile | null | undefined, acceptedFriendIds: string[]): Set<string> {
+export function visibleMapFriendIds(profile: MapRoutePreferences | null | undefined, acceptedFriendIds: string[]): Set<string> {
   if (profile?.mapRouteFriendScope !== 'lists') return new Set(acceptedFriendIds)
   const selected = new Set(profile.mapRouteFriendListIds ?? [])
   const members = (profile.friendLists ?? []).filter((list) => selected.has(list.id)).flatMap((list) => list.memberIds)
@@ -25,11 +26,11 @@ export function mapRouteSourceForCourse(course: Pick<Course, 'isSeed' | 'authorI
   return course.authorId ? 'friends' : null
 }
 
-export function mapRouteOverride(profile: UserProfile | null | undefined, courseId: string): 'show' | 'hide' | undefined {
+export function mapRouteOverride(profile: MapRoutePreferences | null | undefined, courseId: string): 'show' | 'hide' | undefined {
   return profile?.mapRouteOverrides?.[courseId] ?? (profile?.hiddenRouteIds?.includes(courseId) ? 'hide' : undefined)
 }
 
-export function isCourseVisibleByMapPreferences(course: Pick<Course, 'id' | 'isSeed' | 'authorId'>, profile: UserProfile | null | undefined, userId: string | null | undefined, acceptedFriendIds: string[]): boolean {
+export function isCourseVisibleByMapPreferences(course: Pick<Course, 'id' | 'isSeed' | 'authorId'>, profile: MapRoutePreferences | null | undefined, userId: string | null | undefined, acceptedFriendIds: string[]): boolean {
   const source = mapRouteSourceForCourse(course, userId)
   if (!source) return false
   if (source === 'friends' && !visibleMapFriendIds(profile, acceptedFriendIds).has(course.authorId)) return false

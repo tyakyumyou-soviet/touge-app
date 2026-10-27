@@ -17,11 +17,12 @@ import { DriveTimer } from './components/DriveTimer'
 import { sampleCourses } from './data/courses'
 import { addUserRating, combinedRatings, estimateSystemRatings, validateRouteQuality } from './lib/course'
 import { fetchElevationProfile, type ElevationResult } from './lib/elevation'
-import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loadUserProfile, loginWithGoogle, logout, publishFriendProfile, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, saveUserProfileSettings, subscribeFriendPresence, subscribeGlobalMusicDisplay, subscribePublicCourses, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
+import { auth, clearFriendLocation, clearFriendMusic, completeRedirectLogin, createCourse, deleteCourse, loadCourseById, loginWithGoogle, logout, saveCourseAudience, saveFriendLocation, saveFriendMusic, saveRating, subscribeFriendPresence, subscribeGlobalMusicDisplay, subscribePublicCourses, submitRoadConditionReport, submitTollReport, updateCourse, updateCourseElevation, updateCourseWithRoute } from './lib/firebase'
 import { routeAlongRoads } from './lib/routing'
-import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus, UserProfile } from './types'
+import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus } from './types'
 import { personalizedScore } from './lib/personalization'
-import { useMobileSheet } from './hooks/useMobileSheet'
+import { reopenMobileSheet, useMobileSheet } from './hooks/useMobileSheet'
+import { useProfileSettings } from './hooks/useProfileSettings'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
 import { courseMatchesSearch } from './lib/courseSearch'
 import { geocodeJapanesePlace } from './lib/location'
@@ -70,7 +71,6 @@ function previewCourseFromProposal(proposal: DriveProposal): Course {
 }
 
 export default function App() {
-  const logoutSheet = useMobileSheet()
   const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
   const [courses, setCourses] = useState<Course[]>(sampleCourses)
   // A course is selected only after the driver chooses one (or opens a shared link).
@@ -97,11 +97,10 @@ export default function App() {
   const [sort, setSort] = useState<'recommended' | 'curves' | 'elevation' | 'width' | 'personalized'>('recommended')
   const [is3d, setIs3d] = useState(false)
   const [user, setUser] = useState<User | null>(null)
-  const [viewerProfile, setViewerProfile] = useState<UserProfile | null>(null)
+  const { profile: viewerProfile, ready: profileChecked, saving: profileSaving, error: profileError, change: changeProfile, acceptAccountId } = useProfileSettings(user)
   const [musicDisplayEnabled, setMusicDisplayEnabled] = useState(true)
   const [themePreference, setThemePreference] = useState<ThemePreference>(initialThemePreference)
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveThemePreference(initialThemePreference(), systemDarkMode()))
-  const [profileChecked, setProfileChecked] = useState(false)
   const [accountRole, setAccountRole] = useState<AccountRole>('user')
   const [authReady, setAuthReady] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
@@ -139,6 +138,7 @@ export default function App() {
   const listSheet = useMobileSheet()
   const collapseList = listSheet.collapse
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+  const logoutSheet = useMobileSheet(logoutConfirmOpen, 'logout')
   const [communityOpen, setCommunityOpen] = useState(false)
   const [acceptedFriendIds, setAcceptedFriendIds] = useState<string[]>([])
   const [acceptedFriendsReady, setAcceptedFriendsReady] = useState(false)
@@ -165,10 +165,8 @@ export default function App() {
   }, [user])
   useEffect(() => {
     if (!user || musicDisplayEnabled || !viewerProfile?.nowPlaying) return
-    profileDirty.current = true
-    setViewerProfile((current) => current ? { ...current, nowPlaying: null } : current)
-    void saveUserProfileSettings(user, { nowPlaying: null }).catch(() => setNotice('音楽表示の停止後に再生情報を消去できませんでした'))
-  }, [user, musicDisplayEnabled, viewerProfile?.nowPlaying])
+    void changeProfile({ nowPlaying: null }).catch(() => setNotice('音楽表示の停止後に再生情報を消去できませんでした'))
+  }, [user, musicDisplayEnabled, viewerProfile?.nowPlaying, changeProfile])
   useEffect(() => {
     setAcceptedFriendIds([])
     setAcceptedFriendsReady(false)
@@ -192,7 +190,6 @@ export default function App() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [timerOpen, setTimerOpen] = useState(false)
   const surfaceTimer = useRef<number | null>(null)
-  const profileDirty = useRef(false)
   const presenceWriteFailed = useRef(false)
   const administrator = accountRole === 'admin' || accountRole === 'superadmin'
   const unlimitedWaypoints = administrator
@@ -270,35 +267,12 @@ export default function App() {
       setNotice(code === 'permission-denied' ? 'Firebaseからコースを読み込めませんでした。Firestoreルールの公開設定を確認してください。' : 'Firebaseからコースを読み込めませんでした。通信状態を確認してください。')
     })
   }, [authReady, user?.uid])
-  useEffect(() => {
-    setProfileChecked(false)
-    if (!user) { setViewerProfile(null); setProfileChecked(true); return }
-    profileDirty.current = false
-    try {
-      const cached = localStorage.getItem(`touge-profile-${user.uid}`)
-      if (cached) {
-        const parsed = JSON.parse(cached) as UserProfile & { mapVisibility?: string }
-        setViewerProfile({ ...parsed, mapVisibility: parsed.mapVisibility === 'lists' || parsed.mapVisibility === 'none' ? parsed.mapVisibility : 'friends' })
-      }
-    } catch { /* ignore invalid local cache */ }
-    loadUserProfile(user.uid).then((profile) => {
-      const remote = profile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }
-      void publishFriendProfile(user, remote).catch(() => undefined)
-      // Keep any newer offline/local interaction that happened while the
-      // Firestore request was in flight. Remote-only fields still fill gaps.
-      setViewerProfile((current) => profileDirty.current && current ? { ...remote, ...current } : remote)
-    }).catch(() => undefined).finally(() => setProfileChecked(true))
-  }, [user])
-  useEffect(() => { if (user && viewerProfile) localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(viewerProfile)) }, [user, viewerProfile])
+  useEffect(() => { if (profileError) setNotice(profileError) }, [profileError])
   useEffect(() => {
     if (viewerProfile?.themePreference) setThemePreference(normalizeThemePreference(viewerProfile.themePreference))
   }, [viewerProfile?.themePreference])
   const changeThemePreference = useCallback((next: ThemePreference) => {
     setThemePreference(next)
-    profileDirty.current = true
-    setViewerProfile((current) => current ? { ...current, themePreference: next } : current)
-    // CommunityPanel persists this through its ordered, debounced profile
-    // writer. Keeping a second write here could race and restore an older mode.
   }, [])
   useEffect(() => {
     if (!user || !profileChecked) return
@@ -331,10 +305,7 @@ export default function App() {
       }
 
       const track = { title: recognized.title, ...(recognized.artist ? { artist: recognized.artist } : {}), updatedAt: new Date().toISOString() }
-      const base = viewerProfile ?? { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0 }
-      profileDirty.current = true
-      setViewerProfile({ ...base, musicSharingSource: 'shortcut', nowPlaying: track })
-      void saveUserProfileSettings(user, { musicSharingSource: 'shortcut', nowPlaying: track })
+      void changeProfile({ musicSharingSource: 'shortcut', nowPlaying: track })
         .then(() => setNotice(viewerProfile?.musicSharingEnabled ? `再生中の曲を共有しました：${track.title}` : `曲を認識しました：${track.title}（曲名共有はオフです）`))
         .catch(() => setNotice('曲は認識しましたが保存できませんでした。通信状態を確認してください'))
       removeCallbackFromAddress()
@@ -342,7 +313,7 @@ export default function App() {
     receiveShortcutResult()
     window.addEventListener('pageshow', receiveShortcutResult)
     return () => window.removeEventListener('pageshow', receiveShortcutResult)
-  }, [user, profileChecked, viewerProfile])
+  }, [user, profileChecked, viewerProfile, changeProfile])
   const automaticMusicSharingEnabled = musicDisplayEnabled && Boolean(viewerProfile?.musicSharingEnabled ?? viewerProfile?.nowPlaying)
   useEffect(() => {
     if (!user || !automaticMusicSharingEnabled) return
@@ -360,23 +331,19 @@ export default function App() {
         if (!lastTrack && !hasStoredTrack) return
         lastTrack = ''
         hasStoredTrack = false
-        profileDirty.current = true
-        setViewerProfile((current) => current ? { ...current, musicSharingSource: 'automatic', nowPlaying: null } : current)
-        void saveUserProfileSettings(user, { musicSharingSource: 'automatic', nowPlaying: null }).catch(() => setNotice('曲名の共有を停止できませんでした。通信回復後に設定を確認してください。'))
+        void changeProfile({ musicSharingSource: 'automatic', nowPlaying: null }).catch(() => setNotice('曲名の共有を停止できませんでした。通信回復後に設定を確認してください。'))
         return
       }
       const track = `${playing.title}\n${playing.artist ?? ''}`
       if (track === lastTrack) return
       lastTrack = track
       hasStoredTrack = true
-      profileDirty.current = true
-      setViewerProfile((current) => current ? { ...current, musicSharingSource: 'automatic', nowPlaying: playing } : current)
-      void saveUserProfileSettings(user, { musicSharingSource: 'automatic', nowPlaying: playing })
+      void changeProfile({ musicSharingSource: 'automatic', nowPlaying: playing }).catch(() => setNotice('再生情報を保存できませんでした。接続状態を確認してください。'))
     }
     syncDetectedTrack()
     const timer = window.setInterval(syncDetectedTrack, 5000)
     return () => window.clearInterval(timer)
-  }, [user, automaticMusicSharingEnabled, viewerProfile?.musicSharingSource, viewerProfile?.nowPlaying?.title])
+  }, [user, automaticMusicSharingEnabled, viewerProfile?.musicSharingSource, viewerProfile?.nowPlaying?.title, changeProfile])
   useEffect(() => {
     if (!user || !presenceProfileReady) return
     const allowedViewerIds = presenceAllowedViewerIds
@@ -492,13 +459,18 @@ export default function App() {
         return b.ratings[sort] - a.ratings[sort]
       })
   }, [courses, nearbyCenter, nearbyRadiusKm, prefecture, search, sort, tollFilter, viewerProfile?.personalization, viewerProfile?.personalizationWeights])
+  const mapPreferences = useMemo(() => ({
+    mapRouteVisibility: viewerProfile?.mapRouteVisibility, mapRouteSources: viewerProfile?.mapRouteSources,
+    mapRouteFriendScope: viewerProfile?.mapRouteFriendScope, mapRouteFriendListIds: viewerProfile?.mapRouteFriendListIds,
+    mapRouteOverrides: viewerProfile?.mapRouteOverrides, hiddenRouteIds: viewerProfile?.hiddenRouteIds, friendLists: viewerProfile?.friendLists,
+  }), [viewerProfile?.mapRouteVisibility, viewerProfile?.mapRouteSources, viewerProfile?.mapRouteFriendScope, viewerProfile?.mapRouteFriendListIds, viewerProfile?.mapRouteOverrides, viewerProfile?.hiddenRouteIds, viewerProfile?.friendLists])
   const mapCourses = useMemo(() => {
-    const visible = courses.filter((course) => isCourseVisibleByMapPreferences(course, viewerProfile, user?.uid, acceptedFriendIds))
+    const visible = courses.filter((course) => isCourseVisibleByMapPreferences(course, mapPreferences, user?.uid, acceptedFriendIds))
     // Proposal previews are temporary overlays. A saved course, however, must
     // obey its explicit map visibility setting even while its detail is open.
-    const selectedCourse = selected && (selected.authorId === '__proposal_preview__' || isCourseVisibleByMapPreferences(selected, viewerProfile, user?.uid, acceptedFriendIds)) ? [selected] : []
+    const selectedCourse = selected && (selected.authorId === '__proposal_preview__' || isCourseVisibleByMapPreferences(selected, mapPreferences, user?.uid, acceptedFriendIds)) ? [selected] : []
     return [...new Map([...visible, ...proposalPreviews, ...selectedCourse].map((course) => [course.id, course])).values()]
-  }, [courses, proposalPreviews, selected, user?.uid, acceptedFriendIds, viewerProfile])
+  }, [courses, proposalPreviews, selected, user?.uid, acceptedFriendIds, mapPreferences])
 
   function saveSearchPreset() {
     if (!user || !viewerProfile) { setNotice('プリセットの保存にはログインが必要です'); return }
@@ -508,15 +480,14 @@ export default function App() {
     if (existing.length >= 5) { setNotice('検索プリセットは5件までです'); return }
     const preset: SearchPreset = { id: crypto.randomUUID(), name, prefecture, toll: tollFilter, radiusKm: nearbyRadiusKm, sort }
     const next = { ...viewerProfile, searchPresets: [...existing, preset] }
-    profileDirty.current = true; setViewerProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next)); setPresetName('')
-    void saveUserProfileSettings(user, { searchPresets: next.searchPresets }).catch(() => setNotice('端末には保存しました。接続回復後にもう一度保存してください。'))
+    setPresetName('')
+    void changeProfile({ searchPresets: next.searchPresets }).catch(() => setNotice('端末には保存しました。接続回復後にもう一度保存してください。'))
     setNotice('検索条件を保存しました')
   }
   function removeSearchPreset(id: string) {
     if (!user || !viewerProfile) return
     const next = { ...viewerProfile, searchPresets: (viewerProfile.searchPresets ?? []).filter((item) => item.id !== id) }
-    profileDirty.current = true; setViewerProfile(next); localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next))
-    void saveUserProfileSettings(user, { searchPresets: next.searchPresets }).catch(() => setNotice('端末では削除しました。接続回復後にもう一度保存してください。'))
+    void changeProfile({ searchPresets: next.searchPresets }).catch(() => setNotice('端末では削除しました。接続回復後にもう一度保存してください。'))
     setNotice('検索プリセットを削除しました')
   }
   function applySearchPreset(id: string) {
@@ -525,6 +496,7 @@ export default function App() {
   }
 
   const selectCourse = useCallback((course: Course) => {
+    reopenMobileSheet('detail')
     setSelected(course)
     // Every selection—including reopening the same proposal—gets a fresh map
     // camera request. This is also used by ordinary courses for consistency.
@@ -595,6 +567,7 @@ export default function App() {
   }, [draftRoute, draftPointLabels, draftPointRoles])
   function resetListSheet() {
     listSheet.reset()
+    listSheet.openResting()
   }
 
   function finishSurfaceMotion(next: 'list' | 'form', resolve?: () => void) {
@@ -731,6 +704,7 @@ export default function App() {
     if (!user) { await handleLogin(); if (!auth.currentUser) return }
     setEditingCourse(null)
     await startDrawing()
+    reopenMobileSheet('builder')
   }
 
   async function openRouteEditor(course: Course) {
@@ -741,6 +715,7 @@ export default function App() {
     }
     setCourseManagerOpen(false)
     await startDrawing()
+    reopenMobileSheet('builder')
     const stops = editableStopsFromCourse(course)
     setEditingCourse(course)
     setDraftRoute(stops.route)
@@ -906,8 +881,7 @@ export default function App() {
 
   if (user && !profileChecked) return <div className="account-id-gate account-id-loading" role="status" aria-live="polite"><div><span className="account-loading-spinner" aria-hidden="true" /><strong>アカウントを確認しています</strong></div></div>
   if (user && !viewerProfile?.accountId) return <AccountIdGate user={user} onRegistered={(accountId) => {
-    profileDirty.current = true
-    setViewerProfile((profile) => profile ? { ...profile, accountId } : { id: user.uid, accountId, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0 })
+    acceptAccountId(accountId)
   }} onLogout={() => void handleLogout()} />
 
   return (
@@ -919,7 +893,7 @@ export default function App() {
         <div className="search-wrap"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="コース名・地名・タグ・特徴で検索" aria-label="コースを検索" /></div>
         <div className="top-actions">
           <button className="new-route" onClick={openCreateFlow}><span>＋</span>コース登録</button>
-          {user ? <button className="user-button" onClick={() => { setCommunityCourse(null); setCommunityOpen(true) }} title="アカウント" aria-label="アカウント">{viewerProfile?.photoURL || user.photoURL ? <img src={viewerProfile?.photoURL || user.photoURL || ''} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
+          {user ? <button className="user-button" onClick={() => { reopenMobileSheet('account'); setCommunityCourse(null); setCommunityOpen(true) }} title="アカウント" aria-label="アカウント">{viewerProfile?.photoURL || user.photoURL ? <img src={viewerProfile?.photoURL || user.photoURL || ''} alt="" /> : user.displayName?.slice(0, 1)}<span>{user.displayName ?? 'アカウント'}</span></button> : <button className="login-button" onClick={handleLogin} disabled={authBusy}>{authBusy ? '接続中…' : 'ログイン'}</button>}
         </div>
       </header>
 
@@ -968,22 +942,18 @@ export default function App() {
           course={selected}
           onClose={() => setSelected(null)}
           onBack={() => { setSelected(null); resetListSheet() }}
-          onRate={() => setRatingOpen(true)} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)}
-          onReportToll={() => setTollReportOpen(true)} onReportRoad={() => setRoadReportOpen(true)}
-          onCommunity={() => { setCommunityCourse(selected); setCommunityOpen(true) }} onOpenTimer={() => setTimerOpen(true)}
-          canManageCourse={Boolean(user && (selected.authorId === user.uid || administrator))} onManageCourse={() => setCourseManagerOpen(true)}
+          onRate={() => { reopenMobileSheet('rating'); setRatingOpen(true) }} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)}
+          onReportToll={() => { reopenMobileSheet('toll-report'); setTollReportOpen(true) }} onReportRoad={() => { reopenMobileSheet('road-report'); setRoadReportOpen(true) }}
+          onCommunity={() => { reopenMobileSheet('account'); setCommunityCourse(selected); setCommunityOpen(true) }} onOpenTimer={() => { reopenMobileSheet('timer'); setTimerOpen(true) }}
+          canManageCourse={Boolean(user && (selected.authorId === user.uid || administrator))} onManageCourse={() => { reopenMobileSheet('manager'); setCourseManagerOpen(true) }}
           mapHidden={!isCourseVisibleByMapPreferences(selected, viewerProfile, user?.uid, acceptedFriendIds)}
           onToggleMapRoute={user && viewerProfile ? async () => {
             const visible = isCourseVisibleByMapPreferences(selected, viewerProfile, user.uid, acceptedFriendIds)
             const mapRouteOverrides = { ...(viewerProfile.mapRouteOverrides ?? {}), [selected.id]: visible ? 'hide' as const : 'show' as const }
             const hiddenRouteIds = (viewerProfile.hiddenRouteIds ?? []).filter((id) => id !== selected.id)
-            const next = { ...viewerProfile, mapRouteOverrides, hiddenRouteIds }
-            profileDirty.current = true
-            setViewerProfile(next)
             try {
-              await saveUserProfileSettings(user, { mapRouteOverrides, hiddenRouteIds })
+              await changeProfile({ mapRouteOverrides, hiddenRouteIds })
             } catch {
-              setViewerProfile((current) => current?.mapRouteOverrides?.[selected.id] === mapRouteOverrides[selected.id] ? viewerProfile : current)
               setNotice('地図表示設定を保存できませんでした。通信状態を確認して再度お試しください。')
             }
           } : undefined}
@@ -1009,7 +979,7 @@ export default function App() {
         </section>
       </div>}
       {courseManagerOpen && selected && user && (user.uid === selected.authorId || administrator) && <CourseManageForm course={selected} profile={viewerProfile ? { ...viewerProfile, followingIds: acceptedFriendIds } : null} audienceReadOnly={user.uid !== selected.authorId} onClose={() => setCourseManagerOpen(false)} onSave={handleCourseUpdate} onDelete={async (courseId) => { await handleCourseDelete(courseId); setCourseManagerOpen(false) }} onEditRoute={() => void openRouteEditor(selected)} />}
-      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} course={communityCourse} courses={courses} musicDisplayEnabled={musicDisplayEnabled} themePreference={themePreference} resolvedTheme={resolvedTheme} onThemeChange={changeThemePreference} onProfileSaved={(profile) => { profileDirty.current = true; setViewerProfile(profile) }} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
+      {communityOpen && <CommunityPanel key={communityCourse?.id ?? 'account'} user={user} profile={viewerProfile} saving={profileSaving} profileError={profileError} onProfileChange={changeProfile} course={communityCourse} courses={courses} musicDisplayEnabled={musicDisplayEnabled} themePreference={themePreference} resolvedTheme={resolvedTheme} onThemeChange={changeThemePreference} onClose={() => { setCommunityOpen(false); setCommunityCourse(null) }} onLogout={() => { reopenMobileSheet('logout'); setCommunityOpen(false); setCommunityCourse(null); setLogoutConfirmOpen(true) }} onAdminOpen={administrator ? () => { reopenMobileSheet('admin'); setCommunityOpen(false); setCommunityCourse(null); setAdminOpen(true) } : undefined} />}
       {adminOpen && user && administrator && <AdminPanel user={user} role={accountRole} courses={courses} onClose={() => setAdminOpen(false)} />}
       <InstallPrompt />
     </div>

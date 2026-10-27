@@ -35,6 +35,7 @@ import {
 import { getStorage } from 'firebase/storage'
 import { ratingLabels, type AdminReport, type Coordinate, type Course, type CourseAudience, type CourseComment, type CourseEditorStop, type DraftPointRole, type FriendPresence, type LiveRoadInfo, type RatingKey, type RatingSubmission, type Ratings, type TollStatus, type UserProfile } from '../types'
 import { combinedRatings, emptyRatings, routeDistanceKm, userRatingAverage } from './course'
+import { profileWriteData, type ProfileChanges } from './profileSettings'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBXyb8s-ZAsfBUJyv_dMCgjl0Z8r0sSBGc',
@@ -401,9 +402,7 @@ export async function reviewAdminReport(reportId: string, status: 'approved' | '
   await updateDoc(doc(db, 'reports', reportId), { status, reviewedAt: serverTimestamp(), reviewerId: reviewer.uid, reviewerName: reviewer.displayName ?? '管理者' })
 }
 
-export async function loadUserProfile(userId: string): Promise<UserProfile | null> {
-  const collectionName = auth.currentUser?.uid === userId ? 'users' : 'publicProfiles'
-  const snapshot = await getDoc(doc(db, collectionName, userId))
+function userProfileFromSnapshot(userId: string, snapshot: DocumentSnapshot): UserProfile | null {
   if (!snapshot.exists()) return null
   const data = snapshot.data()
   // Profiles saved before public map visibility was removed may still contain
@@ -412,18 +411,25 @@ export async function loadUserProfile(userId: string): Promise<UserProfile | nul
   return { id: userId, displayName: 'ドライバー', followingIds: [], followerCount: 0, bio: '', ...data, mapVisibility, musicSharingAudience: data.musicSharingAudience ?? data.locationSharing?.audience ?? 'friends', musicSharingListIds: data.musicSharingListIds ?? data.locationSharing?.listIds ?? [], updatedAt: firestoreDate(data.updatedAt) } as UserProfile
 }
 
-export async function saveUserProfileSettings(user: User, values: Partial<Omit<UserProfile, 'id' | 'followingIds' | 'followerCount'>>): Promise<void> {
+export async function loadUserProfile(userId: string): Promise<UserProfile | null> {
+  const collectionName = auth.currentUser?.uid === userId ? 'users' : 'publicProfiles'
+  return userProfileFromSnapshot(userId, await getDoc(doc(db, collectionName, userId)))
+}
+
+export function subscribeUserProfile(userId: string, onChange: (profile: UserProfile | null, fromCache: boolean) => void, onError: (error: unknown) => void) {
+  return onSnapshot(doc(db, 'users', userId), { includeMetadataChanges: true }, (snapshot) => onChange(userProfileFromSnapshot(userId, snapshot), snapshot.metadata.fromCache), onError)
+}
+
+export async function saveUserProfileSettings(user: User, values: ProfileChanges, profile: UserProfile): Promise<void> {
   const batch = writeBatch(db)
-  batch.set(doc(db, 'users', user.uid), { ...values, updatedAt: serverTimestamp() }, { merge: true })
-  const publicKeys = ['displayName', 'photoURL', 'bio', 'homeArea', 'mapVisibility', 'mapAllowedViewerIds', 'vehicleName', 'vehicleDetails', 'socialLinks', 'showcasePostUrls'] as const
-  const publicValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
-  if (Object.keys(publicValues).length) {
-    if ('photoURL' in values) publicValues.photoURL = values.photoURL || user.photoURL || null
-    batch.set(doc(db, 'publicProfiles', user.uid), { ...publicValues, updatedAt: serverTimestamp() }, { merge: true })
+  const documents = profileWriteData(values, profile, user.photoURL)
+  for (const [collectionName, fields] of [['users', documents.user], ['publicProfiles', documents.publicProfile], ['friendProfiles', documents.friendProfile]] as const) {
+    if (!fields || !Object.keys(fields).length) continue
+    const data = { ...fields, updatedAt: serverTimestamp() }
+    // Replace each edited top-level field, including maps. merge:true retains
+    // deleted nested override keys and makes reset/show controls appear stuck.
+    batch.set(doc(db, collectionName, user.uid), data, { mergeFields: Object.keys(data) })
   }
-  const friendProfileValues = Object.fromEntries(publicKeys.flatMap((key) => key in values ? [[key, values[key]]] : []))
-  if ('photoURL' in friendProfileValues) friendProfileValues.photoURL = values.photoURL || user.photoURL || null
-  if (Object.keys(friendProfileValues).length) batch.set(doc(db, 'friendProfiles', user.uid), { ...friendProfileValues, updatedAt: serverTimestamp() }, { merge: true })
   await batch.commit()
 }
 
