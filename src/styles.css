@@ -514,7 +514,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 
 @media (max-width: 760px) {
   html, body, #root { min-height: 100%; min-height: 100dvh; }
-  .topbar { height: 62px; gap: 8px; padding: max(12px, env(safe-area-inset-top)) 10px 4px; }
+  .topbar { height: 66px; gap: 8px; padding: max(16px, env(safe-area-inset-top)) 10px 4px; }
   .brand { min-width: 44px; }
   .brand img { width: 40px; height: 40px; }
   .brand span { display: none; }
@@ -525,12 +525,12 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .login-button { width: 42px; padding: 0; font-size: 0; }
   .login-button::after { content: '人'; font-size: 13px; }
   .user-button { width: 42px; padding: 0; justify-content: center; }
-  main { height: calc(100% - 62px); height: calc(100dvh - 62px); }
+  main { height: calc(100% - 66px); height: calc(100dvh - 66px); }
   .maplibregl-ctrl-top-right { top: 59px; right: 10px; }
   .explore-panel { inset: auto 8px 8px; width: auto; max-height: 68%; padding: 0 12px 0; transform: translateY(calc(100% + 20px)); transition: max-height .22s ease, transform .25s ease; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 15px 50px #101d1760; }
   .explore-panel.open { transform: translateY(0); }
   /* The map fills only the area below the fixed top bar. Anchor discovery to
-     the viewport itself so its middle snap doesn't inherit that 62px offset
+     the viewport itself so its middle snap doesn't inherit the header offset
      and appear to float above the phone's bottom edge. */
   .explore-panel.mobile-sheet { --mobile-sheet-minimized-height: 76px; position: fixed; inset: auto 8px 0; z-index: 52; }
   /* A detail sheet replaces discovery while it is open. Leaving the collapsed
@@ -586,7 +586,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   /* Numeric resting heights let release/tap animate from the dragged height,
      rather than jumping between an auto height and the expanded size. */
   .detail-panel.mobile-sheet { height: 62dvh; }
-  .explore-panel.mobile-sheet { height: calc((100dvh - 62px) * .68); }
+  .explore-panel.mobile-sheet { height: calc((100dvh - 66px) * .68); }
   .mobile-sheet.expanded, .explore-panel.mobile-sheet.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   /* Keep the expanded detail below the fixed application header. The generic
      mobile-sheet rule above otherwise wins by source order and lifts it to 7px. */
