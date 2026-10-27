@@ -94,7 +94,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     try { return JSON.parse(localStorage.getItem(`touge-profile-${uid}`) ?? 'null') as UserProfile | null } catch { return null }
   }, [profile])
   const [stage, setStage] = useState<'route' | 'details'>('route')
-  const swipeBack = useSwipeBack(stage === 'details' ? () => setStage('route') : editingCourse ? onCancel : undefined)
+  const swipeBack = useSwipeBack(stage === 'details' ? () => setStage('route') : editingCourse ? onCancel : undefined, '.course-form-scroll')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')

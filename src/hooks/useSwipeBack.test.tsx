@@ -38,8 +38,57 @@ describe('swipe back', () => {
   afterEach(async () => {
     await act(async () => root.unmount())
     container.remove()
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('follows the finger and finishes the exit before navigating', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width') }))
+    const back = vi.fn()
+    await act(async () => root.render(<Panel onBack={back}><p>設定</p></Panel>))
+    const target = container.querySelector('p')!
+    const panel = container.querySelector<HTMLElement>('section')!
+    await act(async () => { touch(target, 'touchstart', 30, 100); touch(target, 'touchmove', 110, 105) })
+    expect(panel.style.translate).toBe('80px 0px')
+    expect(back).not.toHaveBeenCalled()
+    await act(async () => { touch(target, 'touchend', 130, 105) })
+    expect(panel.style.translate).toBe('100% 0px')
+    expect(back).not.toHaveBeenCalled()
+    await act(async () => { vi.advanceTimersByTime(200) })
+    expect(back).toHaveBeenCalledOnce()
+    expect(panel.style.translate).toBe('')
+  })
+
+  it('animates an incomplete swipe back to its original position', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width') }))
+    const back = vi.fn()
+    await act(async () => root.render(<Panel onBack={back}><p>設定</p></Panel>))
+    const target = container.querySelector('p')!
+    const panel = container.querySelector<HTMLElement>('section')!
+    await act(async () => { touch(target, 'touchstart', 30, 100); touch(target, 'touchmove', 70, 102); touch(target, 'touchend', 70, 102) })
+    expect(panel.style.translate).toBe('0px 0px')
+    expect(panel.style.transition).toContain('200ms')
+    await act(async () => { vi.advanceTimersByTime(200) })
+    expect(panel.style.translate).toBe('')
+    expect(back).not.toHaveBeenCalled()
+  })
+
+  it('moves only the inner view for a nested gesture', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width') }))
+    const outer = vi.fn(), inner = vi.fn()
+    await act(async () => root.render(<Panel onBack={outer}><Panel onBack={inner}><p>リスト編集</p></Panel></Panel>))
+    const target = container.querySelector('p')!
+    const [outerPanel, innerPanel] = container.querySelectorAll<HTMLElement>('section')
+    await act(async () => { touch(target, 'touchstart', 30, 100); touch(target, 'touchmove', 110, 105) })
+    expect(outerPanel.style.translate).toBe('')
+    expect(innerPanel.style.translate).toBe('80px 0px')
+    await act(async () => { touch(target, 'touchend', 130, 105); vi.advanceTimersByTime(200) })
+    expect(inner).toHaveBeenCalledOnce()
+    expect(outer).not.toHaveBeenCalled()
   })
 
   it('returns exactly once on a deliberate rightward swipe', async () => {

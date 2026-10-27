@@ -73,6 +73,32 @@ describe('mobile sheet input ownership', () => {
     expect(container.querySelector('[data-sheet="設定"]')?.className).toContain('sheet-backgrounded')
   })
 
+  it('keeps the previous sheet expanded while another sheet is open and after returning', async () => {
+    await act(async () => root.render(<Sheet name="一覧" />))
+    await act(async () => { container.querySelector<HTMLElement>('.mobile-sheet-drag-region')!.click() })
+    expect(container.querySelector('[data-sheet="一覧"]')?.className).toContain('expanded')
+    await act(async () => root.render(<><Sheet name="一覧" /><Sheet name="詳細" /></>))
+    const list = container.querySelector('[data-sheet="一覧"]')!
+    expect(list.className).toContain('expanded')
+    expect(list.className).not.toContain('collapsed')
+    await act(async () => root.render(<Sheet name="一覧" />))
+    expect(list.className).toContain('expanded')
+    expect(list.className).not.toMatch(/collapsed|sheet-backgrounded/)
+  })
+
+  it('restores a backgrounded minimized sheet without animating through its compact height', async () => {
+    await act(async () => root.render(<Sheet name="一覧" />))
+    const header = container.querySelector('.mobile-sheet-drag-region')!
+    await act(async () => { touch(header, 'touchstart', 300); touch(header, 'touchmove', 600); touch(header, 'touchend', 600) })
+    await act(async () => root.render(<><Sheet name="一覧" /><Sheet name="詳細" /></>))
+    await act(async () => reopenMobileSheet('一覧'))
+    const list = container.querySelector('[data-sheet="一覧"]')!
+    expect(list.className).not.toMatch(/collapsed|sheet-backgrounded/)
+    expect(list.className).toContain('sheet-restoring')
+    await act(async () => { vi.advanceTimersByTime(32) })
+    expect(list.className).not.toContain('sheet-restoring')
+  })
+
   it('reopens a previously minimized dialog after it is disabled and enabled again', async () => {
     function App() {
       const [enabled, setEnabled] = useState(true)

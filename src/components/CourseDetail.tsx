@@ -34,7 +34,7 @@ interface Props {
 
 export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, onReversePreview, previewNavigation }: Props) {
   const sheet = useMobileSheet(true, 'detail')
-  const swipeBack = useSwipeBack(onBack)
+  const swipeBack = useSwipeBack(onBack, '.detail-scroll')
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)

@@ -91,7 +91,7 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
     setSettingsView(view)
     contentRef.current?.scrollTo({ top: 0 })
   }
-  const swipeBack = useSwipeBack(!course && settingsView !== 'home' ? () => navigate(settingsView === 'friend-profile' ? 'friends' : 'home') : undefined)
+  const swipeBack = useSwipeBack(!course && settingsView !== 'home' ? () => navigate(settingsView === 'friend-profile' ? 'friends' : 'home') : undefined, '.community-view')
   async function openFriendProfile(id: string) {
     setSelectedFriendProfile(friendProfiles[id] ?? null)
     setFriendProfileError('')

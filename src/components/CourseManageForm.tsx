@@ -24,7 +24,7 @@ interface Props {
 
 export function CourseManageForm({ course, profile, onClose, onSave, onDelete, onEditRoute, audienceReadOnly = false }: Props) {
   const sheet = useMobileSheet(true, 'manager')
-  const swipeBack = useSwipeBack(onClose)
+  const swipeBack = useSwipeBack(onClose, '.course-manager-form')
   const [draft, setDraft] = useState<EditableCourse>(() => ({
     name: course.name, area: course.area, prefecture: course.prefecture, description: course.description,
     tags: course.tags, cautions: course.cautions, tollStatus: course.tollStatus ?? course.tollInfo?.type ?? 'unknown', visibility: 'limited', publicSharingConfirmed: false, allowedViewerIds: course.allowedViewerIds ?? [], audienceMode: 'all-friends', selectedFriendListIds: [], selectedFriendListNames: {},

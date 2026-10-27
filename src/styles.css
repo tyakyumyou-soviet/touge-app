@@ -592,6 +592,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
      mobile-sheet rule above otherwise wins by source order and lifts it to 7px. */
   .detail-panel.mobile-sheet.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .mobile-sheet.dragging { transition: none; }
+  .mobile-sheet.sheet-restoring { transition: none !important; }
   .mobile-sheet.collapsed { overflow: hidden; clip-path: none; }
   .mobile-sheet-drag-region { margin: -8px -8px 0; padding: 0 8px; cursor: grab; touch-action: none; }
   .mobile-sheet-drag-region:active { cursor: grabbing; }

@@ -3,7 +3,7 @@ import { backdropSheetSnap, boundedDownwardSheetOffset, nextSheetSnap, raisedShe
 
 const handleSelector = '.mobile-sheet-drag-region,.detail-sheet-top,.detail-peek-handle,.explore-panel-top,.course-list-drag-area'
 const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-drag]'
-type SheetController = { name?: string; open: () => void; setForeground: (value: boolean) => void; minimize: () => void }
+type SheetController = { name?: string; open: () => void; setForeground: (value: boolean) => void; suspend: () => void }
 const sheetControllers = new Map<string, SheetController>()
 const sheetStack: string[] = []
 
@@ -24,7 +24,7 @@ function focusSheet(sheetId: string) {
   sheetStack.push(sheetId)
   sheetControllers.forEach((controller, id) => {
     controller.setForeground(id === sheetId)
-    if (id !== sheetId) controller.minimize()
+    if (id !== sheetId) controller.suspend()
   })
 }
 
@@ -55,6 +55,9 @@ export function useMobileSheet(enabled = true, name?: string) {
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [foreground, setForeground] = useState(true)
+  const foregroundRef = useRef(true)
+  const [restoring, setRestoring] = useState(false)
+  const restoreFrame = useRef<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const [offset, setOffset] = useState(0)
   const [dragHeight, setDragHeight] = useState<number>()
@@ -74,6 +77,15 @@ export function useMobileSheet(enabled = true, name?: string) {
     scrollDrag.current = null
     setDragging(false)
     setDragHeight(undefined)
+    if (!foregroundRef.current) {
+      // The sheet is hidden behind another one. Restore its geometry before
+      // revealing it so a previously collapsed tray never flashes onscreen.
+      setRestoring(true)
+      if (restoreFrame.current !== null) window.cancelAnimationFrame(restoreFrame.current)
+      restoreFrame.current = window.requestAnimationFrame(() => {
+        restoreFrame.current = window.requestAnimationFrame(() => { restoreFrame.current = null; setRestoring(false) })
+      })
+    }
     if (enabled) focusSheet(sheetId)
     setCollapsed(false)
     setExpanded(false)
@@ -117,21 +129,19 @@ export function useMobileSheet(enabled = true, name?: string) {
     sheetControllers.set(sheetId, {
       name,
       open: openResting,
-      setForeground,
-      minimize: () => {
+      setForeground: (value) => { foregroundRef.current = value; setForeground(value) },
+      suspend: () => {
         clearMotion()
         clearScrollMove()
         drag.current = null
         scrollDrag.current = null
         setDragging(false)
-        setCollapsed(true)
-        setExpanded(false)
         setOffset(0)
         setDragHeight(undefined)
       },
     })
     openResting()
-    return () => { clearMotion(); clearScrollMove(); removeSheet(sheetId) }
+    return () => { clearMotion(); clearScrollMove(); if (restoreFrame.current !== null) window.cancelAnimationFrame(restoreFrame.current); removeSheet(sheetId) }
   }, [enabled, name, sheetId, clearMotion, clearScrollMove, openResting])
 
   useEffect(() => {
@@ -381,7 +391,7 @@ export function useMobileSheet(enabled = true, name?: string) {
     setCollapsed(true)
   }, [reset])
 
-  const className = `mobile-sheet ${expanded ? 'expanded' : ''} ${collapsed ? 'collapsed' : ''} ${dragging ? 'dragging' : ''} ${foreground ? '' : 'sheet-backgrounded'}`
+  const className = `mobile-sheet ${expanded ? 'expanded' : ''} ${collapsed ? 'collapsed' : ''} ${dragging ? 'dragging' : ''} ${restoring ? 'sheet-restoring' : ''} ${foreground ? '' : 'sheet-backgrounded'}`
   const style: CSSProperties | undefined = dragHeight !== undefined
     ? { height: dragHeight, maxHeight: dragHeight, transform: 'none' }
     : collapsed
