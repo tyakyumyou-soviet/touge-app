@@ -514,7 +514,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 
 @media (max-width: 760px) {
   html, body, #root { min-height: 100%; min-height: 100dvh; }
-  .topbar { height: 62px; gap: 8px; padding: max(8px, env(safe-area-inset-top)) 10px 8px; }
+  .topbar { height: 62px; gap: 8px; padding: max(12px, env(safe-area-inset-top)) 10px 4px; }
   .brand { min-width: 44px; }
   .brand img { width: 40px; height: 40px; }
   .brand span { display: none; }
