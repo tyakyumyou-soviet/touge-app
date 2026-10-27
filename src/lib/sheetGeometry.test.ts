@@ -16,6 +16,10 @@ describe('bottom-anchored sheet expansion', () => {
   it('unfolds directly from the visible collapsed handle, not the hidden body height', () => {
     expect([0, -30, -150, -1000].map(y => raisedSheetHeight(54, y, 617))).toEqual([54, 84, 204, 617])
   })
+  it('uses the configured taller discovery tray as the minimized drag height', () => {
+    expect(raisedSheetHeight(76, -30, 617)).toBe(106)
+    expect(boundedDownwardSheetOffset(430, 430, 76)).toBe(354)
+  })
   it.each([210, 300, 423, 430])('supports different content heights (%i px)', height => {
     expect(raisedSheetHeight(height, -80, 617)).toBe(height + 80)
   })

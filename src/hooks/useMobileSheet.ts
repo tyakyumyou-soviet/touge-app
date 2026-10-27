@@ -39,8 +39,8 @@ function removeSheet(sheetId: string) {
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet() {
   const sheetId = useId()
-  const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; startedMinimized: boolean; height: number; maximumHeight: number } | null>(null)
-  const scrollDrag = useRef<{ y: number; active: boolean; height: number } | null>(null)
+  const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; startedMinimized: boolean; height: number; minimumVisibleHeight: number; maximumHeight: number } | null>(null)
+  const scrollDrag = useRef<{ y: number; active: boolean; height: number; minimumVisibleHeight: number } | null>(null)
   const ignoreTap = useRef(false)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -62,6 +62,12 @@ export function useMobileSheet() {
     const bottom = Math.max(8, Number.parseFloat(style.paddingBottom) || 0)
     probe.remove()
     return top + bottom
+  }
+
+  function minimizedHeight(sheet: HTMLElement | null) {
+    if (!sheet) return 54
+    const configured = Number.parseFloat(getComputedStyle(sheet).getPropertyValue('--mobile-sheet-minimized-height'))
+    return Number.isFinite(configured) && configured > 0 ? configured : 54
   }
 
   useEffect(() => {
@@ -99,7 +105,7 @@ export function useMobileSheet() {
     // Full sheets may use the entire viewport except for the small safe-area
     // clearance controlled in CSS. The old 76px cap stopped drag expansion far
     // below the top edge on phones.
-    drag.current = { source, id, y, moved: false, startedMinimized: collapsed, height: collapsed ? 54 : sheet.getBoundingClientRect().height, maximumHeight: Math.min(window.innerHeight - 76, window.innerHeight - safeViewportClearance()) }
+    drag.current = { source, id, y, moved: false, startedMinimized: collapsed, height: sheet.getBoundingClientRect().height, minimumVisibleHeight: minimizedHeight(sheet), maximumHeight: Math.min(window.innerHeight - 76, window.innerHeight - safeViewportClearance()) }
     setDragging(true)
   }
 
@@ -120,7 +126,7 @@ export function useMobileSheet() {
     }
     setDragHeight(undefined)
     if (collapsed) { setOffset(Math.min(0, distance)); return }
-    const downward = boundedDownwardSheetOffset(distance, active.height)
+    const downward = boundedDownwardSheetOffset(distance, active.height, active.minimumVisibleHeight)
     setOffset(expanded ? downward : distance < 0 ? Math.max(-180, distance) : downward)
   }
 
@@ -207,7 +213,7 @@ export function useMobileSheet() {
     if (drag.current || (event.target as Element).closest(handleSelector + ',input,select,textarea,[data-sheet-no-drag]')) return
     if (!isMobile() || event.touches.length !== 1 || event.currentTarget.scrollTop > 1) return
     const sheet = event.currentTarget.closest<HTMLElement>('.mobile-sheet')
-    scrollDrag.current = { y: event.touches[0].clientY, active: false, height: sheet?.getBoundingClientRect().height ?? 54 }
+    scrollDrag.current = { y: event.touches[0].clientY, active: false, height: sheet?.getBoundingClientRect().height ?? 54, minimumVisibleHeight: minimizedHeight(sheet) }
   }
 
   function moveScrollDrag(event: ReactTouchEvent<HTMLElement>) {
@@ -228,7 +234,7 @@ export function useMobileSheet() {
     // behave exactly like pulling the sheet by its fixed handle.
     event.preventDefault()
     setDragging(true)
-    setOffset(boundedDownwardSheetOffset(distance, active.height))
+    setOffset(boundedDownwardSheetOffset(distance, active.height, active.minimumVisibleHeight))
   }
 
   function endScrollDrag(event: ReactTouchEvent<HTMLElement>) {
@@ -316,7 +322,7 @@ export function useMobileSheet() {
   const style: CSSProperties | undefined = dragHeight !== undefined
     ? { height: dragHeight, maxHeight: dragHeight, transform: 'none' }
     : collapsed
-    ? { transform: `translateY(calc(100% - 54px + ${offset}px))` }
+    ? { height: 'var(--mobile-sheet-minimized-height, 54px)', maxHeight: 'var(--mobile-sheet-minimized-height, 54px)', transform: `translateY(${offset}px)` }
     : offset ? { transform: `translateY(${offset}px)` } : undefined
 
   return {

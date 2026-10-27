@@ -140,7 +140,21 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
     let active = true
     const editRevision = profileEditRevision.current
     const fallback: UserProfile = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends', followingIds: [], followerCount: 0 }
-    loadUserProfile(user.uid).then((value) => { if (active && profileEditRevision.current === editRevision) setProfile(value ?? fallback) }).catch(() => { if (active && profileEditRevision.current === editRevision) setNotice('プロフィールを読み込めませんでした。接続状態を確認してください') })
+    let cached: UserProfile | null = null
+    try {
+      const raw = localStorage.getItem(`touge-profile-${user.uid}`)
+      if (raw) cached = JSON.parse(raw) as UserProfile
+    } catch { /* Ignore an invalid local cache and use the server value. */ }
+    if (cached) setProfile(cached)
+    loadUserProfile(user.uid).then((value) => {
+      // The account sheet has its own profile read. Never let that initial
+      // read overwrite a setting the user changed while Firestore was loading.
+      if (active && profileEditRevision.current === editRevision) setProfile(value ?? cached ?? fallback)
+    }).catch(() => {
+      if (active && profileEditRevision.current === editRevision) {
+        if (!cached) setNotice('プロフィールを読み込めませんでした。接続状態を確認してください')
+      }
+    })
     return () => { active = false }
   }, [user])
   useEffect(() => {
@@ -174,6 +188,10 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   }
   function queueProfileSave(values: Partial<UserProfile>, next: UserProfile) {
     if (!user) return
+    // Switches and selectors also use this path (not just patchProfile).
+    // Advancing the revision here prevents the profile's initial Firestore
+    // read from restoring stale values over those interactions.
+    profileEditRevision.current += 1
     pendingProfileChanges.current = { ...pendingProfileChanges.current, ...values }
     localStorage.setItem(`touge-profile-${user.uid}`, JSON.stringify(next))
     onProfileSaved?.(next)
@@ -207,6 +225,7 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   }
   async function saveFriendLists(friendLists: NonNullable<UserProfile['friendLists']>) {
     if (!user) return
+    profileEditRevision.current += 1
     const validListIds = new Set(friendLists.map((list) => list.id))
     const locationSharing = profile?.locationSharing ? { ...profile.locationSharing, listIds: profile.locationSharing.listIds.filter((id) => validListIds.has(id)) } : undefined
     const musicSharingListIds = (profile?.musicSharingListIds ?? profile?.locationSharing?.listIds ?? []).filter((id) => validListIds.has(id))
@@ -220,6 +239,9 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   }
   function setLocationSharing(enabled: boolean) {
     if (!user) return
+    // The geolocation permission callback may take seconds; mark the edit at
+    // the switch interaction, before the profile read can resolve.
+    profileEditRevision.current += 1
     const intentRevision = ++locationIntentRevision.current
     if (enabled && !navigator.geolocation) { setNotice('この端末では位置情報を利用できません'); return }
     const applyLocationSharing = (value: boolean) => {
@@ -260,7 +282,6 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
   }
   function patchProfile(values: Partial<UserProfile>) {
     if (!user) return
-    profileEditRevision.current += 1
     const merged = { id: user.uid, displayName: user.displayName ?? 'ドライバー', bio: '', mapVisibility: 'friends' as const, followingIds: [], followerCount: 0, ...profile, ...values }
     const next = { ...merged, mapAllowedViewerIds: mapProfileViewerIds(merged) }
     setProfile(next)
@@ -279,6 +300,7 @@ export function CommunityPanel({ user, course, courses = [], musicDisplayEnabled
       queueProfileSave(persistedValues, next)
       return
     }
+    profileEditRevision.current += 1
     // Route visibility is used by MapView immediately. Flush it to Firebase in
     // the same interaction instead of the general profile debounce, and flush
     // any pending settings first so quick toggles cannot be reordered.
