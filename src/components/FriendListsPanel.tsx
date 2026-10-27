@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FriendList } from '../types'
 import { UserAvatar } from './UserAvatar'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 
 interface Props {
   lists: FriendList[]
@@ -52,6 +53,7 @@ export function FriendListsPanel({ lists, friendIds, friendName, friendPhotoURL 
     setConfirmDelete(false)
     setError('')
   }
+  const swipeBack = useSwipeBack(view !== 'list' ? closeEditor : undefined)
 
   function toggleMember(id: string) {
     setDraftMemberIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])
@@ -83,7 +85,7 @@ export function FriendListsPanel({ lists, friendIds, friendName, friendPhotoURL 
     {lists.length ? <div className="friend-list-cards">{lists.map((list) => <button type="button" className="friend-list-card" key={list.id} onClick={() => openDetail(list)}><span className="friend-list-icon" aria-hidden="true">{list.name.slice(0, 1)}</span><span><strong>{list.name}</strong><small>{list.memberIds.length ? `${list.memberIds.length}人のフレンド` : 'メンバー未設定'}</small></span><b aria-hidden="true">›</b></button>)}</div> : <div className="friend-list-empty"><span aria-hidden="true">◎</span><strong>リストはまだありません</strong><p>よく一緒に走る仲間や、共有したい相手をまとめられます。</p></div>}
   </section>
 
-  return <section className="friend-list-manager friend-list-editor" aria-labelledby="friend-list-editor-title">
+  return <section className="friend-list-manager friend-list-editor" aria-labelledby="friend-list-editor-title" {...swipeBack}>
     <header className="friend-list-editor-heading"><button type="button" className="friend-list-back" onClick={closeEditor} aria-label="フレンドリスト一覧へ戻る">←</button><div><p className="eyebrow">{view === 'create' ? 'NEW LIST' : 'LIST DETAILS'}</p><h3 id="friend-list-editor-title">{view === 'create' ? 'フレンドリストを作成' : 'フレンドリスト詳細'}</h3></div></header>
     <label className="friend-list-name-field"><span>リスト名</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={40} placeholder="例：伊豆ドライブ仲間" autoFocus /></label>
     <div className="friend-list-member-picker"><div><strong>メンバー</strong><small>{draftMemberIds.length}人を選択中</small></div>{friendIds.length ? friendIds.map((id) => <label key={id} className={draftMemberIds.includes(id) ? 'selected' : ''}><UserAvatar name={friendName(id)} photoURL={friendPhotoURL(id)} /><span><strong>{friendName(id)}</strong><small>{draftMemberIds.includes(id) ? 'このリストに追加済み' : 'フレンド'}</small></span><input type="checkbox" checked={draftMemberIds.includes(id)} onChange={() => toggleMember(id)} /></label>) : <p className="friend-list-no-friends">リストへ追加できるフレンドがまだいません。</p>}</div>

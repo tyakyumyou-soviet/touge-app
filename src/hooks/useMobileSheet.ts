@@ -46,8 +46,8 @@ function removeSheet(sheetId: string) {
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet(enabled = true, name?: string) {
   const sheetId = useId()
-  const drag = useRef<{ source: 'pointer' | 'touch'; id: number; y: number; moved: boolean; startedMinimized: boolean; height: number; minimumVisibleHeight: number; maximumHeight: number } | null>(null)
-  const scrollDrag = useRef<{ y: number; active: boolean; height: number; minimumVisibleHeight: number } | null>(null)
+  const drag = useRef<{ source: 'pointer' | 'touch'; id: number; x: number; y: number; moved: boolean; startedMinimized: boolean; height: number; minimumVisibleHeight: number; maximumHeight: number } | null>(null)
+  const scrollDrag = useRef<{ x: number; y: number; active: boolean; height: number; minimumVisibleHeight: number } | null>(null)
   const ignoreTap = useRef(false)
   const motionFrame = useRef<number | null>(null)
   const pendingMotion = useRef<{ height?: number; offset: number } | null>(null)
@@ -144,7 +144,7 @@ export function useMobileSheet(enabled = true, name?: string) {
     return () => window.removeEventListener('resize', syncForeground)
   }, [enabled])
 
-  function startGesture(target: Element, currentTarget: HTMLElement, y: number, source: 'pointer' | 'touch', id: number) {
+  function startGesture(target: Element, currentTarget: HTMLElement, x: number, y: number, source: 'pointer' | 'touch', id: number) {
     if (!isMobile() || !target.closest(handleSelector) || target.closest(controlSelector)) return
     const scrollSurface = target.closest<HTMLElement>('[data-sheet-scroll]')
     if ((scrollSurface?.scrollTop ?? currentTarget.scrollTop) > 1) return
@@ -153,14 +153,18 @@ export function useMobileSheet(enabled = true, name?: string) {
     // Full sheets may use the entire viewport except for the small safe-area
     // clearance controlled in CSS. The old 76px cap stopped drag expansion far
     // below the top edge on phones.
-    drag.current = { source, id, y, moved: false, startedMinimized: collapsed, height: sheet.getBoundingClientRect().height, minimumVisibleHeight: minimizedHeight(sheet), maximumHeight: Math.min(window.innerHeight - 76, window.innerHeight - safeViewportClearance()) }
+    drag.current = { source, id, x, y, moved: false, startedMinimized: collapsed, height: sheet.getBoundingClientRect().height, minimumVisibleHeight: minimizedHeight(sheet), maximumHeight: Math.min(window.innerHeight - 76, window.innerHeight - safeViewportClearance()) }
     setDragging(true)
   }
 
-  function moveGesture(id: number, y: number) {
+  function moveGesture(id: number, x: number, y: number) {
     const active = drag.current
     if (!active || active.id !== id) return
     const distance = y - active.y
+    if (Math.abs(x - active.x) > 10 && Math.abs(x - active.x) > Math.abs(distance) * 1.4) {
+      clearMotion(); drag.current = null; setDragging(false); setDragHeight(undefined); setOffset(0)
+      return
+    }
     if (Math.abs(distance) > 8) active.moved = true
     if (distance < 0) {
       if (collapsed) {
@@ -193,7 +197,7 @@ export function useMobileSheet(enabled = true, name?: string) {
     // iOS Safari needs the explicit Touch Events path below. Mixing both paths
     // makes Safari dispatch a pointercancel midway through a drag.
     if (event.pointerType === 'touch') return
-    startGesture(event.target as Element, event.currentTarget, event.clientY, 'pointer', event.pointerId)
+    startGesture(event.target as Element, event.currentTarget, event.clientX, event.clientY, 'pointer', event.pointerId)
     if (drag.current?.source === 'pointer') {
       try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Optional. */ }
     }
@@ -201,7 +205,7 @@ export function useMobileSheet(enabled = true, name?: string) {
 
   function move(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === 'touch') return
-    moveGesture(event.pointerId, event.clientY)
+    moveGesture(event.pointerId, event.clientX, event.clientY)
   }
 
   function end(event: ReactPointerEvent<HTMLElement>) {
@@ -212,7 +216,7 @@ export function useMobileSheet(enabled = true, name?: string) {
   function startTouchHandle(event: ReactTouchEvent<HTMLElement>) {
     if (event.touches.length !== 1) return
     const touch = event.touches[0]
-    startGesture(event.target as Element, event.currentTarget, touch.clientY, 'touch', touch.identifier)
+    startGesture(event.target as Element, event.currentTarget, touch.clientX, touch.clientY, 'touch', touch.identifier)
   }
 
   function moveTouchHandle(event: ReactTouchEvent<HTMLElement>) {
@@ -220,7 +224,7 @@ export function useMobileSheet(enabled = true, name?: string) {
     if (!active || active.source !== 'touch') return
     const touch = Array.from(event.touches).find((item) => item.identifier === active.id)
     if (!touch) return
-    moveGesture(touch.identifier, touch.clientY)
+    moveGesture(touch.identifier, touch.clientX, touch.clientY)
   }
 
   function endTouchHandle(event: ReactTouchEvent<HTMLElement>) {
@@ -263,7 +267,7 @@ export function useMobileSheet(enabled = true, name?: string) {
     if (drag.current || (event.target as Element).closest(`${handleSelector},${controlSelector}`)) return
     if (!isMobile() || event.touches.length !== 1 || event.currentTarget.scrollTop > 1) return
     const sheet = event.currentTarget.closest<HTMLElement>('.mobile-sheet')
-    scrollDrag.current = { y: event.touches[0].clientY, active: false, height: sheet?.getBoundingClientRect().height ?? 54, minimumVisibleHeight: minimizedHeight(sheet) }
+    scrollDrag.current = { x: event.touches[0].clientX, y: event.touches[0].clientY, active: false, height: sheet?.getBoundingClientRect().height ?? 54, minimumVisibleHeight: minimizedHeight(sheet) }
     // React's delegated touchmove listener is passive in mobile browsers.
     // A temporary native listener can actually prevent page scrolling once
     // this gesture becomes a sheet drag, and is removed at release/cancel.
@@ -277,6 +281,10 @@ export function useMobileSheet(enabled = true, name?: string) {
     const active = scrollDrag.current
     if (!active || event.touches.length !== 1) return
     const distance = event.touches[0].clientY - active.y
+    const horizontal = event.touches[0].clientX - active.x
+    if (!active.active && Math.abs(horizontal) > 10 && Math.abs(horizontal) > Math.abs(distance) * 1.4) {
+      scrollDrag.current = null; clearScrollMove(); return
+    }
     if (surface.scrollTop > 1 && !active.active) {
       scrollDrag.current = null
       clearScrollMove()

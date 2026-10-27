@@ -9,6 +9,7 @@ import type { LiveRoadInfo } from '../types'
 import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
 import { useMobileSheet } from '../hooks/useMobileSheet'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 
 interface Props {
   course: Course
@@ -33,6 +34,7 @@ interface Props {
 
 export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, onReversePreview, previewNavigation }: Props) {
   const sheet = useMobileSheet(true, 'detail')
+  const swipeBack = useSwipeBack(onBack)
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
@@ -58,7 +60,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   }, [course.id, course.route])
 
   return (
-    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${isPreview ? 'proposal-preview-detail' : ''} ${sheet.className}`} style={sheet.style} aria-label={`${course.name}の詳細`}>
+    <article data-map-occlusion="bottom-sheet" className={`detail-panel ${isPreview ? 'proposal-preview-detail' : ''} ${sheet.className}`} style={sheet.style} aria-label={`${course.name}の詳細`} {...swipeBack}>
       <div className="detail-sheet-top" {...sheet.dragProps} onClick={sheet.expandOnTap}>
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
       </div>

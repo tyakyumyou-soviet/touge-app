@@ -4,6 +4,7 @@ import type { Coordinate, Course, CourseDraft, DraftPointRole, RecommendationMap
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, resolveRouteAdministrativeAreas, type GeocodedPoint } from '../lib/location'
 import { JAPANESE_PREFECTURES } from '../lib/administrativeAreas'
@@ -93,6 +94,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     try { return JSON.parse(localStorage.getItem(`touge-profile-${uid}`) ?? 'null') as UserProfile | null } catch { return null }
   }, [profile])
   const [stage, setStage] = useState<'route' | 'details'>('route')
+  const swipeBack = useSwipeBack(stage === 'details' ? () => setStage('route') : editingCourse ? onCancel : undefined)
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -447,7 +449,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     } finally { setBusy(false) }
   }
 
-  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー">
+  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー" {...swipeBack}>
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>{editingCourse ? 'コースを編集' : 'コースを作る'}</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label={editingCourse ? 'コース情報の編集へ戻る' : '閉じる'}>{editingCourse ? '←' : '×'}</button></header>
     </div>
     <div className="course-form-scroll" data-sheet-scroll {...sheet.scrollProps}>

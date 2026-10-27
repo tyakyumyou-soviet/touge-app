@@ -3,6 +3,7 @@ import type { Course, CourseComment, FriendPresence, NowPlaying, ThemePreference
 import { addCourseComment, deleteCourseComment, loadFriendProfile, loadUserProfile, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 import { FriendsPanel } from './FriendsPanel'
 import { UserAvatar } from './UserAvatar'
 import { FriendListsPanel } from './FriendListsPanel'
@@ -90,6 +91,7 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
     setSettingsView(view)
     contentRef.current?.scrollTo({ top: 0 })
   }
+  const swipeBack = useSwipeBack(!course && settingsView !== 'home' ? () => navigate(settingsView === 'friend-profile' ? 'friends' : 'home') : undefined)
   async function openFriendProfile(id: string) {
     setSelectedFriendProfile(friendProfiles[id] ?? null)
     setFriendProfileError('')
@@ -233,7 +235,7 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
   const friendName = (id: string) => friendNames[id] || friendProfiles[id]?.displayName || id.slice(0, 8)
   const viewTitle = settingsView === 'profile' ? 'プロフィール' : settingsView === 'friends' ? 'フレンド' : settingsView === 'friend-profile' ? selectedFriendProfile?.displayName || 'プロフィール' : settingsView === 'sharing' ? '共有・プライバシー' : settingsView === 'settings' ? '設定' : 'アカウント'
   const recognizedTrack = activeMediaTrack ?? profile?.nowPlaying
-  return <div className="modal-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title">
+  return <div className="modal-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title" {...swipeBack}>
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">{course ? 'コメント・いいね' : viewTitle}</h2></div><div className="community-header-actions">{!course && settingsView !== 'home' && <button type="button" className="icon-button" onClick={() => navigate(settingsView === 'friend-profile' ? 'friends' : 'home')} aria-label={settingsView === 'friend-profile' ? 'フレンド一覧へ戻る' : 'アカウントメニューへ戻る'}>←</button>}<button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></div></header></div>
     <div className="community-scroll" ref={contentRef} data-sheet-scroll {...sheet.scrollProps}><div key={course?.id ?? settingsView} className={`community-view ${transitionDirection}`}>
     {!user ? <div className="empty-state"><p>ログインするとプロフィール編集、フォロー、コメント、いいねが使えます。</p></div> : <>
