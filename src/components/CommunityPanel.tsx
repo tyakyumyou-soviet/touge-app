@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Course, CourseComment, FriendPresence, NowPlaying, ThemePreference, UserProfile } from '../types'
 import { addCourseComment, deleteCourseComment, loadFriendProfile, loadUserProfile, subscribeCourseComments, subscribeCourseLikes, subscribeFriendPresence, toggleCourseLike, toggleFollow } from '../lib/firebase'
 import type { User } from 'firebase/auth'
@@ -66,6 +66,9 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
   const profileRef = useRef(profile)
   useEffect(() => { profileRef.current = profile }, [profile])
   const [transitionDirection, setTransitionDirection] = useState('forward')
+  // Reset the new view after React replaces its contents, before the browser
+  // paints. Scrolling the outgoing view inside navigate makes it visibly jump.
+  useLayoutEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0 }, [settingsView])
   const [friendIds, setFriendIds] = useState<string[]>([])
   const [friendNames, setFriendNames] = useState<Record<string, string>>({})
   const profileSaveRevision = useRef(0)
@@ -89,7 +92,6 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
   function navigate(view: typeof settingsView) {
     setTransitionDirection(view === 'home' || (settingsView === 'friend-profile' && view === 'friends') ? 'back' : 'forward')
     setSettingsView(view)
-    contentRef.current?.scrollTo({ top: 0 })
   }
   const swipeBack = useSwipeBack(!course && settingsView !== 'home' ? () => navigate(settingsView === 'friend-profile' ? 'friends' : 'home') : undefined, '.community-view')
   async function openFriendProfile(id: string) {

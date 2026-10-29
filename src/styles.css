@@ -533,11 +533,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
      the viewport itself so its middle snap doesn't inherit the header offset
      and appear to float above the phone's bottom edge. */
   .explore-panel.mobile-sheet { --mobile-sheet-minimized-height: 76px; position: fixed; inset: auto 8px 0; z-index: 52; }
-  /* A detail sheet replaces discovery while it is open. Leaving the collapsed
-     tray visible underneath made the two sheets look stacked and gave the map
-     an accidental second interaction target. */
-  .explore-panel.covered-by-detail { transform: translateY(calc(100% + 20px)) !important; pointer-events: none; }
-  .course-form.covered-by-detail { transform: translateY(calc(100% + 20px)) !important; pointer-events: none; }
+  /* Hide the underlying surface in place: translating it offscreen makes it
+     visibly slide up from below again when the detail view is dismissed. */
+  :is(.explore-panel, .course-form).covered-by-detail { visibility: hidden; pointer-events: none; }
   .explore-panel.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .explore-panel.dragging { transition: none; }
   .explore-panel.collapsed { overflow: hidden; }
