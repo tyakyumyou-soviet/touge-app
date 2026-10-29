@@ -58,8 +58,6 @@ main { position: relative; height: calc(100% - 72px); }
 
 .explore-panel { position: absolute; z-index: 10; inset: 0 auto 0 0; width: 365px; display: flex; flex-direction: column; padding: 26px 18px 0; background: rgba(247, 245, 237, .97); box-shadow: 10px 0 40px #18241e18; border-right: 1px solid var(--line); }
 .explore-panel.drawing { display: none; }
-.explore-panel.surface-leaving { pointer-events: none; animation: surfaceDropOut .22s ease-in both; }
-.explore-panel.surface-entering { animation: surfaceRiseIn .28s cubic-bezier(.2, .8, .25, 1) both; }
 .explore-panel-top { touch-action: none; cursor: grab; }
 .explore-panel-top:active { cursor: grabbing; }
 .explore-panel-top .filter-row { touch-action: auto; cursor: default; }
@@ -262,10 +260,6 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-form { pointer-events: auto; box-shadow: 0 20px 70px #10221955; }
 .course-form > .mobile-sheet-drag-region { flex: 0 0 auto; background: var(--paper); z-index: 2; }
 .course-form-scroll { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
-.course-form.surface-leaving { pointer-events: none; animation: surfaceDropOut .22s ease-in both; }
-.course-form.surface-entering { animation: surfaceRiseIn .28s cubic-bezier(.2, .8, .25, 1) both; }
-@keyframes surfaceDropOut { to { opacity: 0; } }
-@keyframes surfaceRiseIn { from { opacity: 0; } to { opacity: 1; } }
 .route-status { padding: 9px 12px; color: #225f48; background: #e2f0e7; border-radius: 7px; font-size: 11px; }
 .route-builder-stage, .route-details-stage { display: grid; gap: 10px; }
 .creation-choice, .join-builder { display: grid; gap: 12px; }
@@ -535,7 +529,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .explore-panel.mobile-sheet { --mobile-sheet-minimized-height: 76px; position: fixed; inset: auto 8px 0; z-index: 52; }
   /* Hide the underlying surface in place: translating it offscreen makes it
      visibly slide up from below again when the detail view is dismissed. */
-  :is(.explore-panel, .course-form).covered-by-detail { visibility: hidden; pointer-events: none; }
+  :is(.explore-panel, .course-form).covered-by-detail { display: none; visibility: hidden; pointer-events: none; }
   .explore-panel.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .explore-panel.dragging { transition: none; }
   .explore-panel.collapsed { overflow: hidden; }
@@ -575,7 +569,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .nav-actions { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
   .modal-backdrop { padding: 7px; place-items: end center; }
   .modal-backdrop:has(.mobile-sheet.collapsed) { pointer-events: none; background: transparent; backdrop-filter: none; }
-  .modal-backdrop:has(> .mobile-sheet.sheet-backgrounded) { pointer-events: none; background: transparent; backdrop-filter: none; }
+  .modal-backdrop:has(> .mobile-sheet.sheet-backgrounded) { display: none; pointer-events: none; background: transparent; backdrop-filter: none; }
   /* Map sheets own their positioning. Keep modal defaults at low specificity
      so they cannot override the detail's absolute or builder's fixed anchor. */
   :where(.mobile-sheet:not(.detail-panel):not(.course-form):not(.explore-panel)) { position: relative; }
@@ -944,7 +938,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .community-panel .icon-button { width: 40px; height: 40px; min-width: 40px; font-size: 22px; }
 .community-scroll { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 20px 18px calc(22px + env(safe-area-inset-bottom)); }
 .forward-view-exiting { animation: forward-view-exit 180ms cubic-bezier(.4, 0, .8, .5) both !important; pointer-events: none !important; }
-.forward-view-complete { visibility: hidden !important; }
+.forward-view-complete { visibility: hidden !important; opacity: 0 !important; animation: none !important; }
 @keyframes forward-view-exit { to { opacity: 0; transform: translateX(-36px); } }
 @keyframes community-forward { from { opacity: 0; } to { opacity: 1; } }
 .community-panel .community-view > section:not(.account-menu):not(.friends-hub), .community-panel .account-summary { background: #fff; border: 1px solid #dfe6e1; border-radius: 18px; padding: 18px; margin: 0 0 16px; }
@@ -1484,7 +1478,7 @@ html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
   /* Only the foreground sheet remains visible, even when several sheets are
      minimized. Keeping background sheets mounted preserves their state, while
      preventing a stack of overlapping compact handles. */
-  #root .mobile-sheet.sheet-backgrounded { visibility: hidden !important; pointer-events: none !important; }
+  #root .mobile-sheet.sheet-backgrounded { display: none !important; visibility: hidden !important; pointer-events: none !important; }
   .explore-panel.drawing.mobile-sheet.collapsed { display: flex; }
   .course-form.mobile-sheet.collapsed { bottom: 0; z-index: 53; }
   .modal-backdrop:has(.course-form.collapsed) { z-index: 53; }

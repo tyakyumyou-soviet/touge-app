@@ -17,7 +17,6 @@ import type { TollStatus } from '../types'
 import { auth } from '../lib/firebase'
 
 interface Props {
-  transitionState?: 'idle' | 'entering' | 'leaving'
   previewActive?: boolean
   editingCourse?: Course | null
   route: Coordinate[]
@@ -86,7 +85,7 @@ function editorStopsForSave(route: Coordinate[], labels: string[], roles: DraftP
   })
 }
 
-export function CourseForm({ transitionState = 'idle', previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, incorporatedProposalKeys, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onCancel, onSave }: Props) {
+export function CourseForm({ previewActive = false, editingCourse = null, route, pointLabels, pointRoles, viaInsertAfter, courses, profile, canUseUnlimitedWaypoints, hasProposalEditSnapshot, onAddPoint, onIncorporateCourse, onFocusPoint, onCurrentLocationChange, onPendingPointChange, recommendationMapAction, incorporatedProposalKeys, onRecommendationMapStateChange, onUseProposal, onUndoProposalEdit, onSetProposalPreviews, onOpenProposalPreview, onRemovePoint, onSetFinalPointAsGoal, onReverseRoute, onMoveRouteBlock, onReverseRouteBlock, onChooseViaInsertion, onCancel, onSave }: Props) {
   const sheet = useMobileSheet(true, 'builder')
   const effectiveProfile = useMemo(() => {
     if (profile) return profile
@@ -453,7 +452,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     } finally { setBusy(false) }
   }
 
-  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー" {...swipeBack}>
+  return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''}`} style={sheet.style} aria-label="ルートビルダー" {...swipeBack}>
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>{editingCourse ? 'コースを編集' : 'コースを作る'}</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label={editingCourse ? 'コース情報の編集へ戻る' : '閉じる'}>{editingCourse ? '←' : '×'}</button></header>
     </div>
     <div ref={contentRef} className="course-form-scroll" data-sheet-scroll {...sheet.scrollProps}>
