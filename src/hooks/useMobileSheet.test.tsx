@@ -4,11 +4,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reopenMobileSheet, useMobileSheet } from './useMobileSheet'
 
-function Sheet({ name, enabled = true }: { name: string; enabled?: boolean }) {
+function Sheet({ name, enabled = true, onMount }: { name: string; enabled?: boolean; onMount?: (element: HTMLElement) => void }) {
   const sheet = useMobileSheet(enabled, name)
   const [taps, setTaps] = useState(0)
   if (!enabled) return null
-  return <section data-sheet={name} className={sheet.className} style={sheet.style}>
+  return <section ref={(element) => { if (element) onMount?.(element) }} data-sheet={name} className={sheet.className} style={sheet.style}>
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}>{name}</div>
     <div data-sheet-scroll {...sheet.scrollProps}><button onClick={() => setTaps((value) => value + 1)}>プロフィール {taps}</button><p>本文</p></div>
   </section>
@@ -85,6 +85,14 @@ describe('mobile sheet input ownership', () => {
     await act(async () => root.render(<Sheet name="一覧" />))
     expect(list.className).toContain('expanded')
     expect(list.className).not.toMatch(/collapsed|sheet-backgrounded/)
+  })
+
+  it('mounts the next sheet at the inherited height before its first layout effect', async () => {
+    await act(async () => root.render(<Sheet name="一覧" />))
+    await act(async () => { container.querySelector<HTMLElement>('.mobile-sheet-drag-region')!.click() })
+    const initialClasses: string[] = []
+    await act(async () => root.render(<><Sheet name="一覧" /><Sheet name="詳細" onMount={(element) => initialClasses.push(element.className)} /></>))
+    expect(initialClasses[0]).toContain('expanded')
   })
 
   it('carries a handle adjustment in a detail sheet back to its parent', async () => {

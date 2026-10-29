@@ -50,15 +50,23 @@ let lastSnap: SheetSnap | undefined
  * className/style to the sheet itself. New bottom sheets should use this hook. */
 export function useMobileSheet(enabled = true, name?: string) {
   const sheetId = useId()
+  const initialSnap = useRef<SheetSnap | null>(null)
+  if (initialSnap.current === null) {
+    const active = sheetStack.at(-1)
+    const current = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches
+      ? (active && sheetControllers.get(active)?.getSnap()) || lastSnap || 'middle'
+      : 'middle'
+    initialSnap.current = current === 'minimized' ? 'middle' : current
+  }
   const drag = useRef<{ source: 'pointer' | 'touch'; id: number; x: number; y: number; moved: boolean; startedMinimized: boolean; height: number; minimumVisibleHeight: number; maximumHeight: number } | null>(null)
   const scrollDrag = useRef<{ x: number; y: number; active: boolean; height: number; minimumVisibleHeight: number } | null>(null)
   const ignoreTap = useRef(false)
   const motionFrame = useRef<number | null>(null)
   const pendingMotion = useRef<{ height?: number; offset: number } | null>(null)
   const scrollMoveCleanup = useRef<(() => void) | null>(null)
-  const [collapsed, setCollapsed] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-  const snapRef = useRef<SheetSnap>('middle')
+  const [collapsed, setCollapsed] = useState(initialSnap.current === 'minimized')
+  const [expanded, setExpanded] = useState(initialSnap.current === 'full')
+  const snapRef = useRef<SheetSnap>(initialSnap.current)
   const [foreground, setForeground] = useState(true)
   const foregroundRef = useRef(true)
   const [restoring, setRestoring] = useState(false)

@@ -10,4 +10,9 @@ describe('background sheet transitions', () => {
     expect(rule![1]).toMatch(/visibility:\s*hidden/)
     expect(rule![1]).not.toMatch(/transform\s*:/)
   })
+
+  it('keeps navigation surfaces on shared middle and full heights', () => {
+    expect(styles).toMatch(/:is\(\.explore-panel, \.detail-panel, \.course-form\)\.mobile-sheet:not\(\.expanded\):not\(\.collapsed\),\s*\.modal-backdrop > \.modal\.mobile-sheet:not\(\.expanded\):not\(\.collapsed\)\s*\{[^}]*height:\s*calc\(\(100dvh - 66px\) \* \.68\)/)
+    expect(styles).toMatch(/\.modal-backdrop > \.modal\.mobile-sheet\.expanded\s*\{[^}]*height:\s*calc\(100dvh - 76px\)/)
+  })
 })

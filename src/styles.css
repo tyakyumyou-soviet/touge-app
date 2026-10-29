@@ -552,7 +552,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
      its header and first row. */
   .map-tools { left: 10px; top: 10px; z-index: 9; }
   .map-tools button { height: 38px; }
-  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 62dvh; border-radius: 18px; animation: none; transition: max-height .22s ease, transform .22s ease; }
+  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 0; width: auto; max-height: 62dvh; border-radius: 18px; animation: none; transition: max-height .22s ease, transform .22s ease; }
   .detail-panel.expanded { max-height: calc(100dvh - 76px); }
   .detail-panel.dragging { transition: none; }
   .detail-panel.collapsed { overflow: hidden; }
@@ -597,7 +597,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
   .mobile-sheet-handle { position: relative; display: block; width: 100%; height: 28px; }
   .mobile-sheet-handle::after { content: ''; position: absolute; top: 11px; left: 50%; width: 42px; height: 4px; transform: translateX(-50%); background: #c9cbc6; border-radius: 4px; }
   .modal { max-height: min(88dvh, calc(100dvh - 76px)); border-radius: 18px 18px 8px 8px; }
-  .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 7px; width: auto; height: 61dvh; max-height: 61dvh; }
+  .course-form { position: fixed; left: 7px; right: 7px; top: auto; bottom: 0; width: auto; height: 61dvh; max-height: 61dvh; }
   .course-form.mobile-sheet.expanded { height: calc(100dvh - 76px); max-height: calc(100dvh - 76px); }
   .course-form-scroll { padding: 0 1px 8px; touch-action: pan-y; }
   .modal footer, .route-builder-stage footer, .route-details-stage footer { flex-wrap: wrap; }
@@ -1486,9 +1486,9 @@ html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
      preventing a stack of overlapping compact handles. */
   #root .mobile-sheet.sheet-backgrounded { visibility: hidden !important; pointer-events: none !important; }
   .explore-panel.drawing.mobile-sheet.collapsed { display: flex; }
-  .course-form.mobile-sheet.collapsed { bottom: 8px; z-index: 53; }
+  .course-form.mobile-sheet.collapsed { bottom: 0; z-index: 53; }
   .modal-backdrop:has(.course-form.collapsed) { z-index: 53; }
-  .community-panel.mobile-sheet.collapsed { bottom: 8px; z-index: 54; }
+  .community-panel.mobile-sheet.collapsed { bottom: 0; z-index: 54; }
   .modal-backdrop:has(.community-panel.collapsed) { z-index: 54; }
 }
 
@@ -1496,9 +1496,16 @@ html[data-theme="dark"] .detail-peek-handle::before { background: #839188; }
    notch/Dynamic Island or the home indicator. This comes after each panel's
    individual sizing rules so every bottom-sheet family shares the same cap. */
 @media (max-width: 760px) {
-  .modal-backdrop { padding: max(12px, env(safe-area-inset-top)) 7px max(8px, env(safe-area-inset-bottom)); }
-  .modal.mobile-sheet.expanded, .modal.community-panel.mobile-sheet.expanded, .modal.admin-panel.mobile-sheet.expanded {
-    height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
-    max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+  .modal-backdrop { padding: max(12px, env(safe-area-inset-top)) 7px 0; }
+  /* A navigation replaces the sheet content, not its geometry. Keep every
+     surface on the same snap heights and viewport-bottom anchor. */
+  :is(.explore-panel, .detail-panel, .course-form).mobile-sheet:not(.expanded):not(.collapsed),
+  .modal-backdrop > .modal.mobile-sheet:not(.expanded):not(.collapsed) {
+    height: calc((100dvh - 66px) * .68);
+    max-height: calc((100dvh - 66px) * .68);
+  }
+  .modal-backdrop > .modal.mobile-sheet.expanded {
+    height: calc(100dvh - 76px);
+    max-height: calc(100dvh - 76px);
   }
 }
