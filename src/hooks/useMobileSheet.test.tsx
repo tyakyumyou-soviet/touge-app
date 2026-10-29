@@ -79,11 +79,23 @@ describe('mobile sheet input ownership', () => {
     expect(container.querySelector('[data-sheet="一覧"]')?.className).toContain('expanded')
     await act(async () => root.render(<><Sheet name="一覧" /><Sheet name="詳細" /></>))
     const list = container.querySelector('[data-sheet="一覧"]')!
+    expect(container.querySelector('[data-sheet="詳細"]')?.className).toContain('expanded')
     expect(list.className).toContain('expanded')
     expect(list.className).not.toContain('collapsed')
     await act(async () => root.render(<Sheet name="一覧" />))
     expect(list.className).toContain('expanded')
     expect(list.className).not.toMatch(/collapsed|sheet-backgrounded/)
+  })
+
+  it('carries a handle adjustment in a detail sheet back to its parent', async () => {
+    await act(async () => root.render(<Sheet name="一覧" />))
+    await act(async () => { container.querySelector<HTMLElement>('.mobile-sheet-drag-region')!.click() })
+    await act(async () => root.render(<><Sheet name="一覧" /><Sheet name="詳細" /></>))
+    const header = container.querySelector('[data-sheet="詳細"] .mobile-sheet-drag-region')!
+    await act(async () => { touch(header, 'touchstart', 300); touch(header, 'touchmove', 390); touch(header, 'touchend', 390) })
+    expect(container.querySelector('[data-sheet="詳細"]')?.className).not.toMatch(/expanded|collapsed/)
+    await act(async () => root.render(<Sheet name="一覧" />))
+    expect(container.querySelector('[data-sheet="一覧"]')?.className).not.toMatch(/expanded|collapsed|sheet-backgrounded/)
   })
 
   it('restores a backgrounded minimized sheet without animating through its compact height', async () => {

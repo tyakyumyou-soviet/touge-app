@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
 import { backdropSheetSnap, boundedDownwardSheetOffset, nextSheetSnap, raisedSheetHeight, type SheetSnap } from '../lib/sheetGeometry'
 
 const handleSelector = '.mobile-sheet-drag-region,.detail-sheet-top,.detail-peek-handle,.explore-panel-top,.course-list-drag-area'
 const controlSelector = 'button,input,select,textarea,a,label,[data-sheet-no-drag]'
-type SheetController = { name?: string; open: () => void; setForeground: (value: boolean) => void; suspend: () => void }
+type SheetController = { name?: string; open: () => void; getSnap: () => SheetSnap; setSnap: (snap: SheetSnap) => void; setForeground: (value: boolean) => void; suspend: () => void }
 const sheetControllers = new Map<string, SheetController>()
 const sheetStack: string[] = []
 
@@ -36,10 +36,14 @@ function removeSheet(sheetId: string) {
   if (!wasActive) return
   const fallback = sheetStack.at(-1)
   if (fallback) {
-    sheetControllers.get(fallback)?.setForeground(true)
+    const controller = sheetControllers.get(fallback)
+    if (lastSnap) controller?.setSnap(lastSnap)
+    controller?.setForeground(true)
     sheetControllers.forEach((controller, id) => { if (id !== fallback) controller.setForeground(false) })
   } else sheetControllers.forEach((controller) => controller.setForeground(true))
 }
+
+let lastSnap: SheetSnap | undefined
 
 /** Shared gesture contract for every mobile bottom sheet (機能A).
  * Attach dragProps to the sheet's entire non-interactive top region and apply
@@ -54,6 +58,7 @@ export function useMobileSheet(enabled = true, name?: string) {
   const scrollMoveCleanup = useRef<(() => void) | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const snapRef = useRef<SheetSnap>('middle')
   const [foreground, setForeground] = useState(true)
   const foregroundRef = useRef(true)
   const [restoring, setRestoring] = useState(false)
@@ -69,6 +74,13 @@ export function useMobileSheet(enabled = true, name?: string) {
     pendingMotion.current = null
   }, [])
   const clearScrollMove = useCallback(() => { scrollMoveCleanup.current?.(); scrollMoveCleanup.current = null }, [])
+  const applySnap = useCallback((snap: SheetSnap) => {
+    snapRef.current = snap
+    setCollapsed(snap === 'minimized')
+    setExpanded(snap === 'full')
+    setOffset(0)
+    setDragHeight(undefined)
+  }, [])
   const openResting = useCallback(() => {
     clearMotion()
     clearScrollMove()
@@ -87,10 +99,26 @@ export function useMobileSheet(enabled = true, name?: string) {
       })
     }
     if (enabled) focusSheet(sheetId)
-    setCollapsed(false)
-    setExpanded(false)
-    setOffset(0)
-  }, [enabled, sheetId, clearMotion, clearScrollMove])
+    lastSnap = 'middle'
+    applySnap('middle')
+  }, [enabled, sheetId, clearMotion, clearScrollMove, applySnap])
+
+  const openPreservingSnap = useCallback(() => {
+    const active = sheetStack.at(-1)
+    const current = (active && sheetControllers.get(active)?.getSnap()) || lastSnap || 'middle'
+    // Opening a panel from its compact tray must still reveal its contents.
+    const snap = current === 'minimized' ? 'middle' : current
+    if (!foregroundRef.current) {
+      setRestoring(true)
+      if (restoreFrame.current !== null) window.cancelAnimationFrame(restoreFrame.current)
+      restoreFrame.current = window.requestAnimationFrame(() => {
+        restoreFrame.current = window.requestAnimationFrame(() => { restoreFrame.current = null; setRestoring(false) })
+      })
+    }
+    lastSnap = snap
+    applySnap(snap)
+    if (enabled) focusSheet(sheetId)
+  }, [enabled, sheetId, applySnap])
 
   function updateMotion(height: number | undefined, nextOffset: number) {
     pendingMotion.current = { height, offset: nextOffset }
@@ -124,11 +152,13 @@ export function useMobileSheet(enabled = true, name?: string) {
     return Number.isFinite(configured) && configured > 0 ? configured : 54
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled) return
     sheetControllers.set(sheetId, {
       name,
-      open: openResting,
+      open: openPreservingSnap,
+      getSnap: () => snapRef.current,
+      setSnap: applySnap,
       setForeground: (value) => { foregroundRef.current = value; setForeground(value) },
       suspend: () => {
         clearMotion()
@@ -140,9 +170,9 @@ export function useMobileSheet(enabled = true, name?: string) {
         setDragHeight(undefined)
       },
     })
-    openResting()
-    return () => { clearMotion(); clearScrollMove(); if (restoreFrame.current !== null) window.cancelAnimationFrame(restoreFrame.current); removeSheet(sheetId) }
-  }, [enabled, name, sheetId, clearMotion, clearScrollMove, openResting])
+    openPreservingSnap()
+    return () => { clearMotion(); clearScrollMove(); if (restoreFrame.current !== null) window.cancelAnimationFrame(restoreFrame.current); removeSheet(sheetId); if (!sheetControllers.size) lastSnap = undefined }
+  }, [enabled, name, sheetId, clearMotion, clearScrollMove, openPreservingSnap, applySnap])
 
   useEffect(() => {
     if (!enabled) return
@@ -263,8 +293,8 @@ export function useMobileSheet(enabled = true, name?: string) {
     // that forces the user to drag again.
     const next = startedMinimized && distance < -120 ? 'full' : nextSheetSnap(current, distance)
     if (next !== 'minimized') focusSheet(sheetId)
-    setCollapsed(next === 'minimized')
-    setExpanded(next === 'full')
+    lastSnap = next
+    applySnap(next)
   }
 
   /**
@@ -357,9 +387,8 @@ export function useMobileSheet(enabled = true, name?: string) {
     }
     if (expanded) return
     focusSheet(sheetId)
-    setCollapsed(false)
-    setExpanded(true)
-    setOffset(0)
+    lastSnap = 'full'
+    applySnap('full')
   }
 
   function tapBackdrop(event: ReactMouseEvent<HTMLElement>) {
@@ -369,6 +398,8 @@ export function useMobileSheet(enabled = true, name?: string) {
     if (!expanded) return
     setExpanded(false)
     setCollapsed(false)
+    snapRef.current = 'middle'
+    lastSnap = 'middle'
     setOffset(0)
     setDragHeight(undefined)
   }
@@ -381,6 +412,8 @@ export function useMobileSheet(enabled = true, name?: string) {
     ignoreTap.current = false
     setCollapsed(false)
     setExpanded(false)
+    snapRef.current = 'middle'
+    lastSnap = 'middle'
     setDragging(false)
     setOffset(0)
     setDragHeight(undefined)
@@ -388,6 +421,8 @@ export function useMobileSheet(enabled = true, name?: string) {
 
   const collapse = useCallback(() => {
     reset()
+    snapRef.current = 'minimized'
+    lastSnap = 'minimized'
     setCollapsed(true)
   }, [reset])
 
@@ -404,6 +439,7 @@ export function useMobileSheet(enabled = true, name?: string) {
     reset,
     collapse,
     openResting,
+    openPreservingSnap,
     expandOnTap,
     backdropProps: { onClick: tapBackdrop },
     // Root delegation is supported, but only designated headers start drags.

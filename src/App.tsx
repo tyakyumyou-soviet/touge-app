@@ -136,7 +136,6 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const noticeRef = useRef<HTMLDivElement>(null)
   const listSheet = useMobileSheet()
-  const collapseList = listSheet.collapse
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const logoutSheet = useMobileSheet(logoutConfirmOpen, 'logout')
   const [communityOpen, setCommunityOpen] = useState(false)
@@ -501,8 +500,7 @@ export default function App() {
     // Every selection—including reopening the same proposal—gets a fresh map
     // camera request. This is also used by ordinary courses for consistency.
     setMapFocusRequest((request) => request + 1)
-    collapseList()
-  }, [collapseList])
+  }, [])
   const reverseProposalPreview = useCallback(() => {
     if (!selected || selected.authorId !== '__proposal_preview__') return
     const proposalId = selected.id.replace('proposal-preview-', '')
@@ -566,8 +564,7 @@ export default function App() {
     setDraftFocus(next.route[start] ?? null)
   }, [draftRoute, draftPointLabels, draftPointRoles])
   function resetListSheet() {
-    listSheet.reset()
-    listSheet.openResting()
+    listSheet.openPreservingSnap()
   }
 
   function finishSurfaceMotion(next: 'list' | 'form', resolve?: () => void) {
@@ -941,7 +938,7 @@ export default function App() {
         {selected && <CourseDetail
           course={selected}
           onClose={() => setSelected(null)}
-          onBack={() => { setSelected(null); resetListSheet() }}
+          onBack={() => setSelected(null)}
           onRate={() => { reopenMobileSheet('rating'); setRatingOpen(true) }} onShare={shareCourse} onOpen3d={() => setCourse3dOpen(true)}
           onReportToll={() => { reopenMobileSheet('toll-report'); setTollReportOpen(true) }} onReportRoad={() => { reopenMobileSheet('road-report'); setRoadReportOpen(true) }}
           onCommunity={() => { reopenMobileSheet('account'); setCommunityCourse(selected); setCommunityOpen(true) }} onOpenTimer={() => { reopenMobileSheet('timer'); setTimerOpen(true) }}

@@ -264,8 +264,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .course-form-scroll { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
 .course-form.surface-leaving { pointer-events: none; animation: surfaceDropOut .22s ease-in both; }
 .course-form.surface-entering { animation: surfaceRiseIn .28s cubic-bezier(.2, .8, .25, 1) both; }
-@keyframes surfaceDropOut { to { opacity: 0; transform: translateY(84px); } }
-@keyframes surfaceRiseIn { from { opacity: 0; transform: translateY(84px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes surfaceDropOut { to { opacity: 0; } }
+@keyframes surfaceRiseIn { from { opacity: 0; } to { opacity: 1; } }
 .route-status { padding: 9px 12px; color: #225f48; background: #e2f0e7; border-radius: 7px; font-size: 11px; }
 .route-builder-stage, .route-details-stage { display: grid; gap: 10px; }
 .creation-choice, .join-builder { display: grid; gap: 12px; }
@@ -554,7 +554,7 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
      its header and first row. */
   .map-tools { left: 10px; top: 10px; z-index: 9; }
   .map-tools button { height: 38px; }
-  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 62dvh; border-radius: 18px; animation: detailUp .24s ease-out; transition: max-height .22s ease, transform .22s ease; }
+  .detail-panel { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 62dvh; border-radius: 18px; animation: none; transition: max-height .22s ease, transform .22s ease; }
   .detail-panel.expanded { max-height: calc(100dvh - 76px); }
   .detail-panel.dragging { transition: none; }
   .detail-panel.collapsed { overflow: hidden; }
@@ -947,8 +947,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .community-scroll { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 20px 18px calc(22px + env(safe-area-inset-bottom)); }
 .community-view { animation: community-forward 240ms cubic-bezier(.22,.75,.2,1) both; }
 .community-view.back { animation-name: community-back; }
-@keyframes community-forward { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes community-back { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes community-forward { from { opacity: 0; } to { opacity: 1; } }
+@keyframes community-back { from { opacity: 0; } to { opacity: 1; } }
 .community-panel .community-view > section:not(.account-menu):not(.friends-hub), .community-panel .account-summary { background: #fff; border: 1px solid #dfe6e1; border-radius: 18px; padding: 18px; margin: 0 0 16px; }
 .community-panel .community-view h3 { font-size: 16px; margin: 0 0 10px; line-height: 1.4; }
 .community-panel .community-view p { font-size: 13px; line-height: 1.65; }
