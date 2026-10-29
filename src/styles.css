@@ -117,7 +117,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .detail-header-actions .back-button { font-size: 19px; font-weight: 700; }
 .detail-header h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; }
 .icon-button { flex: 0 0 auto; width: 37px; height: 37px; padding: 0; color: #55615b; background: #eeeee8; border: 0; border-radius: 50%; font-size: 22px; }
-.detail-scroll { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-x: none; padding: 0 22px 20px; }
+.detail-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.detail-content > .nav-actions { flex: 0 0 auto; }
+.detail-scroll { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-x: none; padding: 0 22px 20px; }
 .hero-metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin: 6px 0 14px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .hero-metrics div { display: grid; gap: 1px; padding: 10px 6px; text-align: center; border-right: 1px solid var(--line); }
 .hero-metrics div:last-child { border: 0; }

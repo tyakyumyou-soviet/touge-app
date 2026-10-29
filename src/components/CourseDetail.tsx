@@ -37,7 +37,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
   const sheet = useMobileSheet(true, 'detail')
   const contentRef = useRef<HTMLDivElement>(null)
   const { forward } = useForwardTransition()
-  const swipeBack = useSwipeBack(onBack, '.detail-scroll')
+  const swipeBack = useSwipeBack(onBack, '.detail-content')
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
@@ -67,6 +67,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
       <div className="detail-sheet-top" {...sheet.dragProps} onClick={sheet.expandOnTap}>
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
       </div>
+      <div className="detail-content">
       <div ref={contentRef} className="detail-scroll" data-sheet-scroll {...sheet.scrollProps}>
         <header className="detail-header">
           <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
@@ -148,6 +149,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
         }}>⇄ 始点とゴールを入れ替える</button></div>
         <div className="navigation-links"><a className="button secondary" href={googleMapsUrl(course, false, navigationReversed)} target="_blank" rel="noreferrer">コースだけ開く</a><a className="button primary" href={googleMapsUrl(course, true, navigationReversed)} target="_blank" rel="noreferrer">現在地から案内</a></div>
       </footer>
+      </div>
       <div className="detail-peek-handle" aria-label="上へスワイプしてコース詳細を再表示" {...sheet.dragProps}><span>{course.name}</span></div>
     </article>
   )
