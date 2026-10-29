@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { RouteOrderEditor, type RouteOrderBlock } from './RouteOrderEditor'
 import type { Coordinate, Course, CourseDraft, DraftPointRole, RecommendationMapAction, RecommendationMapState, UserProfile } from '../types'
 import { routeDistanceKm } from '../lib/course'
 import { buildCourseDraftDefaults, parseHashTags } from '../lib/courseDraft'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { useSwipeBack } from '../hooks/useSwipeBack'
+import { useForwardTransition } from '../hooks/useForwardTransition'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from '../lib/access'
 import { geocodeJapanesePlace, resolveRouteAdministrativeAreas, type GeocodedPoint } from '../lib/location'
 import { JAPANESE_PREFECTURES } from '../lib/administrativeAreas'
@@ -94,6 +95,9 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     try { return JSON.parse(localStorage.getItem(`touge-profile-${uid}`) ?? 'null') as UserProfile | null } catch { return null }
   }, [profile])
   const [stage, setStage] = useState<'route' | 'details'>('route')
+  const contentRef = useRef<HTMLDivElement>(null)
+  const { forward } = useForwardTransition()
+  useLayoutEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0 }, [stage])
   const swipeBack = useSwipeBack(stage === 'details' ? () => setStage('route') : editingCourse ? onCancel : undefined, '.course-form-scroll')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -245,7 +249,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
     setAudienceMode('all-friends')
     setSelectedFriendListIds([])
     setError('')
-    setStage('details')
+    forward(contentRef.current, () => setStage('details'))
     if (!editingCourse) void enrichAdministrativeAreas(defaults)
   }
 
@@ -452,7 +456,7 @@ export function CourseForm({ transitionState = 'idle', previewActive = false, ed
   return <div className="modal-backdrop" role="presentation"><section data-map-occlusion="bottom-sheet" className={`modal course-form ${sheet.className} ${previewActive ? 'covered-by-detail' : ''} surface-${transitionState}`} style={sheet.style} aria-label="ルートビルダー" {...swipeBack}>
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">ROUTE BUILDER</p><h2>{editingCourse ? 'コースを編集' : 'コースを作る'}</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label={editingCourse ? 'コース情報の編集へ戻る' : '閉じる'}>{editingCourse ? '←' : '×'}</button></header>
     </div>
-    <div className="course-form-scroll" data-sheet-scroll {...sheet.scrollProps}>
+    <div ref={contentRef} className="course-form-scroll" data-sheet-scroll {...sheet.scrollProps}>
     {stage === 'route' ? <div className="route-builder-stage">
       <section className="route-builder-intro" aria-label="コースに追加する方法"><div><p className="eyebrow">ROUTE COMPOSER</p><h3>{route.length ? 'コースに追加する' : 'コースを組み立てる'}</h3></div><button type="button" className={`proposal-launch ${proposalOpen ? 'active' : ''}`} onClick={() => { setProposalOpen((value) => !value); setSearchError('') }} aria-expanded={proposalOpen} aria-controls="drive-proposal-builder">✨ 峠道を探す <span aria-hidden="true">{proposalOpen ? '−' : '+'}</span></button></section>
       {proposalOpen && <section id="drive-proposal-builder" className="drive-proposal-builder" aria-label="範囲からドライブコースを提案">

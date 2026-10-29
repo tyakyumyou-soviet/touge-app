@@ -4,6 +4,7 @@ import { addCourseComment, deleteCourseComment, loadFriendProfile, loadUserProfi
 import type { User } from 'firebase/auth'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { useSwipeBack } from '../hooks/useSwipeBack'
+import { useForwardTransition } from '../hooks/useForwardTransition'
 import { FriendsPanel } from './FriendsPanel'
 import { UserAvatar } from './UserAvatar'
 import { FriendListsPanel } from './FriendListsPanel'
@@ -65,7 +66,7 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
   const contentRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef(profile)
   useEffect(() => { profileRef.current = profile }, [profile])
-  const [transitionDirection, setTransitionDirection] = useState('forward')
+  const { forward, cancel: cancelForward } = useForwardTransition()
   // Reset the new view after React replaces its contents, before the browser
   // paints. Scrolling the outgoing view inside navigate makes it visibly jump.
   useLayoutEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0 }, [settingsView])
@@ -90,8 +91,10 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
     }, () => { setFriendIds([]); setNotice('フレンドを同期できませんでした') })
   }, [user])
   function navigate(view: typeof settingsView) {
-    setTransitionDirection(view === 'home' || (settingsView === 'friend-profile' && view === 'friends') ? 'back' : 'forward')
-    setSettingsView(view)
+    if (view === settingsView) return
+    const isBack = view === 'home' || (settingsView === 'friend-profile' && view === 'friends')
+    if (isBack) { cancelForward(); setSettingsView(view); return }
+    forward(contentRef.current?.querySelector<HTMLElement>('.community-view') ?? null, () => setSettingsView(view))
   }
   const swipeBack = useSwipeBack(!course && settingsView !== 'home' ? () => navigate(settingsView === 'friend-profile' ? 'friends' : 'home') : undefined, '.community-view')
   async function openFriendProfile(id: string) {
@@ -239,7 +242,7 @@ export function CommunityPanel({ user, profile, saving, profileError, onProfileC
   const recognizedTrack = activeMediaTrack ?? profile?.nowPlaying
   return <div className="modal-backdrop" role="presentation" {...sheet.backdropProps}><section className={`modal community-panel ${sheet.className}`} style={sheet.style} role="dialog" aria-modal="true" aria-labelledby="community-title" {...swipeBack}>
     <div className="mobile-sheet-drag-region" {...sheet.dragProps} onClick={sheet.expandOnTap}><div className="mobile-sheet-handle" aria-hidden="true" /><header><div><p className="eyebrow">COMMUNITY</p><h2 id="community-title">{course ? 'コメント・いいね' : viewTitle}</h2></div><div className="community-header-actions">{!course && settingsView !== 'home' && <button type="button" className="icon-button" onClick={() => navigate(settingsView === 'friend-profile' ? 'friends' : 'home')} aria-label={settingsView === 'friend-profile' ? 'フレンド一覧へ戻る' : 'アカウントメニューへ戻る'}>←</button>}<button className="icon-button" onClick={onClose} aria-label="閉じる">×</button></div></header></div>
-    <div className="community-scroll" ref={contentRef} data-sheet-scroll {...sheet.scrollProps}><div key={course?.id ?? settingsView} className={`community-view ${transitionDirection}`}>
+    <div className="community-scroll" ref={contentRef} data-sheet-scroll {...sheet.scrollProps}><div key={course?.id ?? settingsView} className="community-view">
     {!user ? <div className="empty-state"><p>ログインするとプロフィール編集、フォロー、コメント、いいねが使えます。</p></div> : <>
       {!course && <>
         {settingsView === 'home' && <section className="account-menu"><button type="button" className="account-summary account-summary-action" onClick={() => navigate('profile')} aria-label="プロフィールを表示・編集"><div className="profile-avatar" aria-hidden="true">{profileImageUrl ? <img src={profileImageUrl} alt="" /> : (profile?.displayName || user.displayName || 'ド').slice(0, 1)}</div><div><strong>{profile?.displayName || user.displayName || 'ドライバー'}</strong>{profile?.accountId && <span className="account-id-label">@{profile.accountId}</span>}<small>{profile?.vehicleName || '愛車を登録してプロフィールを整えよう'}</small></div><span className="account-summary-arrow" aria-hidden="true">→</span></button><div className="account-menu-grid"><button type="button" onClick={() => navigate('friends')}><strong>フレンド</strong><small>検索・申請・共有リスト</small><span>→</span></button><button type="button" onClick={() => navigate('sharing')}><strong>共有・プライバシー</strong><small>{musicDisplayEnabled ? '地図・現在地・音楽' : '地図・現在地'}</small><span>→</span></button><button type="button" onClick={() => navigate('settings')}><strong>設定</strong><small>表示・パーソナライズ</small><span>→</span></button></div>{onAdminOpen && <button type="button" className="button secondary admin-console-button" onClick={onAdminOpen}>管理コンソール</button>}{onLogout && <button type="button" className="text-button danger-button" onClick={onLogout}>ログアウト</button>}</section>}

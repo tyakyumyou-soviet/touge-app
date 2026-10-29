@@ -943,10 +943,9 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.03em; }
 .community-panel .community-header-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .community-panel .icon-button { width: 40px; height: 40px; min-width: 40px; font-size: 22px; }
 .community-scroll { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 20px 18px calc(22px + env(safe-area-inset-bottom)); }
-.community-view { animation: community-forward 240ms cubic-bezier(.22,.75,.2,1) both; }
-.community-view.back { animation-name: community-back; }
+.forward-view-exiting { animation: forward-view-exit 180ms cubic-bezier(.4, 0, .8, .5) both !important; pointer-events: none !important; }
+@keyframes forward-view-exit { to { opacity: 0; transform: translateX(-36px); } }
 @keyframes community-forward { from { opacity: 0; } to { opacity: 1; } }
-@keyframes community-back { from { opacity: 0; } to { opacity: 1; } }
 .community-panel .community-view > section:not(.account-menu):not(.friends-hub), .community-panel .account-summary { background: #fff; border: 1px solid #dfe6e1; border-radius: 18px; padding: 18px; margin: 0 0 16px; }
 .community-panel .community-view h3 { font-size: 16px; margin: 0 0 10px; line-height: 1.4; }
 .community-panel .community-view p { font-size: 13px; line-height: 1.65; }

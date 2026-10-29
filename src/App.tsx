@@ -22,6 +22,7 @@ import { routeAlongRoads } from './lib/routing'
 import type { AccountRole, Coordinate, Course, CourseDraft, DraftPointRole, FriendPresence, RatingSubmission, RecommendationMapAction, RecommendationMapState, SearchPreset, ThemePreference, TollStatus } from './types'
 import { personalizedScore } from './lib/personalization'
 import { reopenMobileSheet, useMobileSheet } from './hooks/useMobileSheet'
+import { useForwardTransition } from './hooks/useForwardTransition'
 import { useProfileSettings } from './hooks/useProfileSettings'
 import { exceedsWaypointLimit, WAYPOINT_LIMIT } from './lib/access'
 import { courseMatchesSearch } from './lib/courseSearch'
@@ -136,6 +137,8 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const noticeRef = useRef<HTMLDivElement>(null)
   const listSheet = useMobileSheet()
+  const listPanelRef = useRef<HTMLElement>(null)
+  const { forward: forwardFromList } = useForwardTransition()
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const logoutSheet = useMobileSheet(logoutConfirmOpen, 'logout')
   const [communityOpen, setCommunityOpen] = useState(false)
@@ -904,11 +907,11 @@ export default function App() {
           if (action.action === 'center') setRecommendationMapState((state) => ({ ...state, active: true, center: point }))
           setRecommendationMapAction({ ...action, id })
         }} onAddPoint={(point, label, role, insertAfter) => { addPoint(point, label, role, insertAfter); setDraftFocus(point); setDraftPendingSearch(null) }} onMovePoint={(index, point) => setDraftRoute((route) => route.map((item, itemIndex) => itemIndex === index ? point : item))} />
-        <section data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
+        <section ref={listPanelRef} data-map-occlusion="bottom-sheet" className={`explore-panel open ${listSheet.className} ${drawing ? 'drawing' : ''} ${selected ? 'covered-by-detail' : ''} ${surfaceMotion === 'leaving-list' ? 'surface-leaving' : surfaceMotion === 'entering-list' ? 'surface-entering' : ''}`} style={listSheet.style} aria-label="コースを探す" {...listSheet.dragProps}>
           <div className="explore-panel-top">
             <div className="explore-drag-handle" role="button" tabIndex={0} aria-label="上部全体をタップまたはドラッグしてコース一覧を操作" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); listSheet.openResting() } }} />
           </div>
-          <CourseList courses={filtered} selectedId={selected?.id} onSelect={selectCourse} scrollProps={listSheet.scrollProps} header={<div className="course-list-drag-area">
+          <CourseList courses={filtered} selectedId={selected?.id} onSelect={(course) => forwardFromList(listPanelRef.current?.querySelector<HTMLElement>('.course-list') ?? null, () => selectCourse(course))} scrollProps={listSheet.scrollProps} header={<div className="course-list-drag-area">
             <div className="panel-heading"><div><p className="eyebrow">DISCOVER</p><h1>走りたい道を探す</h1></div></div>
             <div className="list-toolbar">
               <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="並び順"><option value="recommended">おすすめ順</option><option value="personalized">パーソナライズ順</option><option value="curves">カーブ評価順</option><option value="elevation">高低差評価順</option><option value="width">道幅評価順</option></select>

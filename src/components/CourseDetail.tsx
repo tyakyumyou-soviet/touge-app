@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Course } from '../types'
 import { combinedRatings, googleMapsUrl, overallRating, systemRatingsFor, userRatingCountFor } from '../lib/course'
 import { courseTollStatus, tollStatusLabels } from '../lib/toll'
@@ -10,6 +10,7 @@ import { ElevationChart } from './ElevationChart'
 import { RatingBars } from './RatingBars'
 import { useMobileSheet } from '../hooks/useMobileSheet'
 import { useSwipeBack } from '../hooks/useSwipeBack'
+import { useForwardTransition } from '../hooks/useForwardTransition'
 
 interface Props {
   course: Course
@@ -34,6 +35,8 @@ interface Props {
 
 export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3d, onReportToll, onReportRoad, onCommunity, canManageCourse, onManageCourse, mapHidden, onToggleMapRoute, onOpenTimer, isPreview = false, onEditPreview, onReversePreview, previewNavigation }: Props) {
   const sheet = useMobileSheet(true, 'detail')
+  const contentRef = useRef<HTMLDivElement>(null)
+  const { forward } = useForwardTransition()
   const swipeBack = useSwipeBack(onBack, '.detail-scroll')
   const [navigationReversed, setNavigationReversed] = useState(false)
   const [liveInfo, setLiveInfo] = useState<LiveRoadInfo | null>(null)
@@ -64,7 +67,7 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
       <div className="detail-sheet-top" {...sheet.dragProps} onClick={sheet.expandOnTap}>
         <div className="drag-handle" aria-label="下へスワイプして詳細を閉じる。上へスワイプして詳細を広げる" />
       </div>
-      <div className="detail-scroll" data-sheet-scroll {...sheet.scrollProps}>
+      <div ref={contentRef} className="detail-scroll" data-sheet-scroll {...sheet.scrollProps}>
         <header className="detail-header">
           <div><p className="eyebrow">{course.prefecture} · {course.area}</p><h2>{course.name}</h2></div>
           <div className="detail-header-actions">
@@ -120,16 +123,16 @@ export function CourseDetail({ course, onClose, onBack, onRate, onShare, onOpen3
           {course.tollInfo.notes && <p>{course.tollInfo.notes}</p>}
           <footer>{course.tollInfo.sourceUrl ? <a href={course.tollInfo.sourceUrl} target="_blank" rel="noreferrer">{course.tollInfo.sourceName} ↗</a> : <span>{course.tollInfo.sourceName}</span>}<small>確認 {course.tollInfo.checkedAt}</small></footer>
           </>}
-          <button onClick={onReportToll}>無料開放・料金変更を報告</button>
+          <button onClick={() => forward(contentRef.current, onReportToll)}>無料開放・料金変更を報告</button>
         </section>}
         <section className="caution-box"><h3>走行前に確認</h3><ul>{course.cautions.map((item) => <li key={item}>{item}</li>)}</ul><small>最終更新: {course.updatedAt}。現地標識・公的情報を優先してください。</small></section>
-        {!isPreview && canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>地点・組み込んだルート・コース情報を編集できます。</p></div><button className="button secondary" onClick={onManageCourse}>編集・削除</button></section>}
-        {!isPreview && onOpenTimer && <section className="course-owner-actions" aria-label="走行記録"><div><h3>走行記録</h3><p>手動または位置情報で所要時間を計測し、この端末に記録します。</p></div><button className="button secondary" onClick={onOpenTimer}>走行タイマーを開く</button></section>}
+        {!isPreview && canManageCourse && <section className="course-owner-actions" aria-label="自分のコースの管理"><div><h3>自分が登録したコース</h3><p>地点・組み込んだルート・コース情報を編集できます。</p></div><button className="button secondary" onClick={() => forward(contentRef.current, onManageCourse)}>編集・削除</button></section>}
+        {!isPreview && onOpenTimer && <section className="course-owner-actions" aria-label="走行記録"><div><h3>走行記録</h3><p>手動または位置情報で所要時間を計測し、この端末に記録します。</p></div><button className="button secondary" onClick={() => forward(contentRef.current, onOpenTimer)}>走行タイマーを開く</button></section>}
         {!isPreview && <div className="secondary-actions">
-          <button onClick={onRate}>項目別に評価</button>
+          <button onClick={() => forward(contentRef.current, onRate)}>項目別に評価</button>
           <button onClick={onShare}>コースを共有</button>
-          <button onClick={onCommunity}>コメント・いいね</button>
-          <button onClick={onReportRoad}>道路状況を報告</button>
+          <button onClick={() => forward(contentRef.current, onCommunity)}>コメント・いいね</button>
+          <button onClick={() => forward(contentRef.current, onReportRoad)}>道路状況を報告</button>
         </div>}
       </div>
       <footer className="nav-actions">
